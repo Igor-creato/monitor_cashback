@@ -1,8 +1,47 @@
 services:
-  price-monitor-api:
+  backend-api:
     build:
       context: ./backend
     env_file:
-      - .env
+      - path: .env
+        required: false
+    environment:
+      APP_ENV: ${APP_ENV:-local}
+      DATABASE_URL: ${DATABASE_URL:-mysql+pymysql://cashback:cashback@mariadb:3306/cashback}
+      REDIS_URL: ${REDIS_URL:-redis://redis:6379/0}
+      RABBITMQ_URL: ${RABBITMQ_URL:-amqp://guest:guest@rabbitmq:5672/}
+      CASHBACK_API_BASE_URL: ${CASHBACK_API_BASE_URL:-}
+      CASHBACK_API_SITE_ID: ${CASHBACK_API_SITE_ID:-}
+      CASHBACK_API_SECRET: ${CASHBACK_API_SECRET:-}
     ports:
       - "8000:8000"
+    depends_on:
+      - mariadb
+      - redis
+      - rabbitmq
+
+  mariadb:
+    image: mariadb:11.4
+    environment:
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-cashback}
+      MYSQL_USER: ${MYSQL_USER:-cashback}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-cashback}
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "3306:3306"
+    volumes:
+      - mariadb-data:/var/lib/mysql
+
+  redis:
+    image: redis:7.4-alpine
+    ports:
+      - "6379:6379"
+
+  rabbitmq:
+    image: rabbitmq:3.13-management-alpine
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+volumes:
+  mariadb-data:
