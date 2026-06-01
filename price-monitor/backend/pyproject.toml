@@ -8,7 +8,10 @@ version = "0.1.0"
 description = "Price monitor FastAPI backend skeleton."
 requires-python = ">=3.12"
 dependencies = [
+    "alembic>=1.17",
     "fastapi>=0.136.0",
+    "pymysql>=1.1",
+    "sqlalchemy>=2.0",
     "uvicorn[standard]>=0.38.0",
     "pydantic-settings>=2.14.0",
 ]
