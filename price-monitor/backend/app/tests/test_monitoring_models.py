@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 
+import pytest
 from sqlalchemy import create_engine
 from sqlalchemy.orm import Session
 from sqlalchemy.schema import ForeignKeyConstraint, UniqueConstraint
@@ -10,6 +11,7 @@ from app.models.monitoring import (
     FetchJob,
     PriceHistory,
     TrackedProduct,
+    TrackedProductCashback,
     UserProductSubscription,
 )
 
@@ -159,3 +161,112 @@ def test_monitoring_defaults_are_applied_on_flush() -> None:
         assert subscription.created_at is not None
         assert subscription.updated_at is not None
         assert fetch_job.created_at is not None
+
+
+def test_tracked_product_cashback_table_is_registered_in_metadata() -> None:
+    assert "tracked_product_cashback" in Base.metadata.tables
+
+
+def test_tracked_product_cashback_foreign_key_points_to_tracked_products() -> None:
+    assert ("tracked_product_id", "tracked_products", "id") in _foreign_key_targets(
+        "tracked_product_cashback"
+    )
+
+
+def test_tracked_product_cashback_unique_tracked_product_id_is_declared() -> None:
+    assert ("tracked_product_id",) in _unique_constraint_columns(
+        "tracked_product_cashback"
+    )
+
+
+def test_tracked_product_cashback_enum_values_are_validated_by_application() -> None:
+    cashback = TrackedProductCashback(
+        id=1,
+        tracked_product_id=1,
+        cashback_status="partner_exact",
+        commission_rate_type="percent",
+        confidence="exact",
+        display_policy="show_exact_rate",
+    )
+
+    assert cashback.cashback_status == "partner_exact"
+    assert cashback.commission_rate_type == "percent"
+    assert cashback.confidence == "exact"
+    assert cashback.display_policy == "show_exact_rate"
+
+    nullable_commission_type = TrackedProductCashback(
+        id=2,
+        tracked_product_id=2,
+        cashback_status="no_partner",
+        commission_rate_type=None,
+        confidence="none",
+        display_policy="cashback_unavailable",
+    )
+    assert nullable_commission_type.commission_rate_type is None
+
+    with pytest.raises(ValueError, match="cashback_status"):
+        TrackedProductCashback(
+            id=3,
+            tracked_product_id=3,
+            cashback_status="unknown",
+            confidence="none",
+            display_policy="cashback_unavailable",
+        )
+
+    with pytest.raises(ValueError, match="commission_rate_type"):
+        TrackedProductCashback(
+            id=4,
+            tracked_product_id=4,
+            cashback_status="no_partner",
+            commission_rate_type="bonus",
+            confidence="none",
+            display_policy="cashback_unavailable",
+        )
+
+    with pytest.raises(ValueError, match="confidence"):
+        TrackedProductCashback(
+            id=5,
+            tracked_product_id=5,
+            cashback_status="no_partner",
+            confidence="certain",
+            display_policy="cashback_unavailable",
+        )
+
+    with pytest.raises(ValueError, match="display_policy"):
+        TrackedProductCashback(
+            id=6,
+            tracked_product_id=6,
+            cashback_status="no_partner",
+            confidence="none",
+            display_policy="show_anything",
+        )
+
+
+def test_tracked_product_cashback_one_to_one_relationship() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        tracked_product = TrackedProduct(
+            id=1,
+            source="market",
+            external_product_id="sku-1",
+            canonical_url="https://example.test/product/sku-1",
+        )
+        cashback = TrackedProductCashback(
+            id=1,
+            tracked_product=tracked_product,
+            cashback_status="partner_estimated",
+            merchant_id="merchant-1",
+            merchant_name="Merchant",
+            confidence="medium",
+            display_policy="show_range_use_min_for_effective_price",
+            expected_cashback_min=Decimal("10.00"),
+            expected_cashback_max=Decimal("15.00"),
+        )
+
+        session.add(cashback)
+        session.flush()
+
+        assert cashback.tracked_product is tracked_product
+        assert tracked_product.cashback is cashback
