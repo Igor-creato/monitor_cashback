@@ -3,3 +3,15 @@
 agentdb.rvf
 agentdb.rvf.lock
 ruvector.db
+
+# Local Spec Kit runtime/skills. Governance files below are tracked.
+.agents/
+.specify/*
+!.specify/memory/
+.specify/memory/*
+!.specify/memory/constitution.md
+!.specify/templates/
+.specify/templates/*
+!.specify/templates/plan-template.md
+!.specify/templates/spec-template.md
+!.specify/templates/tasks-template.md

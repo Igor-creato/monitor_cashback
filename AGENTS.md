@@ -353,3 +353,8 @@ Cashback Plugin — это комплексная система кэшбэк-с
 When working on multi-file tasks or complex features, use ToolSearch to find and invoke ruflo MCP tools.
 Key tools: memory_store, memory_search, hooks_route, swarm_init, agent_spawn.
 Check system-reminder tags for [INTELLIGENCE] pattern suggestions before starting work.
+
+<!-- SPECKIT START -->
+For additional context about technologies to be used, project structure,
+shell commands, and other important information, read the current plan
+<!-- SPECKIT END -->
