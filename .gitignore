@@ -1,0 +1,5 @@
+# Local agent/Ruflo runtime state.
+.swarm/
+agentdb.rvf
+agentdb.rvf.lock
+ruvector.db
