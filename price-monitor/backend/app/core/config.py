@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     cashback_api_base_url: str = ""
     cashback_api_site_id: str = ""
     cashback_api_secret: SecretStr = SecretStr("")
+    cashback_api_timeout_seconds: float = 10.0
     price_monitor_incoming_site_id: str = ""
     price_monitor_incoming_secret: SecretStr = SecretStr("")
 
