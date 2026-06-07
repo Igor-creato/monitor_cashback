@@ -56,6 +56,10 @@ def _validate_choice(
     return value
 
 
+def _bigint_primary_key():
+    return BigInteger().with_variant(Integer, "sqlite")
+
+
 class TrackedProduct(Base):
     __tablename__ = "tracked_products"
     __table_args__ = (
@@ -68,7 +72,7 @@ class TrackedProduct(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
     external_product_id: Mapped[str] = mapped_column(String(191), nullable=False)
     canonical_url: Mapped[str] = mapped_column(String(2048), nullable=False)
@@ -148,7 +152,7 @@ class TrackedProductCashback(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     tracked_product_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
@@ -263,7 +267,7 @@ class UserProductSubscription(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(191), nullable=False)
     external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
     tracked_product_id: Mapped[int] = mapped_column(
@@ -302,7 +306,7 @@ class UserProductSubscription(Base):
 class PriceHistory(Base):
     __tablename__ = "price_history"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     tracked_product_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
@@ -327,7 +331,7 @@ class PriceHistory(Base):
 class FetchJob(Base):
     __tablename__ = "fetch_jobs"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True)
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     tracked_product_id: Mapped[int] = mapped_column(
         BigInteger,
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
