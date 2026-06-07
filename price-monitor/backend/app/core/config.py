@@ -11,6 +11,8 @@ class Settings(BaseSettings):
     cashback_api_base_url: str = ""
     cashback_api_site_id: str = ""
     cashback_api_secret: SecretStr = SecretStr("")
+    price_monitor_incoming_site_id: str = ""
+    price_monitor_incoming_secret: SecretStr = SecretStr("")
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
