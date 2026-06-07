@@ -32,6 +32,8 @@ Monitor Cashback is a Python/FastAPI microservice inside the wider Савелл�
 
 The canonical knowledge vault is `F:\wamp64\www\kash-back\wp-content\plugins\cash-back\obsidian`. Do not create a local `obsidian/` copy in this repository. Use `rtk` as the command prefix for shell commands in this project.
 
+All agent-facing communication for this project MUST be in Russian, including progress updates, questions, final answers, plans, and summaries. Keep code identifiers, file paths, shell commands, API names, and quoted external text in their original language when needed for correctness.
+
 ## Development Workflow
 
 Before starting a task, read the relevant local code and Obsidian context. For behavior changes, create focused tests first and confirm the failing state when practical. Implement in small, scoped edits. Run targeted verification first, then broader tests/checks based on risk. Fix all failures introduced or exposed by the change before continuing. Update Obsidian when the change affects documented behavior or workflow. Commit with a focused message and push after verification.
@@ -42,4 +44,4 @@ This constitution governs all Spec Kit specifications, plans, tasks, and impleme
 
 Amendments require an explicit user request or approval. Versioning follows semantic versioning: MAJOR for principle removals or incompatible governance changes, MINOR for new principles or materially expanded requirements, and PATCH for clarifications or wording fixes. Compliance is reviewed during planning, before implementation, and before completion.
 
-**Version**: 1.0.0 | **Ratified**: 2026-06-07 | **Last Amended**: 2026-06-07
+**Version**: 1.1.0 | **Ratified**: 2026-06-07 | **Last Amended**: 2026-06-07

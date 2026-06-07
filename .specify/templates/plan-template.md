@@ -44,6 +44,7 @@
 - **Idempotency / ledger-first**: Identify idempotency or dedup guarantees for API calls, retries, workers, queues, money, balances, CPA, and payout paths. Confirm that snapshots/caches are not treated as sources of truth.
 - **Server discipline**: Confirm all changes are local-first and that no server mutation is required without an explicit user command.
 - **Scope discipline**: List what is intentionally out of scope and confirm the plan does not add adjacent features or broad refactors beyond the prompt.
+- **Russian communication**: Confirm user-facing agent updates, questions, plans, summaries, and final answers remain in Russian, while preserving code identifiers, paths, commands, and API names as needed.
 - **Test-first workflow**: Define the tests/checks that must be created or updated before implementation and the verification commands required after implementation.
 - **Obsidian impact**: Name the canonical Obsidian note(s) to update, or state that no architecture/API/DB/Redis/integration/deploy/workflow documentation changes are needed.
 
