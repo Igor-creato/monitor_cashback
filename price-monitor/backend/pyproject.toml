@@ -9,6 +9,7 @@ description = "Price monitor FastAPI backend skeleton."
 requires-python = ">=3.12"
 dependencies = [
     "alembic>=1.17",
+    "celery>=5.5",
     "fastapi>=0.136.0",
     "httpx>=0.28.0",
     "pymysql>=1.1",
