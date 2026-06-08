@@ -180,7 +180,14 @@ def test_inactive_subscription_is_rejected(db_session: Session) -> None:
     assert client.payloads == []
 
 
-def test_click_id_does_not_contain_raw_external_user_id(db_session: Session) -> None:
+def test_click_id_does_not_contain_raw_external_user_id(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeUUID:
+        hex = "abcd77efabcdabcdabcdabcdabcdabcd"
+
+    monkeypatch.setattr("app.services.deeplink.uuid4", lambda: FakeUUID())
     raw_external_user_id = "wp:savelloclub.test:77"
     _tracked_product(db_session)
     _subscription(db_session, external_user_id=raw_external_user_id)
@@ -196,8 +203,8 @@ def test_click_id_does_not_contain_raw_external_user_id(db_session: Session) -> 
     )
 
     click_id = client.payloads[0]["click_id"]
+    assert click_id == "pm_abcd77efabcdabcdabcdabcdabcdabcd"
     assert raw_external_user_id not in click_id
-    assert "77" not in click_id
     assert "event-123" not in click_id
 
 
