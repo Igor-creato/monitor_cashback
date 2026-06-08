@@ -1,4 +1,5 @@
 from decimal import Decimal
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -43,6 +44,10 @@ class WatchlistItemResponse(BaseModel):
     target_price: str | None
     target_effective_price: str | None
     is_active: bool
+
+
+class WatchlistItemCreateResponse(WatchlistItemResponse):
+    result: Literal["created", "already_exists"]
 
 
 class WatchlistItemCashbackResponse(BaseModel):

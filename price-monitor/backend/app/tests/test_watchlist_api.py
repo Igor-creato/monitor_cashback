@@ -21,6 +21,12 @@ from app.models.monitoring import (
     TrackedProductCashback,
     UserProductSubscription,
 )
+from app.services.user_limits import (
+    CashbackLimitValues,
+    PriceMonitorLimitValues,
+    UserLimitsNotFound,
+    UserPriceMonitorLimits,
+)
 
 SECRET = "incoming-test-secret"
 SITE_ID = "savelloclub.ru"
@@ -64,6 +70,35 @@ def _post_payload(
     }
 
 
+def _limits(
+    max_tracked_products: int,
+    *,
+    external_user_id: str = "wp:savelloclub.ru:123",
+) -> UserPriceMonitorLimits:
+    return UserPriceMonitorLimits(
+        external_user_id=external_user_id,
+        tariff="basic",
+        limits=PriceMonitorLimitValues(
+            max_tracked_products=max_tracked_products,
+            history_days=30,
+            min_fetch_interval_minutes=360,
+            alerts_per_day=10,
+            manual_refresh_per_day=3,
+            browser_fallback_allowed=False,
+        ),
+        cashback=CashbackLimitValues(
+            user_share=Decimal("0.7"),
+            cashback_currency="RUB",
+        ),
+    )
+
+
+def _response_item_without_result(response_json: dict) -> dict:
+    item = dict(response_json)
+    item.pop("result", None)
+    return item
+
+
 @pytest.fixture
 def db_session() -> Iterator[Session]:
     engine = create_engine(
@@ -86,6 +121,15 @@ def client(monkeypatch, db_session: Session) -> Iterator[TestClient]:
         SecretStr(SECRET),
     )
     monkeypatch.setattr(incoming_hmac, "current_unix_time", lambda: NOW)
+
+    def default_limits_provider(site_id: str, external_user_id: str):
+        return _limits(100, external_user_id=external_user_id)
+
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        default_limits_provider,
+        raising=False,
+    )
 
     if hasattr(db, "get_db"):
         app.dependency_overrides[db.get_db] = lambda: db_session
@@ -146,6 +190,29 @@ def test_watchlist_post_without_hmac_is_rejected(client: TestClient) -> None:
     assert response.status_code == 401
 
 
+def test_watchlist_post_without_hmac_does_not_fetch_limits(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    def fail_limits_provider(site_id: str, external_user_id: str):
+        raise AssertionError("Unauthenticated POST must not fetch user limits.")
+
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        fail_limits_provider,
+        raising=False,
+    )
+    body = _json_body(_post_payload())
+
+    response = client.post(
+        "/v1/watchlist/items",
+        content=body,
+        headers={"Content-Type": "application/json"},
+    )
+
+    assert response.status_code == 401
+
+
 def test_post_creates_product_and_subscription(
     client: TestClient,
     db_session: Session,
@@ -165,6 +232,7 @@ def test_post_creates_product_and_subscription(
         "target_price": "5000.00",
         "target_effective_price": None,
         "is_active": True,
+        "result": "created",
     }
     assert db_session.scalar(select(func.count(TrackedProduct.id))) == 1
     assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 1
@@ -186,6 +254,8 @@ def test_duplicate_url_with_utm_does_not_create_second_product(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
+    assert first_response.json()["result"] == "created"
+    assert second_response.json()["result"] == "already_exists"
     assert first_response.json()["subscription_id"] == second_response.json()[
         "subscription_id"
     ]
@@ -205,6 +275,8 @@ def test_second_user_creates_second_subscription_without_second_product(
 
     assert first_response.status_code == 200
     assert second_response.status_code == 200
+    assert first_response.json()["result"] == "created"
+    assert second_response.json()["result"] == "created"
     assert first_response.json()["tracked_product_id"] == second_response.json()[
         "tracked_product_id"
     ]
@@ -253,7 +325,7 @@ def test_get_returns_only_current_users_active_subscriptions(
     assert response.json()["limit"] == 50
     assert response.json()["items"] == [
         {
-            **active_response.json(),
+            **_response_item_without_result(active_response.json()),
             "cashback": {
                 "cashback_status": "unknown",
                 "cashback_available": False,
@@ -275,6 +347,150 @@ def test_get_returns_only_current_users_active_subscriptions(
             },
         }
     ]
+
+
+def test_limit_three_allows_third_new_watchlist_item(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        lambda site_id, external_user_id: _limits(
+            3,
+            external_user_id=external_user_id,
+        ),
+        raising=False,
+    )
+    first = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123"),
+    )
+    second = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://demo-store.local/goods/sku-42"),
+    )
+
+    third = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://example-market.local/item/abc-777"),
+    )
+
+    assert first.status_code == 200
+    assert second.status_code == 200
+    assert third.status_code == 200
+    assert third.json()["result"] == "created"
+
+
+def test_fourth_new_watchlist_item_is_rejected_at_limit(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        lambda site_id, external_user_id: _limits(
+            3,
+            external_user_id=external_user_id,
+        ),
+        raising=False,
+    )
+    _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123"),
+    )
+    _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://demo-store.local/goods/sku-42"),
+    )
+    _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://example-market.local/item/abc-777"),
+    )
+
+    response = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/124"),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "max_tracked_products_exceeded"}
+    assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 3
+
+
+def test_duplicate_watchlist_item_at_limit_returns_already_exists(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        lambda site_id, external_user_id: _limits(
+            3,
+            external_user_id=external_user_id,
+        ),
+        raising=False,
+    )
+    first = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123?utm_source=x"),
+    )
+    _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://demo-store.local/goods/sku-42"),
+    )
+    _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://example-market.local/item/abc-777"),
+    )
+
+    duplicate = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123?utm_source=y"),
+    )
+
+    assert duplicate.status_code == 200
+    assert duplicate.json()["subscription_id"] == first.json()["subscription_id"]
+    assert duplicate.json()["result"] == "already_exists"
+    assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 3
+
+
+def test_fallback_free_limits_reject_new_watchlist_item(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        lambda site_id, external_user_id: _limits(
+            0,
+            external_user_id=external_user_id,
+        ),
+        raising=False,
+    )
+
+    response = _post_watchlist_item(client, _post_payload())
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "max_tracked_products_exceeded"}
+    assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 0
+
+
+def test_user_limits_not_found_rejects_new_watchlist_item(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.api.watchlist.get_price_monitor_limits",
+        lambda site_id, external_user_id: UserLimitsNotFound(),
+        raising=False,
+    )
+
+    response = _post_watchlist_item(client, _post_payload())
+
+    assert response.status_code == 422
+    assert response.json() == {"detail": "max_tracked_products_exceeded"}
+    assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 0
 
 
 def test_get_without_cashback_snapshot_returns_unknown(client: TestClient) -> None:

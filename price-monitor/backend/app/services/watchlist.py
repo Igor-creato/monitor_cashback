@@ -1,4 +1,8 @@
-from sqlalchemy import Select, select
+from collections.abc import Callable
+from dataclasses import dataclass
+from typing import Literal
+
+from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.product_url_normalizer import (
@@ -7,16 +11,38 @@ from app.core.product_url_normalizer import (
 )
 from app.models.monitoring import TrackedProduct, UserProductSubscription
 from app.schemas.watchlist import WatchlistItemCreate, WatchlistItemPatch
+from app.services.user_limits import (
+    UserLimitsNotFound,
+    UserPriceMonitorLimits,
+    get_price_monitor_limits,
+)
+
+WatchlistAddStatus = Literal["created", "already_exists"]
+
+
+@dataclass(frozen=True)
+class WatchlistAddResult:
+    subscription: UserProductSubscription
+    status: WatchlistAddStatus
 
 
 class UnsupportedWatchlistSourceError(ValueError):
     pass
 
 
+class WatchlistLimitExceededError(ValueError):
+    pass
+
+
 def add_watchlist_item(
     session: Session,
     item: WatchlistItemCreate,
-) -> UserProductSubscription:
+    *,
+    limits_provider: Callable[
+        [str, str],
+        UserPriceMonitorLimits | UserLimitsNotFound,
+    ] = get_price_monitor_limits,
+) -> WatchlistAddResult:
     try:
         normalized = normalize_product_url(item.product_url)
     except UnsupportedSourceError as exc:
@@ -31,6 +57,19 @@ def add_watchlist_item(
         )
     )
 
+    if tracked_product is not None:
+        subscription = session.scalar(
+            _subscription_query().where(
+                UserProductSubscription.site_id == item.site_id,
+                UserProductSubscription.external_user_id == item.external_user_id,
+                UserProductSubscription.tracked_product_id == tracked_product.id,
+            )
+        )
+        if subscription is not None:
+            return WatchlistAddResult(subscription, "already_exists")
+
+    _ensure_new_subscription_within_limit(session, item, limits_provider)
+
     if tracked_product is None:
         tracked_product = TrackedProduct(
             source=normalized.source,
@@ -42,27 +81,18 @@ def add_watchlist_item(
         session.add(tracked_product)
         session.flush()
 
-    subscription = session.scalar(
-        _subscription_query().where(
-            UserProductSubscription.site_id == item.site_id,
-            UserProductSubscription.external_user_id == item.external_user_id,
-            UserProductSubscription.tracked_product_id == tracked_product.id,
-        )
+    subscription = UserProductSubscription(
+        site_id=item.site_id,
+        external_user_id=item.external_user_id,
+        tracked_product=tracked_product,
+        target_price=item.target_price,
+        target_effective_price=item.target_effective_price,
     )
-
-    if subscription is None:
-        subscription = UserProductSubscription(
-            site_id=item.site_id,
-            external_user_id=item.external_user_id,
-            tracked_product=tracked_product,
-            target_price=item.target_price,
-            target_effective_price=item.target_effective_price,
-        )
-        session.add(subscription)
-        session.flush()
+    session.add(subscription)
+    session.flush()
 
     session.commit()
-    return subscription
+    return WatchlistAddResult(subscription, "created")
 
 
 def list_watchlist_items(
@@ -160,3 +190,26 @@ def _subscription_query() -> Select[tuple[UserProductSubscription]]:
             TrackedProduct.cashback
         )
     )
+
+
+def _ensure_new_subscription_within_limit(
+    session: Session,
+    item: WatchlistItemCreate,
+    limits_provider: Callable[
+        [str, str],
+        UserPriceMonitorLimits | UserLimitsNotFound,
+    ],
+) -> None:
+    user_limits = limits_provider(item.site_id, item.external_user_id)
+    if isinstance(user_limits, UserLimitsNotFound):
+        raise WatchlistLimitExceededError("max_tracked_products_exceeded")
+
+    active_count = session.scalar(
+        select(func.count(UserProductSubscription.id)).where(
+            UserProductSubscription.site_id == item.site_id,
+            UserProductSubscription.external_user_id == item.external_user_id,
+            UserProductSubscription.is_active.is_(True),
+        )
+    )
+    if int(active_count or 0) >= user_limits.limits.max_tracked_products:
+        raise WatchlistLimitExceededError("max_tracked_products_exceeded")

@@ -13,6 +13,7 @@ from app.schemas.watchlist import (
     WatchlistCashbackLinkResponse,
     WatchlistItemCashbackResponse,
     WatchlistItemCreate,
+    WatchlistItemCreateResponse,
     WatchlistItemPatch,
     WatchlistItemResponse,
     WatchlistItemsResponse,
@@ -23,8 +24,11 @@ from app.services.deeplink import (
     DeeplinkUnavailable,
     create_cashback_deeplink,
 )
+from app.services.user_limits import get_price_monitor_limits
 from app.services.watchlist import (
     UnsupportedWatchlistSourceError,
+    WatchlistAddResult,
+    WatchlistLimitExceededError,
     add_watchlist_item,
     delete_watchlist_item,
     list_watchlist_items,
@@ -38,22 +42,31 @@ router = APIRouter(
 DbSession = Annotated[Session, Depends(get_db)]
 
 
-@router.post("/items", response_model=WatchlistItemResponse)
+@router.post("/items", response_model=WatchlistItemCreateResponse)
 def create_watchlist_item(
     item: WatchlistItemCreate,
     request: Request,
     session: DbSession,
-) -> WatchlistItemResponse:
+) -> WatchlistItemCreateResponse:
     _verify_site_matches_request(request, item.site_id)
     try:
-        subscription = add_watchlist_item(session, item)
+        result = add_watchlist_item(
+            session,
+            item,
+            limits_provider=get_price_monitor_limits,
+        )
     except UnsupportedWatchlistSourceError as exc:
         raise HTTPException(
             status_code=400,
             detail="Unsupported product URL source.",
         ) from exc
+    except WatchlistLimitExceededError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail="max_tracked_products_exceeded",
+        ) from exc
 
-    return _serialize_subscription(subscription)
+    return _serialize_create_result(result)
 
 
 @router.get("/items", response_model=WatchlistItemsResponse)
@@ -202,6 +215,16 @@ def _serialize_subscription(
         target_price=_format_money(subscription.target_price),
         target_effective_price=_format_money(subscription.target_effective_price),
         is_active=subscription.is_active,
+    )
+
+
+def _serialize_create_result(
+    result: WatchlistAddResult,
+) -> WatchlistItemCreateResponse:
+    base_item = _serialize_subscription(result.subscription)
+    return WatchlistItemCreateResponse(
+        **base_item.model_dump(),
+        result=result.status,
     )
 
 
