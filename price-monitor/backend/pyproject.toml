@@ -27,6 +27,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["app/tests"]
 
+[tool.setuptools.packages.find]
+include = ["app*"]
+
 [tool.ruff]
 line-length = 88
 target-version = "py312"

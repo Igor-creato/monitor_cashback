@@ -1,6 +1,8 @@
+import tomllib
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
+PYPROJECT_PATH = REPOSITORY_ROOT / "price-monitor" / "backend" / "pyproject.toml"
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
 DOCKERFILE_PATH = REPOSITORY_ROOT / "price-monitor" / "backend" / "Dockerfile"
 COMPOSE_PATH = REPOSITORY_ROOT / "price-monitor" / "docker-compose.yml"
@@ -35,3 +37,11 @@ def test_backend_image_build_uses_configurable_pip_index() -> None:
 
     assert "ARG PIP_INDEX_URL" in dockerfile
     assert "PIP_INDEX_URL" in compose
+
+
+def test_backend_package_discovery_only_includes_application_package() -> None:
+    pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
+
+    package_finder = pyproject["tool"]["setuptools"]["packages"]["find"]
+
+    assert package_finder["include"] == ["app*"]
