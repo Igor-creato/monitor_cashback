@@ -40,6 +40,15 @@ DISPLAY_POLICY_VALUES = frozenset(
         "cashback_unknown_requires_check",
     }
 )
+NOTIFICATION_EVENT_TYPE_VALUES = frozenset(
+    {
+        "target_price_reached",
+        "target_effective_price_reached",
+        "price_drop",
+        "back_in_stock",
+    }
+)
+NOTIFICATION_STATUS_VALUES = frozenset({"pending", "sent", "skipped", "failed"})
 
 
 def _validate_choice(
@@ -133,6 +142,10 @@ class TrackedProduct(Base):
         cascade="all, delete-orphan",
     )
     fetch_jobs: Mapped[list[FetchJob]] = relationship(
+        back_populates="tracked_product",
+        cascade="all, delete-orphan",
+    )
+    notification_events: Mapped[list[NotificationEvent]] = relationship(
         back_populates="tracked_product",
         cascade="all, delete-orphan",
     )
@@ -301,6 +314,66 @@ class UserProductSubscription(Base):
     tracked_product: Mapped[TrackedProduct] = relationship(
         back_populates="subscriptions",
     )
+
+    notification_events: Mapped[list[NotificationEvent]] = relationship(
+        back_populates="subscription",
+        cascade="all, delete-orphan",
+    )
+
+
+class NotificationEvent(Base):
+    __tablename__ = "notification_events"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    subscription_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("user_product_subscriptions.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    tracked_product_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("tracked_products.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="pending",
+        server_default="pending",
+    )
+    payload_json: Mapped[str] = mapped_column(Text, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    subscription: Mapped[UserProductSubscription] = relationship(
+        back_populates="notification_events",
+    )
+    tracked_product: Mapped[TrackedProduct] = relationship(
+        back_populates="notification_events",
+    )
+
+    @validates("event_type")
+    def validate_event_type(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "event_type",
+            value,
+            NOTIFICATION_EVENT_TYPE_VALUES,
+        )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice("status", value, NOTIFICATION_STATUS_VALUES)
 
 
 class PriceHistory(Base):

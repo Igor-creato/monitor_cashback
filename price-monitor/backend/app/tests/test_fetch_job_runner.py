@@ -55,6 +55,12 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
         lambda *args, **kwargs: None,
         raising=False,
     )
+    monkeypatch.setattr(
+        runner,
+        "evaluate_price_alerts",
+        lambda *args, **kwargs: [],
+        raising=False,
+    )
 
     with Session(engine) as session:
         yield session
@@ -204,6 +210,31 @@ def test_successful_job_calls_cashback_resolver(
     assert calls[0]["currency"] == "RUB"
     assert calls[0]["region_code"] == "default"
     assert calls[0]["session"].get(TrackedProduct, 1) is not None
+
+def test_successful_job_evaluates_price_alerts(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+    calls = []
+
+    def fake_evaluate_price_alerts(tracked_product_id):
+        calls.append(tracked_product_id)
+        return []
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "evaluate_price_alerts",
+        fake_evaluate_price_alerts,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+
+    assert calls == [1]
 
 def test_cashback_api_error_does_not_fail_successful_fetch_job(
     db_session: Session,
@@ -363,6 +394,35 @@ def test_price_not_found_does_not_call_cashback_resolver(
         runner,
         "resolve_and_store_product_cashback",
         fake_resolver,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, FakeFetcher(FetchError("price_not_found", "missing price")))
+
+    job = db_session.get(FetchJob, 1)
+    assert job is not None
+    db_session.refresh(job)
+    assert calls == []
+    assert job.status == "failed"
+
+def test_price_not_found_does_not_evaluate_price_alerts(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+    calls = []
+
+    def fake_evaluate_price_alerts(*args, **kwargs):
+        calls.append((args, kwargs))
+        return []
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "evaluate_price_alerts",
+        fake_evaluate_price_alerts,
         raising=False,
     )
 

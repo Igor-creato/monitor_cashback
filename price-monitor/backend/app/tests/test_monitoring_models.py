@@ -9,6 +9,7 @@ from sqlalchemy.schema import ForeignKeyConstraint, UniqueConstraint
 from app.db import Base
 from app.models.monitoring import (
     FetchJob,
+    NotificationEvent,
     PriceHistory,
     TrackedProduct,
     TrackedProductCashback,
@@ -51,6 +52,7 @@ def test_monitoring_tables_are_registered_in_metadata() -> None:
         "user_product_subscriptions",
         "price_history",
         "fetch_jobs",
+        "notification_events",
     }.issubset(Base.metadata.tables)
 
 
@@ -79,6 +81,14 @@ def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
     assert ("tracked_product_id", "tracked_products", "id") in _foreign_key_targets(
         "fetch_jobs"
     )
+    assert ("tracked_product_id", "tracked_products", "id") in _foreign_key_targets(
+        "notification_events"
+    )
+    assert (
+        "subscription_id",
+        "user_product_subscriptions",
+        "id",
+    ) in _foreign_key_targets("notification_events")
 
 
 def test_monitoring_relationships_link_tracked_product_children() -> None:
@@ -145,8 +155,17 @@ def test_monitoring_defaults_are_applied_on_flush() -> None:
             tracked_product=tracked_product,
             next_run_at=datetime(2026, 6, 1, tzinfo=UTC),
         )
+        notification_event = NotificationEvent(
+            id=1,
+            site_id="site-1",
+            external_user_id="user-1",
+            subscription=subscription,
+            tracked_product=tracked_product,
+            event_type="target_price_reached",
+            payload_json="{}",
+        )
 
-        session.add_all([tracked_product, subscription, fetch_job])
+        session.add_all([tracked_product, subscription, fetch_job, notification_event])
         session.flush()
 
         assert tracked_product.region_code == "default"
@@ -156,11 +175,66 @@ def test_monitoring_defaults_are_applied_on_flush() -> None:
         assert fetch_job.priority == 5
         assert fetch_job.status == "queued"
         assert fetch_job.attempt == 0
+        assert notification_event.status == "pending"
         assert tracked_product.created_at is not None
         assert tracked_product.updated_at is not None
         assert subscription.created_at is not None
         assert subscription.updated_at is not None
         assert fetch_job.created_at is not None
+        assert notification_event.created_at is not None
+
+def test_notification_event_enum_values_are_validated_by_application() -> None:
+    event = NotificationEvent(
+        id=1,
+        site_id="site-1",
+        external_user_id="user-1",
+        subscription_id=1,
+        tracked_product_id=1,
+        event_type="target_effective_price_reached",
+        status="pending",
+        payload_json="{}",
+    )
+
+    assert event.event_type == "target_effective_price_reached"
+    assert event.status == "pending"
+
+    for status in ("sent", "skipped", "failed"):
+        assert (
+            NotificationEvent(
+                id=2,
+                site_id="site-1",
+                external_user_id="user-1",
+                subscription_id=1,
+                tracked_product_id=1,
+                event_type="price_drop",
+                status=status,
+                payload_json="{}",
+            ).status
+            == status
+        )
+
+    with pytest.raises(ValueError, match="event_type"):
+        NotificationEvent(
+            id=3,
+            site_id="site-1",
+            external_user_id="user-1",
+            subscription_id=1,
+            tracked_product_id=1,
+            event_type="email_now",
+            payload_json="{}",
+        )
+
+    with pytest.raises(ValueError, match="status"):
+        NotificationEvent(
+            id=4,
+            site_id="site-1",
+            external_user_id="user-1",
+            subscription_id=1,
+            tracked_product_id=1,
+            event_type="back_in_stock",
+            status="queued",
+            payload_json="{}",
+        )
 
 
 def test_tracked_product_cashback_table_is_registered_in_metadata() -> None:

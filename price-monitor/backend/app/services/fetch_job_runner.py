@@ -7,6 +7,7 @@ from app.clients.cashback_api import CashbackAPIError
 from app.db import SessionLocal
 from app.fetchers.base import FetchError, PriceFetchResult
 from app.models.monitoring import FetchJob, PriceHistory
+from app.services.notifications import evaluate_price_alerts
 from app.services.product_cashback import resolve_and_store_product_cashback
 
 logger = logging.getLogger(__name__)
@@ -58,6 +59,7 @@ def run_http_fetch_job(job_id, fetcher):
                 },
                 exc_info=True,
             )
+        evaluate_price_alerts(job.tracked_product_id)
         session.commit()
         return None
 
