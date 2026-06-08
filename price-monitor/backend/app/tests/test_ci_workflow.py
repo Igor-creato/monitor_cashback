@@ -2,6 +2,8 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[4]
 WORKFLOW_PATH = REPOSITORY_ROOT / ".github" / "workflows" / "ci.yml"
+DOCKERFILE_PATH = REPOSITORY_ROOT / "price-monitor" / "backend" / "Dockerfile"
+COMPOSE_PATH = REPOSITORY_ROOT / "price-monitor" / "docker-compose.yml"
 
 
 def test_ci_workflow_runs_required_checks_without_deployment_steps() -> None:
@@ -25,3 +27,11 @@ def test_ci_workflow_runs_required_checks_without_deployment_steps() -> None:
         "secrets.",
     ):
         assert forbidden_marker not in workflow.lower()
+
+
+def test_backend_image_build_uses_configurable_pip_index() -> None:
+    dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
+    compose = COMPOSE_PATH.read_text(encoding="utf-8")
+
+    assert "ARG PIP_INDEX_URL" in dockerfile
+    assert "PIP_INDEX_URL" in compose
