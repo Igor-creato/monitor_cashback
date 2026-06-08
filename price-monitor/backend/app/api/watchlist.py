@@ -24,6 +24,7 @@ from app.services.deeplink import (
     DeeplinkUnavailable,
     create_cashback_deeplink,
 )
+from app.services.product_cards import build_product_card
 from app.services.user_limits import get_price_monitor_limits
 from app.services.watchlist import (
     UnsupportedWatchlistSourceError,
@@ -231,9 +232,11 @@ def _serialize_subscription_with_cashback(
     subscription: UserProductSubscription,
 ) -> WatchlistItemWithCashbackResponse:
     base_item = _serialize_subscription(subscription)
+    card = build_product_card(subscription.tracked_product, subscription)
+    item = base_item.model_dump()
+    item.update(card.model_dump())
     return WatchlistItemWithCashbackResponse(
-        **base_item.model_dump(),
-        cashback=_serialize_cashback(subscription),
+        **item,
     )
 
 

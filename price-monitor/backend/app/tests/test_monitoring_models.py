@@ -88,6 +88,15 @@ def test_monitoring_unique_constraints_are_declared() -> None:
     assert ("lease_token",) in _unique_constraint_columns("proxy_leases")
 
 
+def test_tracked_product_card_columns_are_registered() -> None:
+    tracked_products = Base.metadata.tables["tracked_products"]
+
+    assert "image_object_key" in tracked_products.columns
+    assert "source_display_name" in tracked_products.columns
+    assert tracked_products.columns["image_object_key"].nullable is True
+    assert tracked_products.columns["source_display_name"].nullable is True
+
+
 def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
     assert ("tracked_product_id", "tracked_products", "id") in _foreign_key_targets(
         "user_product_subscriptions"

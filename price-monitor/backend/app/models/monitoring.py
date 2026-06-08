@@ -110,6 +110,11 @@ class TrackedProduct(Base):
     variant_hash: Mapped[str | None] = mapped_column(String(128), nullable=True)
     product_name: Mapped[str | None] = mapped_column(String(512), nullable=True)
     image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    image_object_key: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    source_display_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
     last_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     last_old_price: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 2),
