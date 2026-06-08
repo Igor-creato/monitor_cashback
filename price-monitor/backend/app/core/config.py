@@ -14,6 +14,7 @@ class Settings(BaseSettings):
     cashback_api_timeout_seconds: float = 10.0
     price_monitor_incoming_site_id: str = ""
     price_monitor_incoming_secret: SecretStr = SecretStr("")
+    admin_api_key: SecretStr = SecretStr("")
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
