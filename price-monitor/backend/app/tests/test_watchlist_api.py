@@ -256,9 +256,10 @@ def test_duplicate_url_with_utm_does_not_create_second_product(
     assert second_response.status_code == 200
     assert first_response.json()["result"] == "created"
     assert second_response.json()["result"] == "already_exists"
-    assert first_response.json()["subscription_id"] == second_response.json()[
-        "subscription_id"
-    ]
+    assert (
+        first_response.json()["subscription_id"]
+        == second_response.json()["subscription_id"]
+    )
     assert db_session.scalar(select(func.count(TrackedProduct.id))) == 1
     assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 1
 
@@ -277,12 +278,14 @@ def test_second_user_creates_second_subscription_without_second_product(
     assert second_response.status_code == 200
     assert first_response.json()["result"] == "created"
     assert second_response.json()["result"] == "created"
-    assert first_response.json()["tracked_product_id"] == second_response.json()[
-        "tracked_product_id"
-    ]
-    assert first_response.json()["subscription_id"] != second_response.json()[
-        "subscription_id"
-    ]
+    assert (
+        first_response.json()["tracked_product_id"]
+        == second_response.json()["tracked_product_id"]
+    )
+    assert (
+        first_response.json()["subscription_id"]
+        != second_response.json()["subscription_id"]
+    )
     assert db_session.scalar(select(func.count(TrackedProduct.id))) == 1
     assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 2
 
@@ -751,8 +754,7 @@ def test_delete_soft_deletes_subscription(client: TestClient) -> None:
         headers=_headers(),
     )
     get_response = client.get(
-        f"/v1/watchlist/items?site_id={SITE_ID}"
-        "&external_user_id=wp:savelloclub.ru:123",
+        f"/v1/watchlist/items?site_id={SITE_ID}&external_user_id=wp:savelloclub.ru:123",
         headers=_headers(),
     )
 

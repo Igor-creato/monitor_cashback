@@ -119,9 +119,7 @@ def _parse_response(
 def _parse_limits(limits: dict[str, Any]) -> PriceMonitorLimitValues | None:
     max_tracked_products = _int_value(limits.get("max_tracked_products"))
     history_days = _int_value(limits.get("history_days"))
-    min_fetch_interval_minutes = _int_value(
-        limits.get("min_fetch_interval_minutes")
-    )
+    min_fetch_interval_minutes = _int_value(limits.get("min_fetch_interval_minutes"))
     alerts_per_day = _int_value(limits.get("alerts_per_day"))
     manual_refresh_per_day = _int_value(limits.get("manual_refresh_per_day"))
     browser_fallback_allowed = limits.get("browser_fallback_allowed")

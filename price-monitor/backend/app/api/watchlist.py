@@ -116,8 +116,7 @@ def create_watchlist_cashback_link(
         .where(
             UserProductSubscription.id == subscription_id,
             UserProductSubscription.site_id == link_request.site_id,
-            UserProductSubscription.external_user_id
-            == link_request.external_user_id,
+            UserProductSubscription.external_user_id == link_request.external_user_id,
             UserProductSubscription.is_active.is_(True),
         )
     )
@@ -237,6 +236,7 @@ def _serialize_subscription_with_cashback(
         cashback=_serialize_cashback(subscription),
     )
 
+
 def _serialize_cashback(
     subscription: UserProductSubscription,
 ) -> WatchlistItemCashbackResponse:
@@ -271,10 +271,12 @@ def _serialize_cashback(
         message=snapshot.message,
     )
 
+
 def _format_money(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return f"{value:.2f}"
+
 
 def _format_rate(value: Decimal | None) -> str | None:
     if value is None:

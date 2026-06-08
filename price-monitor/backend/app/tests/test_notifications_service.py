@@ -153,9 +153,7 @@ def test_target_effective_price_reached_event_is_created_from_exact_cashback(
 
     events = evaluate_price_alerts(1)
 
-    assert [event.event_type for event in events] == [
-        "target_effective_price_reached"
-    ]
+    assert [event.event_type for event in events] == ["target_effective_price_reached"]
     event = db_session.scalar(select(NotificationEvent))
     assert event is not None
     assert _payload(event) == {
@@ -185,9 +183,7 @@ def test_target_effective_price_reached_event_is_created_from_conservative_range
 
     events = evaluate_price_alerts(1)
 
-    assert [event.event_type for event in events] == [
-        "target_effective_price_reached"
-    ]
+    assert [event.event_type for event in events] == ["target_effective_price_reached"]
     event = db_session.scalar(select(NotificationEvent))
     assert event is not None
     assert _payload(event)["effective_price"] == "975.00"

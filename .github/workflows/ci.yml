@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+
+    services:
+      mariadb:
+        image: mariadb:11.4
+        env:
+          MYSQL_DATABASE: cashback
+          MYSQL_USER: cashback
+          MYSQL_PASSWORD: cashback
+          MYSQL_ROOT_PASSWORD: root
+        ports:
+          - 3306:3306
+        options: >-
+          --health-cmd="healthcheck.sh --connect --innodb_initialized"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install backend dependencies
+        working-directory: price-monitor/backend
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Run tests
+        working-directory: price-monitor/backend
+        run: python -m pytest -q
+
+      - name: Run Ruff lint
+        working-directory: price-monitor/backend
+        run: python -m ruff check .
+
+      - name: Check Ruff formatting
+        working-directory: price-monitor/backend
+        run: python -m ruff format --check .
+
+      - name: Run Alembic migrations
+        working-directory: price-monitor/backend
+        env:
+          DATABASE_URL: mysql+pymysql://cashback:cashback@127.0.0.1:3306/cashback
+        run: alembic upgrade head
+
+      - name: Validate Docker Compose config
+        working-directory: price-monitor
+        run: docker compose config

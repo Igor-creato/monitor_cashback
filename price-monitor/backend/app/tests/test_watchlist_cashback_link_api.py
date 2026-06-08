@@ -247,9 +247,7 @@ def test_no_partner_returns_422(
     )
 
     assert response.status_code == 422
-    assert response.json() == {
-        "detail": "Cashback is unavailable for this product"
-    }
+    assert response.json() == {"detail": "Cashback is unavailable for this product"}
 
 
 def test_cashback_api_error_returns_503(

@@ -90,8 +90,7 @@ def _notification_counts(session: Session) -> list[tuple[str, str, int]]:
         .order_by(NotificationEvent.status.asc(), NotificationEvent.event_type.asc())
     )
     return [
-        (str(status), str(event_type), int(count))
-        for status, event_type, count in rows
+        (str(status), str(event_type), int(count)) for status, event_type, count in rows
     ]
 
 
@@ -109,8 +108,7 @@ def _source_event_counts(session: Session) -> list[tuple[str, str, int]]:
         )
     )
     return [
-        (str(source), str(event_type), int(count))
-        for source, event_type, count in rows
+        (str(source), str(event_type), int(count)) for source, event_type, count in rows
     ]
 
 

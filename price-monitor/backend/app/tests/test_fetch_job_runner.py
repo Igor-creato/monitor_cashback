@@ -211,6 +211,7 @@ def test_successful_job_calls_cashback_resolver(
     assert calls[0]["region_code"] == "default"
     assert calls[0]["session"].get(TrackedProduct, 1) is not None
 
+
 def test_successful_job_evaluates_price_alerts(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -235,6 +236,7 @@ def test_successful_job_evaluates_price_alerts(
     run_http_fetch_job(1, FakeFetcher(_successful_result()))
 
     assert calls == [1]
+
 
 def test_cashback_api_error_does_not_fail_successful_fetch_job(
     db_session: Session,
@@ -268,6 +270,7 @@ def test_cashback_api_error_does_not_fail_successful_fetch_job(
     assert job.status == "done"
     assert product.last_status == "ok"
     assert _price_history_count(db_session) == 1
+
 
 def test_successful_job_persists_no_partner_cashback_snapshot(
     db_session: Session,
@@ -303,6 +306,7 @@ def test_successful_job_persists_no_partner_cashback_snapshot(
     assert snapshot.cashback_status == "no_partner"
     assert snapshot.confidence == "none"
     assert snapshot.display_policy == "cashback_unavailable"
+
 
 def test_successful_job_persists_partner_estimated_cashback_snapshot(
     db_session: Session,
@@ -347,6 +351,7 @@ def test_successful_job_persists_partner_estimated_cashback_snapshot(
     assert snapshot.expected_cashback_max == Decimal("90.00")
     assert snapshot.effective_price_conservative == Decimal("1462.40")
     assert snapshot.display_policy == "show_range_use_min_for_effective_price"
+
 
 def test_fetch_error_marks_job_failed(db_session: Session) -> None:
     _tracked_product(db_session)
@@ -405,6 +410,7 @@ def test_price_not_found_does_not_call_cashback_resolver(
     assert calls == []
     assert job.status == "failed"
 
+
 def test_price_not_found_does_not_evaluate_price_alerts(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -433,6 +439,7 @@ def test_price_not_found_does_not_evaluate_price_alerts(
     db_session.refresh(job)
     assert calls == []
     assert job.status == "failed"
+
 
 def test_done_job_is_not_fetched_twice(db_session: Session) -> None:
     _tracked_product(db_session)

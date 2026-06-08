@@ -132,12 +132,8 @@ def _cashback(
         merchant_name="Merchant",
         network="admitad",
         offer_id="offer-1",
-        user_cashback_exact_rate=Decimal("3.5")
-        if status == "partner_exact"
-        else None,
-        expected_cashback_exact=Decimal("35.00")
-        if status == "partner_exact"
-        else None,
+        user_cashback_exact_rate=Decimal("3.5") if status == "partner_exact" else None,
+        expected_cashback_exact=Decimal("35.00") if status == "partner_exact" else None,
         effective_price=Decimal("965.00") if status == "partner_exact" else None,
         confidence="exact" if status == "partner_exact" else "medium",
         display_policy="show_exact_rate"
@@ -320,9 +316,10 @@ def test_admin_products_list_returns_cashback_status(
     response = client.get("/admin/products", headers=_admin_headers())
 
     assert response.status_code == 200
-    assert [
-        item["cashback_status"] for item in response.json()["items"]
-    ] == ["partner_exact", "unknown"]
+    assert [item["cashback_status"] for item in response.json()["items"]] == [
+        "partner_exact",
+        "unknown",
+    ]
     assert response.json()["items"][0]["tracked_product_id"] == 1
     assert response.json()["items"][0]["last_price"] == "1000.00"
 

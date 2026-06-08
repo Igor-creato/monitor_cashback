@@ -314,6 +314,7 @@ class SourceConfig(Base):
         onupdate=func.now(),
     )
 
+
 class SourceHealthEvent(Base):
     __tablename__ = "source_health_events"
 
@@ -335,6 +336,7 @@ class SourceHealthEvent(Base):
             value,
             SOURCE_HEALTH_EVENT_TYPE_VALUES,
         )
+
 
 class ProxyPool(Base):
     __tablename__ = "proxy_pools"
@@ -367,6 +369,7 @@ class ProxyPool(Base):
         back_populates="pool",
         cascade="all, delete-orphan",
     )
+
 
 class ProxyEndpoint(Base):
     __tablename__ = "proxy_endpoints"
@@ -417,6 +420,7 @@ class ProxyEndpoint(Base):
         cascade="all, delete-orphan",
     )
 
+
 class ProxyLease(Base):
     __tablename__ = "proxy_leases"
     __table_args__ = (
@@ -462,6 +466,7 @@ class ProxyLease(Base):
     def validate_status(self, _: str, value: str) -> str:
         return _validate_choice("status", value, PROXY_LEASE_STATUS_VALUES)
 
+
 class ProxyHealthEvent(Base):
     __tablename__ = "proxy_health_events"
 
@@ -495,6 +500,7 @@ class ProxyHealthEvent(Base):
     @validates("status")
     def validate_status(self, _: str, value: str) -> str:
         return _validate_choice("status", value, PROXY_HEALTH_STATUS_VALUES)
+
 
 class UserProductSubscription(Base):
     __tablename__ = "user_product_subscriptions"

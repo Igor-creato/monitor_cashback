@@ -160,17 +160,14 @@ def test_metrics_endpoint_returns_prometheus_text(
         status="pending",
         event_type="target_price_reached",
     )
-    db_session.add(
-        SourceHealthEvent(source_code="testshop", event_type="success")
-    )
+    db_session.add(SourceHealthEvent(source_code="testshop", event_type="success"))
     db_session.commit()
 
     response = client.get("/metrics")
 
     assert response.status_code == 200
     assert (
-        response.headers["content-type"]
-        == "text/plain; version=0.0.4; charset=utf-8"
+        response.headers["content-type"] == "text/plain; version=0.0.4; charset=utf-8"
     )
     body = response.text
     assert "price_monitor_products_total " in body

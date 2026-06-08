@@ -21,9 +21,7 @@ class HTTPPriceFetcher:
         timeout: float = 5.0,
     ) -> None:
         self._client = client or httpx.Client(transport=transport, timeout=timeout)
-        self._time_provider = time_provider or (
-            lambda: datetime.now(UTC)
-        )
+        self._time_provider = time_provider or (lambda: datetime.now(UTC))
 
     def fetch(self, url: str) -> PriceFetchResult:
         try:

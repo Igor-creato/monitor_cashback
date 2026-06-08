@@ -140,9 +140,7 @@ def test_partner_exact_creates_deeplink(db_session: Session) -> None:
     _tracked_product(db_session)
     _subscription(db_session)
     _cashback_snapshot(db_session, cashback_status="partner_exact")
-    client = FakeCashbackClient(
-        {"cashback_url": "https://go.example/exact-click"}
-    )
+    client = FakeCashbackClient({"cashback_url": "https://go.example/exact-click"})
 
     result = create_cashback_deeplink(1, 10, session=db_session, client=client)
 
@@ -157,9 +155,7 @@ def test_partner_estimated_creates_deeplink(db_session: Session) -> None:
     _tracked_product(db_session)
     _subscription(db_session)
     _cashback_snapshot(db_session, cashback_status="partner_estimated")
-    client = FakeCashbackClient(
-        {"cashback_url": "https://go.example/estimated-click"}
-    )
+    client = FakeCashbackClient({"cashback_url": "https://go.example/estimated-click"})
 
     result = create_cashback_deeplink(1, 10, session=db_session, client=client)
 

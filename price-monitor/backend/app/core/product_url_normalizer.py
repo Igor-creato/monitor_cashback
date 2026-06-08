@@ -41,9 +41,7 @@ def normalize_product_url(url: str) -> NormalizedProductUrl:
     external_product_id = path_parts[1]
     query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
     canonical_query_pairs = [
-        (key, value)
-        for key, value in query_pairs
-        if not _is_tracking_query_key(key)
+        (key, value) for key, value in query_pairs if not _is_tracking_query_key(key)
     ]
     canonical_query = urlencode(canonical_query_pairs)
     canonical_url = urlunsplit(

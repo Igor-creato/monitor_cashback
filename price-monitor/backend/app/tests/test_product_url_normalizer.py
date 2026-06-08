@@ -23,8 +23,7 @@ def test_removes_ref_parameter_from_canonical_url() -> None:
     )
 
     assert (
-        result.canonical_url
-        == "https://example-market.local/item/abc-777?region=msk"
+        result.canonical_url == "https://example-market.local/item/abc-777?region=msk"
     )
 
 

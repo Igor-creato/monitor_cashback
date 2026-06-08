@@ -187,9 +187,7 @@ def test_http_429_moves_proxy_to_cooldown(db_session: Session) -> None:
 
     db_session.refresh(endpoint)
     assert endpoint.current_concurrency == 0
-    assert endpoint.cooldown_until == (now + timedelta(minutes=15)).replace(
-        tzinfo=None
-    )
+    assert endpoint.cooldown_until == (now + timedelta(minutes=15)).replace(tzinfo=None)
 
     cooldown_lease = lease_proxy(
         "testshop",

@@ -69,8 +69,10 @@ class WatchlistItemCashbackResponse(BaseModel):
     display_policy: str
     message: str | None = None
 
+
 class WatchlistItemWithCashbackResponse(WatchlistItemResponse):
     cashback: WatchlistItemCashbackResponse
+
 
 class WatchlistItemsResponse(BaseModel):
     items: list[WatchlistItemWithCashbackResponse]

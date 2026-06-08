@@ -112,8 +112,7 @@ def test_user_share_is_applied_to_cashback_calculation() -> None:
 
 def test_display_policy_is_determined_from_available_rates() -> None:
     assert (
-        determine_display_policy("10", None, None, "partner_exact")
-        == "show_exact_rate"
+        determine_display_policy("10", None, None, "partner_exact") == "show_exact_rate"
     )
     assert (
         determine_display_policy(None, "5", "12", "partner_estimated")

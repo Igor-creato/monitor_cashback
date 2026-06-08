@@ -97,9 +97,7 @@ def patch_admin_source(
         "max_failures_before_quarantine" in fields_set
         and patch.max_failures_before_quarantine is not None
     ):
-        source.max_failures_before_quarantine = (
-            patch.max_failures_before_quarantine
-        )
+        source.max_failures_before_quarantine = patch.max_failures_before_quarantine
     if (
         "browser_fallback_enabled" in fields_set
         and patch.browser_fallback_enabled is not None

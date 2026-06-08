@@ -109,9 +109,7 @@ def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
 
 
 def test_proxy_foreign_keys_point_to_parent_tables() -> None:
-    assert ("pool_id", "proxy_pools", "id") in _foreign_key_targets(
-        "proxy_endpoints"
-    )
+    assert ("pool_id", "proxy_pools", "id") in _foreign_key_targets("proxy_endpoints")
     assert ("endpoint_id", "proxy_endpoints", "id") in _foreign_key_targets(
         "proxy_leases"
     )
@@ -214,6 +212,7 @@ def test_monitoring_defaults_are_applied_on_flush() -> None:
         assert subscription.updated_at is not None
         assert fetch_job.created_at is not None
         assert notification_event.created_at is not None
+
 
 def test_notification_event_enum_values_are_validated_by_application() -> None:
     event = NotificationEvent(
