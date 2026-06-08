@@ -2,6 +2,7 @@ import hashlib
 import hmac
 import json
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from decimal import Decimal
 
 import pytest
@@ -329,6 +330,15 @@ def test_get_returns_only_current_users_active_subscriptions(
     assert response.json()["items"] == [
         {
             **_response_item_without_result(active_response.json()),
+            "title": "Товар",
+            "image_url": None,
+            "source_display_name": None,
+            "canonical_url": "https://testshop.local/product/123",
+            "last_price": None,
+            "last_old_price": None,
+            "currency": None,
+            "availability": True,
+            "last_checked_at": None,
             "cashback": {
                 "cashback_status": "unknown",
                 "cashback_available": False,
@@ -522,6 +532,54 @@ def test_get_without_cashback_snapshot_returns_unknown(client: TestClient) -> No
         "display_policy": "cashback_unknown_requires_check",
         "message": None,
     }
+
+
+def test_get_returns_product_card_fields(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        config.settings,
+        "product_image_public_base_url",
+        "https://cdn.example.com/images",
+        raising=False,
+    )
+    post_response = _post_watchlist_item(client, _post_payload())
+    product = db_session.get(TrackedProduct, post_response.json()["tracked_product_id"])
+    assert product is not None
+    product.product_name = "  Palit Видеокарта GeForce RTX 5070  "
+    product.image_url = "https://saved.example/products/123.jpg"
+    product.image_object_key = "products/123.jpg"
+    product.source_display_name = "Ozon"
+    product.last_price = Decimal("809.70")
+    product.last_old_price = Decimal("999.99")
+    product.currency = "USD"
+    product.last_availability = True
+    product.last_checked_at = datetime(2026, 6, 8, 10, 0, tzinfo=UTC)
+    db_session.commit()
+
+    response = _get_watchlist_items(client)
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["tracked_product_id"] == post_response.json()["tracked_product_id"]
+    assert item["subscription_id"] == post_response.json()["subscription_id"]
+    assert item["title"] == "Palit Видеокарта GeForce RTX 5070"
+    assert item["image_url"] == "https://cdn.example.com/images/products/123.jpg"
+    assert item["source"] == "testshop"
+    assert item["source_display_name"] == "Ozon"
+    assert item["canonical_url"] == "https://testshop.local/product/123"
+    assert item["last_price"] == "809.70"
+    assert item["last_old_price"] == "999.99"
+    assert item["currency"] == "USD"
+    assert item["availability"] is True
+    assert item["last_checked_at"] == "2026-06-08T10:00:00"
+    assert item["product_url"] == "https://testshop.local/product/123"
+    assert item["external_product_id"] == "123"
+    assert item["region_code"] == "default"
+    assert item["target_price"] == "5000.00"
+    assert item["is_active"] is True
 
 
 def test_get_no_partner_snapshot_returns_cashback_unavailable(

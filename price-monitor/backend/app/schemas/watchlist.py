@@ -1,7 +1,10 @@
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
+
+from app.schemas.product_cards import ProductCardCashbackResponse
 
 
 class WatchlistItemCreate(BaseModel):
@@ -71,7 +74,16 @@ class WatchlistItemCashbackResponse(BaseModel):
 
 
 class WatchlistItemWithCashbackResponse(WatchlistItemResponse):
-    cashback: WatchlistItemCashbackResponse
+    title: str
+    image_url: str | None = None
+    source_display_name: str | None = None
+    canonical_url: str
+    last_price: str | None = None
+    last_old_price: str | None = None
+    currency: str | None = None
+    availability: bool
+    last_checked_at: datetime | None = None
+    cashback: ProductCardCashbackResponse
 
 
 class WatchlistItemsResponse(BaseModel):

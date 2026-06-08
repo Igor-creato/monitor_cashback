@@ -15,6 +15,7 @@ class Settings(BaseSettings):
     price_monitor_incoming_site_id: str = ""
     price_monitor_incoming_secret: SecretStr = SecretStr("")
     admin_api_key: SecretStr = SecretStr("")
+    product_image_public_base_url: str = ""
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
