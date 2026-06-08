@@ -9,10 +9,17 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from app.clients.cashback_api import CashbackAPIUnavailableError
 from app.db import Base
 from app.fetchers.base import FetchError, PriceFetchResult
-from app.models.monitoring import FetchJob, PriceHistory, TrackedProduct
+from app.models.monitoring import (
+    FetchJob,
+    PriceHistory,
+    TrackedProduct,
+    TrackedProductCashback,
+)
 from app.services.fetch_job_runner import run_http_fetch_job
+from app.services.product_cashback import upsert_product_cashback_snapshot
 
 FETCHED_AT = datetime(2026, 6, 7, 12, 30, tzinfo=UTC)
 
@@ -42,6 +49,12 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
     import app.services.fetch_job_runner as runner
 
     monkeypatch.setattr(runner, "SessionLocal", session_factory)
+    monkeypatch.setattr(
+        runner,
+        "resolve_and_store_product_cashback",
+        lambda *args, **kwargs: None,
+        raising=False,
+    )
 
     with Session(engine) as session:
         yield session
@@ -154,6 +167,156 @@ def test_successful_job_marks_job_done(db_session: Session) -> None:
     assert job.error_text is None
 
 
+def test_successful_job_calls_cashback_resolver(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+    calls = []
+
+    def fake_resolver(tracked_product_id, *, price, currency, region_code, session):
+        calls.append(
+            {
+                "tracked_product_id": tracked_product_id,
+                "price": price,
+                "currency": currency,
+                "region_code": region_code,
+                "session": session,
+            }
+        )
+        return None
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_and_store_product_cashback",
+        fake_resolver,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+
+    assert len(calls) == 1
+    assert calls[0]["tracked_product_id"] == 1
+    assert calls[0]["price"] == Decimal("1499.90")
+    assert calls[0]["currency"] == "RUB"
+    assert calls[0]["region_code"] == "default"
+    assert calls[0]["session"].get(TrackedProduct, 1) is not None
+
+def test_cashback_api_error_does_not_fail_successful_fetch_job(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+    fetcher = FakeFetcher(_successful_result())
+
+    def failing_resolver(*args, **kwargs):
+        raise CashbackAPIUnavailableError("Cashback API is unavailable.")
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_and_store_product_cashback",
+        failing_resolver,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, fetcher)
+
+    job = db_session.get(FetchJob, 1)
+    product = db_session.get(TrackedProduct, 1)
+    assert job is not None
+    assert product is not None
+    db_session.refresh(job)
+    db_session.refresh(product)
+    assert fetcher.urls == ["https://testshop.local/product/1"]
+    assert job.status == "done"
+    assert product.last_status == "ok"
+    assert _price_history_count(db_session) == 1
+
+def test_successful_job_persists_no_partner_cashback_snapshot(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+
+    def no_partner_resolver(tracked_product_id, *, session, **kwargs):
+        return upsert_product_cashback_snapshot(
+            tracked_product_id,
+            {
+                "cashback_status": "no_partner",
+                "confidence": "none",
+                "display_policy": "cashback_unavailable",
+            },
+            session=session,
+        )
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_and_store_product_cashback",
+        no_partner_resolver,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+
+    snapshot = db_session.scalar(select(TrackedProductCashback))
+    assert snapshot is not None
+    assert snapshot.cashback_status == "no_partner"
+    assert snapshot.confidence == "none"
+    assert snapshot.display_policy == "cashback_unavailable"
+
+def test_successful_job_persists_partner_estimated_cashback_snapshot(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+
+    def partner_estimated_resolver(tracked_product_id, *, session, **kwargs):
+        return upsert_product_cashback_snapshot(
+            tracked_product_id,
+            {
+                "cashback_status": "partner_estimated",
+                "commission_rate_type": "percent",
+                "commission_min": "5",
+                "commission_max": "12",
+                "user_share": "0.5",
+                "expected_cashback_min": "37.50",
+                "expected_cashback_max": "90.00",
+                "effective_price_conservative": "1462.40",
+                "confidence": "medium",
+                "display_policy": "show_range_use_min_for_effective_price",
+            },
+            session=session,
+        )
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_and_store_product_cashback",
+        partner_estimated_resolver,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+
+    snapshot = db_session.scalar(select(TrackedProductCashback))
+    assert snapshot is not None
+    assert snapshot.cashback_status == "partner_estimated"
+    assert snapshot.expected_cashback_min == Decimal("37.50")
+    assert snapshot.expected_cashback_max == Decimal("90.00")
+    assert snapshot.effective_price_conservative == Decimal("1462.40")
+    assert snapshot.display_policy == "show_range_use_min_for_effective_price"
+
 def test_fetch_error_marks_job_failed(db_session: Session) -> None:
     _tracked_product(db_session)
     _fetch_job(db_session)
@@ -181,6 +344,35 @@ def test_fetch_error_increments_product_fail_count(db_session: Session) -> None:
     assert product.fail_count == 3
     assert product.last_status == "http_429"
 
+
+def test_price_not_found_does_not_call_cashback_resolver(
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+    calls = []
+
+    def fake_resolver(*args, **kwargs):
+        calls.append((args, kwargs))
+        return None
+
+    import app.services.fetch_job_runner as runner
+
+    monkeypatch.setattr(
+        runner,
+        "resolve_and_store_product_cashback",
+        fake_resolver,
+        raising=False,
+    )
+
+    run_http_fetch_job(1, FakeFetcher(FetchError("price_not_found", "missing price")))
+
+    job = db_session.get(FetchJob, 1)
+    assert job is not None
+    db_session.refresh(job)
+    assert calls == []
+    assert job.status == "failed"
 
 def test_done_job_is_not_fetched_twice(db_session: Session) -> None:
     _tracked_product(db_session)

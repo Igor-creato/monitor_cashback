@@ -1,10 +1,15 @@
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime
 
+from app.clients.cashback_api import CashbackAPIError
 from app.db import SessionLocal
 from app.fetchers.base import FetchError, PriceFetchResult
 from app.models.monitoring import FetchJob, PriceHistory
+from app.services.product_cashback import resolve_and_store_product_cashback
+
+logger = logging.getLogger(__name__)
 
 
 def run_http_fetch_job(job_id, fetcher):
@@ -36,6 +41,23 @@ def run_http_fetch_job(job_id, fetcher):
 
         _apply_success(job, result)
         session.add(_price_history(job.tracked_product_id, result))
+        try:
+            resolve_and_store_product_cashback(
+                job.tracked_product_id,
+                price=result.price_current,
+                currency=result.currency,
+                region_code=tracked_product.region_code,
+                session=session,
+            )
+        except CashbackAPIError:
+            logger.warning(
+                "cashback_resolution_after_fetch_failed",
+                extra={
+                    "job_id": job.id,
+                    "tracked_product_id": job.tracked_product_id,
+                },
+                exc_info=True,
+            )
         session.commit()
         return None
 
