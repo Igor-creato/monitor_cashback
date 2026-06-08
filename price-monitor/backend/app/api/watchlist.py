@@ -2,18 +2,26 @@ from decimal import Decimal
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session
+from sqlalchemy import select
+from sqlalchemy.orm import Session, joinedload
 
 from app.core.incoming_hmac import verify_incoming_hmac_request
 from app.db import get_db
-from app.models.monitoring import UserProductSubscription
+from app.models.monitoring import TrackedProduct, UserProductSubscription
 from app.schemas.watchlist import (
+    WatchlistCashbackLinkRequest,
+    WatchlistCashbackLinkResponse,
     WatchlistItemCashbackResponse,
     WatchlistItemCreate,
     WatchlistItemPatch,
     WatchlistItemResponse,
     WatchlistItemsResponse,
     WatchlistItemWithCashbackResponse,
+)
+from app.services.deeplink import (
+    DeeplinkCreationError,
+    DeeplinkUnavailable,
+    create_cashback_deeplink,
 )
 from app.services.watchlist import (
     UnsupportedWatchlistSourceError,
@@ -71,6 +79,61 @@ def get_watchlist_items(
             for subscription in subscriptions
         ],
         limit=limit,
+    )
+
+
+@router.post(
+    "/items/{subscription_id}/cashback-link",
+    response_model=WatchlistCashbackLinkResponse,
+)
+def create_watchlist_cashback_link(
+    subscription_id: int,
+    link_request: WatchlistCashbackLinkRequest,
+    request: Request,
+    session: DbSession,
+) -> WatchlistCashbackLinkResponse:
+    _verify_site_matches_request(request, link_request.site_id)
+    subscription = session.scalar(
+        select(UserProductSubscription)
+        .options(
+            joinedload(UserProductSubscription.tracked_product).joinedload(
+                TrackedProduct.cashback
+            )
+        )
+        .where(
+            UserProductSubscription.id == subscription_id,
+            UserProductSubscription.site_id == link_request.site_id,
+            UserProductSubscription.external_user_id
+            == link_request.external_user_id,
+            UserProductSubscription.is_active.is_(True),
+        )
+    )
+    if subscription is None:
+        raise HTTPException(status_code=404, detail="Watchlist item not found.")
+
+    try:
+        cashback_url = create_cashback_deeplink(
+            subscription.tracked_product_id,
+            subscription.id,
+            session=session,
+        )
+    except DeeplinkCreationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail="Cashback API is unavailable.",
+        ) from exc
+
+    if isinstance(cashback_url, DeeplinkUnavailable):
+        raise HTTPException(
+            status_code=422,
+            detail="Cashback is unavailable for this product",
+        )
+
+    snapshot = subscription.tracked_product.cashback
+    return WatchlistCashbackLinkResponse(
+        cashback_url=cashback_url,
+        link_type="deeplink",
+        cashback_status=snapshot.cashback_status if snapshot else "unknown",
     )
 
 

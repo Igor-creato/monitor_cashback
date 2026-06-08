@@ -20,6 +20,17 @@ class WatchlistItemPatch(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
 
+class WatchlistCashbackLinkRequest(BaseModel):
+    site_id: str
+    external_user_id: str
+
+
+class WatchlistCashbackLinkResponse(BaseModel):
+    cashback_url: str
+    link_type: str
+    cashback_status: str
+
+
 class WatchlistItemResponse(BaseModel):
     subscription_id: int
     tracked_product_id: int
