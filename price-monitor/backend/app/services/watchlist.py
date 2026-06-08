@@ -156,5 +156,7 @@ def _get_subscription(
 
 def _subscription_query() -> Select[tuple[UserProductSubscription]]:
     return select(UserProductSubscription).options(
-        joinedload(UserProductSubscription.tracked_product)
+        joinedload(UserProductSubscription.tracked_product).joinedload(
+            TrackedProduct.cashback
+        )
     )

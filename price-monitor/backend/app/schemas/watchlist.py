@@ -34,6 +34,28 @@ class WatchlistItemResponse(BaseModel):
     is_active: bool
 
 
+class WatchlistItemCashbackResponse(BaseModel):
+    cashback_status: str
+    cashback_available: bool
+    merchant_id: str | None = None
+    merchant_name: str | None = None
+    network: str | None = None
+    offer_id: str | None = None
+    user_cashback_exact_rate: str | None = None
+    user_cashback_min_rate: str | None = None
+    user_cashback_max_rate: str | None = None
+    expected_cashback_exact: str | None = None
+    expected_cashback_min: str | None = None
+    expected_cashback_max: str | None = None
+    effective_price: str | None = None
+    effective_price_conservative: str | None = None
+    confidence: str | None = None
+    display_policy: str
+    message: str | None = None
+
+class WatchlistItemWithCashbackResponse(WatchlistItemResponse):
+    cashback: WatchlistItemCashbackResponse
+
 class WatchlistItemsResponse(BaseModel):
-    items: list[WatchlistItemResponse]
+    items: list[WatchlistItemWithCashbackResponse]
     limit: int = Field(ge=1, le=100)

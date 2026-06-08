@@ -12,11 +12,13 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 import app.db as db
+from app.clients import cashback_api
 from app.core import config, incoming_hmac
 from app.main import app
 from app.models.monitoring import (
     FetchJob,
     TrackedProduct,
+    TrackedProductCashback,
     UserProductSubscription,
 )
 
@@ -101,6 +103,35 @@ def _post_watchlist_item(client: TestClient, payload: dict) -> object:
         content=body,
         headers=_headers(body, site_id=payload["site_id"]),
     )
+
+
+def _get_watchlist_items(
+    client: TestClient,
+    *,
+    external_user_id: str = "wp:savelloclub.ru:123",
+) -> object:
+    return client.get(
+        f"/v1/watchlist/items?site_id={SITE_ID}&external_user_id={external_user_id}",
+        headers=_headers(),
+    )
+
+
+def _snapshot(
+    db_session: Session,
+    tracked_product_id: int,
+    **overrides,
+) -> TrackedProductCashback:
+    values = {
+        "tracked_product_id": tracked_product_id,
+        "cashback_status": "partner_exact",
+        "confidence": "exact",
+        "display_policy": "show_exact_rate",
+    }
+    values.update(overrides)
+    snapshot = TrackedProductCashback(**values)
+    db_session.add(snapshot)
+    db_session.commit()
+    return snapshot
 
 
 def test_watchlist_post_without_hmac_is_rejected(client: TestClient) -> None:
@@ -220,7 +251,239 @@ def test_get_returns_only_current_users_active_subscriptions(
     assert patch_response.status_code == 200
     assert response.status_code == 200
     assert response.json()["limit"] == 50
-    assert response.json()["items"] == [active_response.json()]
+    assert response.json()["items"] == [
+        {
+            **active_response.json(),
+            "cashback": {
+                "cashback_status": "unknown",
+                "cashback_available": False,
+                "merchant_id": None,
+                "merchant_name": None,
+                "network": None,
+                "offer_id": None,
+                "user_cashback_exact_rate": None,
+                "user_cashback_min_rate": None,
+                "user_cashback_max_rate": None,
+                "expected_cashback_exact": None,
+                "expected_cashback_min": None,
+                "expected_cashback_max": None,
+                "effective_price": None,
+                "effective_price_conservative": None,
+                "confidence": None,
+                "display_policy": "cashback_unknown_requires_check",
+                "message": None,
+            },
+        }
+    ]
+
+
+def test_get_without_cashback_snapshot_returns_unknown(client: TestClient) -> None:
+    post_response = _post_watchlist_item(client, _post_payload())
+
+    response = _get_watchlist_items(client)
+
+    assert post_response.status_code == 200
+    assert response.status_code == 200
+    assert response.json()["items"][0]["cashback"] == {
+        "cashback_status": "unknown",
+        "cashback_available": False,
+        "merchant_id": None,
+        "merchant_name": None,
+        "network": None,
+        "offer_id": None,
+        "user_cashback_exact_rate": None,
+        "user_cashback_min_rate": None,
+        "user_cashback_max_rate": None,
+        "expected_cashback_exact": None,
+        "expected_cashback_min": None,
+        "expected_cashback_max": None,
+        "effective_price": None,
+        "effective_price_conservative": None,
+        "confidence": None,
+        "display_policy": "cashback_unknown_requires_check",
+        "message": None,
+    }
+
+
+def test_get_no_partner_snapshot_returns_cashback_unavailable(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    post_response = _post_watchlist_item(client, _post_payload())
+    tracked_product_id = post_response.json()["tracked_product_id"]
+    _snapshot(
+        db_session,
+        tracked_product_id,
+        cashback_status="no_partner",
+        confidence="none",
+        display_policy="cashback_unavailable",
+        message="Партнёр не найден",
+    )
+
+    response = _get_watchlist_items(client)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["cashback"] == {
+        "cashback_status": "no_partner",
+        "cashback_available": False,
+        "merchant_id": None,
+        "merchant_name": None,
+        "network": None,
+        "offer_id": None,
+        "user_cashback_exact_rate": None,
+        "user_cashback_min_rate": None,
+        "user_cashback_max_rate": None,
+        "expected_cashback_exact": None,
+        "expected_cashback_min": None,
+        "expected_cashback_max": None,
+        "effective_price": None,
+        "effective_price_conservative": None,
+        "confidence": "none",
+        "display_policy": "cashback_unavailable",
+        "message": "Партнёр не найден",
+    }
+
+
+def test_get_partner_exact_snapshot_returns_exact_fields(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    post_response = _post_watchlist_item(client, _post_payload())
+    tracked_product_id = post_response.json()["tracked_product_id"]
+    _snapshot(
+        db_session,
+        tracked_product_id,
+        cashback_status="partner_exact",
+        merchant_id="ali_001",
+        merchant_name="AliExpress",
+        network="admitad",
+        offer_id="29562",
+        user_cashback_exact_rate=Decimal("3.5"),
+        expected_cashback_exact=Decimal("350.00"),
+        effective_price=Decimal("9650.00"),
+        confidence="exact",
+        display_policy="show_exact_rate",
+        message="Точная ставка",
+    )
+
+    response = _get_watchlist_items(client)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["cashback"] == {
+        "cashback_status": "partner_exact",
+        "cashback_available": True,
+        "merchant_id": "ali_001",
+        "merchant_name": "AliExpress",
+        "network": "admitad",
+        "offer_id": "29562",
+        "user_cashback_exact_rate": "3.5",
+        "user_cashback_min_rate": None,
+        "user_cashback_max_rate": None,
+        "expected_cashback_exact": "350.00",
+        "expected_cashback_min": None,
+        "expected_cashback_max": None,
+        "effective_price": "9650.00",
+        "effective_price_conservative": None,
+        "confidence": "exact",
+        "display_policy": "show_exact_rate",
+        "message": "Точная ставка",
+    }
+
+
+def test_get_partner_estimated_snapshot_returns_range_fields(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    post_response = _post_watchlist_item(client, _post_payload())
+    tracked_product_id = post_response.json()["tracked_product_id"]
+    _snapshot(
+        db_session,
+        tracked_product_id,
+        cashback_status="partner_estimated",
+        merchant_id="ali_001",
+        merchant_name="AliExpress",
+        network="admitad",
+        offer_id="29562",
+        user_cashback_min_rate=Decimal("0.2660"),
+        user_cashback_max_rate=Decimal("4.8440"),
+        expected_cashback_min=Decimal("26.60"),
+        expected_cashback_max=Decimal("484.40"),
+        effective_price_conservative=Decimal("9973.40"),
+        confidence="medium",
+        display_policy="show_range_use_min_for_effective_price",
+        message="Точная ставка зависит от категории товара",
+    )
+
+    response = _get_watchlist_items(client)
+
+    assert response.status_code == 200
+    assert response.json()["items"][0]["cashback"] == {
+        "cashback_status": "partner_estimated",
+        "cashback_available": True,
+        "merchant_id": "ali_001",
+        "merchant_name": "AliExpress",
+        "network": "admitad",
+        "offer_id": "29562",
+        "user_cashback_exact_rate": None,
+        "user_cashback_min_rate": "0.266",
+        "user_cashback_max_rate": "4.844",
+        "expected_cashback_exact": None,
+        "expected_cashback_min": "26.60",
+        "expected_cashback_max": "484.40",
+        "effective_price": None,
+        "effective_price_conservative": "9973.40",
+        "confidence": "medium",
+        "display_policy": "show_range_use_min_for_effective_price",
+        "message": "Точная ставка зависит от категории товара",
+    }
+
+
+def test_get_does_not_call_cashback_api_client(
+    client: TestClient,
+    monkeypatch,
+) -> None:
+    _post_watchlist_item(client, _post_payload())
+
+    def fail_init(*args, **kwargs):
+        raise AssertionError("GET must not instantiate CashbackAPIClient.")
+
+    monkeypatch.setattr(cashback_api.CashbackAPIClient, "__init__", fail_init)
+
+    response = _get_watchlist_items(client)
+
+    assert response.status_code == 200
+
+
+def test_get_does_not_return_other_users_cashback_snapshot(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123"),
+    )
+    other_response = _post_watchlist_item(
+        client,
+        _post_payload(
+            external_user_id="wp:savelloclub.ru:456",
+            product_url="https://demo-store.local/goods/sku-42",
+        ),
+    )
+    _snapshot(
+        db_session,
+        other_response.json()["tracked_product_id"],
+        cashback_status="partner_exact",
+        merchant_id="other_merchant",
+        confidence="exact",
+        display_policy="show_exact_rate",
+    )
+
+    response = _get_watchlist_items(client)
+
+    assert response.status_code == 200
+    assert len(response.json()["items"]) == 1
+    assert response.json()["items"][0]["tracked_product_id"] == 1
+    assert response.json()["items"][0]["cashback"]["merchant_id"] is None
 
 
 def test_patch_changes_only_allowed_fields(

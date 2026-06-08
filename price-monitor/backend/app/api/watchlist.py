@@ -8,10 +8,12 @@ from app.core.incoming_hmac import verify_incoming_hmac_request
 from app.db import get_db
 from app.models.monitoring import UserProductSubscription
 from app.schemas.watchlist import (
+    WatchlistItemCashbackResponse,
     WatchlistItemCreate,
     WatchlistItemPatch,
     WatchlistItemResponse,
     WatchlistItemsResponse,
+    WatchlistItemWithCashbackResponse,
 )
 from app.services.watchlist import (
     UnsupportedWatchlistSourceError,
@@ -64,7 +66,10 @@ def get_watchlist_items(
         limit=limit,
     )
     return WatchlistItemsResponse(
-        items=[_serialize_subscription(subscription) for subscription in subscriptions],
+        items=[
+            _serialize_subscription_with_cashback(subscription)
+            for subscription in subscriptions
+        ],
         limit=limit,
     )
 
@@ -137,7 +142,55 @@ def _serialize_subscription(
     )
 
 
+def _serialize_subscription_with_cashback(
+    subscription: UserProductSubscription,
+) -> WatchlistItemWithCashbackResponse:
+    base_item = _serialize_subscription(subscription)
+    return WatchlistItemWithCashbackResponse(
+        **base_item.model_dump(),
+        cashback=_serialize_cashback(subscription),
+    )
+
+def _serialize_cashback(
+    subscription: UserProductSubscription,
+) -> WatchlistItemCashbackResponse:
+    snapshot = subscription.tracked_product.cashback
+    if snapshot is None:
+        return WatchlistItemCashbackResponse(
+            cashback_status="unknown",
+            cashback_available=False,
+            display_policy="cashback_unknown_requires_check",
+        )
+
+    return WatchlistItemCashbackResponse(
+        cashback_status=snapshot.cashback_status,
+        cashback_available=snapshot.cashback_status
+        not in {"no_partner", "partner_unknown_product"},
+        merchant_id=snapshot.merchant_id,
+        merchant_name=snapshot.merchant_name,
+        network=snapshot.network,
+        offer_id=snapshot.offer_id,
+        user_cashback_exact_rate=_format_rate(snapshot.user_cashback_exact_rate),
+        user_cashback_min_rate=_format_rate(snapshot.user_cashback_min_rate),
+        user_cashback_max_rate=_format_rate(snapshot.user_cashback_max_rate),
+        expected_cashback_exact=_format_money(snapshot.expected_cashback_exact),
+        expected_cashback_min=_format_money(snapshot.expected_cashback_min),
+        expected_cashback_max=_format_money(snapshot.expected_cashback_max),
+        effective_price=_format_money(snapshot.effective_price),
+        effective_price_conservative=_format_money(
+            snapshot.effective_price_conservative
+        ),
+        confidence=snapshot.confidence,
+        display_policy=snapshot.display_policy,
+        message=snapshot.message,
+    )
+
 def _format_money(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return f"{value:.2f}"
+
+def _format_rate(value: Decimal | None) -> str | None:
+    if value is None:
+        return None
+    return format(value.normalize(), "f")
