@@ -11,6 +11,10 @@ from app.models.monitoring import (
     FetchJob,
     NotificationEvent,
     PriceHistory,
+    ProxyEndpoint,
+    ProxyHealthEvent,
+    ProxyLease,
+    ProxyPool,
     SourceConfig,
     SourceHealthEvent,
     TrackedProduct,
@@ -57,6 +61,10 @@ def test_monitoring_tables_are_registered_in_metadata() -> None:
         "notification_events",
         "source_configs",
         "source_health_events",
+        "proxy_pools",
+        "proxy_endpoints",
+        "proxy_leases",
+        "proxy_health_events",
     }.issubset(Base.metadata.tables)
 
 
@@ -75,6 +83,9 @@ def test_monitoring_unique_constraints_are_declared() -> None:
     ) in _unique_constraint_columns("user_product_subscriptions")
 
     assert ("source_code",) in _unique_constraint_columns("source_configs")
+
+    assert ("source", "purpose") in _unique_constraint_columns("proxy_pools")
+    assert ("lease_token",) in _unique_constraint_columns("proxy_leases")
 
 
 def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
@@ -95,6 +106,21 @@ def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
         "user_product_subscriptions",
         "id",
     ) in _foreign_key_targets("notification_events")
+
+
+def test_proxy_foreign_keys_point_to_parent_tables() -> None:
+    assert ("pool_id", "proxy_pools", "id") in _foreign_key_targets(
+        "proxy_endpoints"
+    )
+    assert ("endpoint_id", "proxy_endpoints", "id") in _foreign_key_targets(
+        "proxy_leases"
+    )
+    assert ("endpoint_id", "proxy_endpoints", "id") in _foreign_key_targets(
+        "proxy_health_events"
+    )
+    assert ("lease_id", "proxy_leases", "id") in _foreign_key_targets(
+        "proxy_health_events"
+    )
 
 
 def test_monitoring_relationships_link_tracked_product_children() -> None:
@@ -407,3 +433,61 @@ def test_source_health_event_enum_values_are_validated_by_application() -> None:
             source_code="testshop",
             event_type="captcha_required",
         )
+
+
+def test_proxy_models_defaults_and_relationships() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pool = ProxyPool(
+            id=1,
+            source="testshop",
+            purpose="price_fetch",
+        )
+        endpoint = ProxyEndpoint(
+            id=1,
+            pool=pool,
+            endpoint_ref="local-proxy-1",
+            max_concurrency=2,
+        )
+        lease = ProxyLease(
+            id=1,
+            endpoint=endpoint,
+            lease_token="lease-token-1",
+            source="testshop",
+            purpose="price_fetch",
+            job_id="job-1",
+            leased_at=datetime(2026, 6, 8, tzinfo=UTC),
+            expires_at=datetime(2026, 6, 8, 0, 30, tzinfo=UTC),
+        )
+        event = ProxyHealthEvent(
+            id=1,
+            endpoint=endpoint,
+            lease=lease,
+            event_type="success",
+            status="success",
+        )
+
+        session.add(event)
+        session.flush()
+
+        assert pool.enabled is True
+        assert endpoint.enabled is True
+        assert endpoint.current_concurrency == 0
+        assert endpoint.cooldown_until is None
+        assert lease.status == "active"
+        assert lease.reported_at is None
+        assert pool.endpoints == [endpoint]
+        assert endpoint.pool is pool
+        assert endpoint.leases == [lease]
+        assert endpoint.health_events == [event]
+        assert lease.endpoint is endpoint
+        assert lease.health_events == [event]
+        assert event.endpoint is endpoint
+        assert event.lease is lease
+        assert pool.created_at is not None
+        assert pool.updated_at is not None
+        assert endpoint.created_at is not None
+        assert endpoint.updated_at is not None
+        assert event.created_at is not None

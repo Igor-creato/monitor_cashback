@@ -60,6 +60,11 @@ SOURCE_HEALTH_EVENT_TYPE_VALUES = frozenset(
         "cashback_api_error",
     }
 )
+PROXY_LEASE_STATUS_VALUES = frozenset({"active", "reported", "expired"})
+PROXY_HEALTH_EVENT_TYPE_VALUES = frozenset(
+    {"success", "http_403", "http_429", "captcha", "timeout", "error"}
+)
+PROXY_HEALTH_STATUS_VALUES = frozenset({"success", "failed"})
 
 
 def _validate_choice(
@@ -330,6 +335,166 @@ class SourceHealthEvent(Base):
             value,
             SOURCE_HEALTH_EVENT_TYPE_VALUES,
         )
+
+class ProxyPool(Base):
+    __tablename__ = "proxy_pools"
+    __table_args__ = (
+        UniqueConstraint("source", "purpose", name="uq_proxy_pools_source_purpose"),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    endpoints: Mapped[list[ProxyEndpoint]] = relationship(
+        back_populates="pool",
+        cascade="all, delete-orphan",
+    )
+
+class ProxyEndpoint(Base):
+    __tablename__ = "proxy_endpoints"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    pool_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("proxy_pools.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    endpoint_ref: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    max_concurrency: Mapped[int] = mapped_column(Integer, nullable=False)
+    current_concurrency: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    pool: Mapped[ProxyPool] = relationship(back_populates="endpoints")
+    leases: Mapped[list[ProxyLease]] = relationship(
+        back_populates="endpoint",
+        cascade="all, delete-orphan",
+    )
+    health_events: Mapped[list[ProxyHealthEvent]] = relationship(
+        back_populates="endpoint",
+        cascade="all, delete-orphan",
+    )
+
+class ProxyLease(Base):
+    __tablename__ = "proxy_leases"
+    __table_args__ = (
+        UniqueConstraint("lease_token", name="uq_proxy_leases_lease_token"),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    lease_token: Mapped[str] = mapped_column(String(64), nullable=False)
+    endpoint_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("proxy_endpoints.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    job_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="active",
+        server_default="active",
+    )
+    leased_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    reported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    endpoint: Mapped[ProxyEndpoint] = relationship(back_populates="leases")
+    health_events: Mapped[list[ProxyHealthEvent]] = relationship(
+        back_populates="lease",
+        cascade="all, delete-orphan",
+    )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice("status", value, PROXY_LEASE_STATUS_VALUES)
+
+class ProxyHealthEvent(Base):
+    __tablename__ = "proxy_health_events"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    endpoint_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("proxy_endpoints.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    lease_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("proxy_leases.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    response_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    endpoint: Mapped[ProxyEndpoint] = relationship(back_populates="health_events")
+    lease: Mapped[ProxyLease | None] = relationship(back_populates="health_events")
+
+    @validates("event_type")
+    def validate_event_type(self, _: str, value: str) -> str:
+        return _validate_choice("event_type", value, PROXY_HEALTH_EVENT_TYPE_VALUES)
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice("status", value, PROXY_HEALTH_STATUS_VALUES)
 
 class UserProductSubscription(Base):
     __tablename__ = "user_product_subscriptions"
