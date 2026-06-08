@@ -11,6 +11,8 @@ from app.models.monitoring import (
     FetchJob,
     NotificationEvent,
     PriceHistory,
+    SourceConfig,
+    SourceHealthEvent,
     TrackedProduct,
     TrackedProductCashback,
     UserProductSubscription,
@@ -53,6 +55,8 @@ def test_monitoring_tables_are_registered_in_metadata() -> None:
         "price_history",
         "fetch_jobs",
         "notification_events",
+        "source_configs",
+        "source_health_events",
     }.issubset(Base.metadata.tables)
 
 
@@ -69,6 +73,8 @@ def test_monitoring_unique_constraints_are_declared() -> None:
         "external_user_id",
         "tracked_product_id",
     ) in _unique_constraint_columns("user_product_subscriptions")
+
+    assert ("source_code",) in _unique_constraint_columns("source_configs")
 
 
 def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
@@ -344,3 +350,60 @@ def test_tracked_product_cashback_one_to_one_relationship() -> None:
 
         assert cashback.tracked_product is tracked_product
         assert tracked_product.cashback is cashback
+
+
+def test_source_config_is_created() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        config = SourceConfig(
+            id=1,
+            source_code="testshop",
+            source_name="Test Shop",
+            enabled=True,
+            fetch_strategy="http",
+            min_fetch_interval_minutes=60,
+            max_failures_before_quarantine=3,
+            browser_fallback_enabled=False,
+        )
+
+        session.add(config)
+        session.flush()
+
+        assert config.id == 1
+        assert config.source_code == "testshop"
+        assert config.source_name == "Test Shop"
+        assert config.enabled is True
+        assert config.fetch_strategy == "http"
+        assert config.min_fetch_interval_minutes == 60
+        assert config.max_failures_before_quarantine == 3
+        assert config.browser_fallback_enabled is False
+        assert config.created_at is not None
+        assert config.updated_at is not None
+
+
+def test_source_health_event_enum_values_are_validated_by_application() -> None:
+    for event_type in (
+        "success",
+        "timeout",
+        "http_403",
+        "http_429",
+        "parser_error",
+        "price_not_found",
+        "cashback_api_error",
+    ):
+        event = SourceHealthEvent(
+            id=1,
+            source_code="testshop",
+            event_type=event_type,
+        )
+
+        assert event.event_type == event_type
+
+    with pytest.raises(ValueError, match="event_type"):
+        SourceHealthEvent(
+            id=2,
+            source_code="testshop",
+            event_type="captcha_required",
+        )

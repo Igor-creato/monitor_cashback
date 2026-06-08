@@ -49,6 +49,17 @@ NOTIFICATION_EVENT_TYPE_VALUES = frozenset(
     }
 )
 NOTIFICATION_STATUS_VALUES = frozenset({"pending", "sent", "skipped", "failed"})
+SOURCE_HEALTH_EVENT_TYPE_VALUES = frozenset(
+    {
+        "success",
+        "timeout",
+        "http_403",
+        "http_429",
+        "parser_error",
+        "price_not_found",
+        "cashback_api_error",
+    }
+)
 
 
 def _validate_choice(
@@ -268,6 +279,57 @@ class TrackedProductCashback(Base):
     def validate_display_policy(self, _: str, value: str) -> str:
         return _validate_choice("display_policy", value, DISPLAY_POLICY_VALUES)
 
+
+class SourceConfig(Base):
+    __tablename__ = "source_configs"
+    __table_args__ = (
+        UniqueConstraint("source_code", name="uq_source_configs_source_code"),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    fetch_strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    min_fetch_interval_minutes: Mapped[int] = mapped_column(Integer, nullable=False)
+    max_failures_before_quarantine: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+    )
+    browser_fallback_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+class SourceHealthEvent(Base):
+    __tablename__ = "source_health_events"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    status_code: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    @validates("event_type")
+    def validate_event_type(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "event_type",
+            value,
+            SOURCE_HEALTH_EVENT_TYPE_VALUES,
+        )
 
 class UserProductSubscription(Base):
     __tablename__ = "user_product_subscriptions"
