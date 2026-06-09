@@ -16,6 +16,7 @@ from app.models.monitoring import (
     ProxyLease,
     ProxyPool,
     SourceConfig,
+    SourceFetchProfile,
     SourceHealthEvent,
     TrackedProduct,
     TrackedProductCashback,
@@ -60,6 +61,7 @@ def test_monitoring_tables_are_registered_in_metadata() -> None:
         "fetch_jobs",
         "notification_events",
         "source_configs",
+        "source_fetch_profiles",
         "source_health_events",
         "proxy_pools",
         "proxy_endpoints",
@@ -83,6 +85,7 @@ def test_monitoring_unique_constraints_are_declared() -> None:
     ) in _unique_constraint_columns("user_product_subscriptions")
 
     assert ("source_code",) in _unique_constraint_columns("source_configs")
+    assert ("source_code",) in _unique_constraint_columns("source_fetch_profiles")
 
     assert ("source", "purpose") in _unique_constraint_columns("proxy_pools")
     assert ("lease_token",) in _unique_constraint_columns("proxy_leases")
@@ -415,6 +418,88 @@ def test_source_config_is_created() -> None:
         assert config.browser_fallback_enabled is False
         assert config.created_at is not None
         assert config.updated_at is not None
+
+
+def test_source_fetch_profile_is_created_with_json_fallback_transports() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        profile = SourceFetchProfile(
+            id=1,
+            source_code="testshop",
+            difficulty_class="light",
+            preferred_transport="curl_cffi",
+            fallback_transports=["direct_http"],
+            proxy_tier_policy="cheap_first",
+            browser_required=False,
+            extraction_mode="json",
+            image_policy="copy_to_object_storage",
+            enabled=True,
+        )
+
+        session.add(profile)
+        session.flush()
+
+        assert profile.id == 1
+        assert profile.source_code == "testshop"
+        assert profile.difficulty_class == "light"
+        assert profile.preferred_transport == "curl_cffi"
+        assert profile.fallback_transports == ["direct_http"]
+        assert profile.proxy_tier_policy == "cheap_first"
+        assert profile.browser_required is False
+        assert profile.extraction_mode == "json"
+        assert profile.image_policy == "copy_to_object_storage"
+        assert profile.enabled is True
+        assert profile.created_at is not None
+        assert profile.updated_at is not None
+
+
+def test_source_fetch_profile_enum_values_are_validated_by_application() -> None:
+    profile = SourceFetchProfile(
+        id=1,
+        source_code="ozon",
+        difficulty_class="heavy",
+        preferred_transport="camoufox",
+        fallback_transports=["playwright"],
+        proxy_tier_policy="premium_only",
+        browser_required=True,
+        extraction_mode="hybrid",
+        image_policy="copy_to_object_storage",
+        enabled=True,
+    )
+
+    assert profile.difficulty_class == "heavy"
+    assert profile.preferred_transport == "camoufox"
+    assert profile.proxy_tier_policy == "premium_only"
+    assert profile.extraction_mode == "hybrid"
+    assert profile.image_policy == "copy_to_object_storage"
+
+    invalid_cases = (
+        {"difficulty_class": "extreme"},
+        {"preferred_transport": "stealth_browser"},
+        {"proxy_tier_policy": "free_only"},
+        {"extraction_mode": "llm"},
+        {"image_policy": "hotlink_only"},
+    )
+    base_values = {
+        "id": 2,
+        "source_code": "testshop",
+        "difficulty_class": "light",
+        "preferred_transport": "curl_cffi",
+        "fallback_transports": ["direct_http"],
+        "proxy_tier_policy": "cheap_first",
+        "browser_required": False,
+        "extraction_mode": "json",
+        "image_policy": "copy_to_object_storage",
+        "enabled": True,
+    }
+
+    for overrides in invalid_cases:
+        values = {**base_values, **overrides}
+        invalid_field = next(iter(overrides))
+        with pytest.raises(ValueError, match=invalid_field):
+            SourceFetchProfile(**values)
 
 
 def test_source_health_event_enum_values_are_validated_by_application() -> None:

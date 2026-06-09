@@ -4,6 +4,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -59,6 +60,17 @@ SOURCE_HEALTH_EVENT_TYPE_VALUES = frozenset(
         "price_not_found",
         "cashback_api_error",
     }
+)
+SOURCE_DIFFICULTY_CLASS_VALUES = frozenset({"light", "medium", "heavy"})
+SOURCE_TRANSPORT_VALUES = frozenset(
+    {"direct_http", "curl_cffi", "crawl4ai", "playwright", "camoufox"}
+)
+SOURCE_PROXY_TIER_POLICY_VALUES = frozenset(
+    {"none", "cheap_first", "residential_first", "premium_only"}
+)
+SOURCE_EXTRACTION_MODE_VALUES = frozenset({"json", "css", "hybrid"})
+SOURCE_IMAGE_POLICY_VALUES = frozenset(
+    {"copy_to_object_storage", "external_url_allowed"}
 )
 PROXY_LEASE_STATUS_VALUES = frozenset({"active", "reported", "expired"})
 PROXY_HEALTH_EVENT_TYPE_VALUES = frozenset(
@@ -318,6 +330,83 @@ class SourceConfig(Base):
         server_default=func.now(),
         onupdate=func.now(),
     )
+
+
+class SourceFetchProfile(Base):
+    __tablename__ = "source_fetch_profiles"
+    __table_args__ = (
+        UniqueConstraint("source_code", name="uq_source_fetch_profiles_source_code"),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    difficulty_class: Mapped[str] = mapped_column(String(16), nullable=False)
+    preferred_transport: Mapped[str] = mapped_column(String(32), nullable=False)
+    fallback_transports: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    proxy_tier_policy: Mapped[str] = mapped_column(String(32), nullable=False)
+    browser_required: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    extraction_mode: Mapped[str] = mapped_column(String(16), nullable=False)
+    image_policy: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    @validates("difficulty_class")
+    def validate_difficulty_class(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "difficulty_class",
+            value,
+            SOURCE_DIFFICULTY_CLASS_VALUES,
+        )
+
+    @validates("preferred_transport")
+    def validate_preferred_transport(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "preferred_transport",
+            value,
+            SOURCE_TRANSPORT_VALUES,
+        )
+
+    @validates("fallback_transports")
+    def validate_fallback_transports(self, _: str, value: list[str]) -> list[str]:
+        if not isinstance(value, list):
+            raise ValueError("fallback_transports must be a list")
+        for transport in value:
+            _validate_choice(
+                "fallback_transports",
+                transport,
+                SOURCE_TRANSPORT_VALUES,
+            )
+        return value
+
+    @validates("proxy_tier_policy")
+    def validate_proxy_tier_policy(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "proxy_tier_policy",
+            value,
+            SOURCE_PROXY_TIER_POLICY_VALUES,
+        )
+
+    @validates("extraction_mode")
+    def validate_extraction_mode(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "extraction_mode",
+            value,
+            SOURCE_EXTRACTION_MODE_VALUES,
+        )
+
+    @validates("image_policy")
+    def validate_image_policy(self, _: str, value: str) -> str:
+        return _validate_choice("image_policy", value, SOURCE_IMAGE_POLICY_VALUES)
 
 
 class SourceHealthEvent(Base):
