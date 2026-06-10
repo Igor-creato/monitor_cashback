@@ -3,6 +3,7 @@
 agentdb.rvf
 agentdb.rvf.lock
 ruvector.db
+CLAUDE.md
 
 # Local Spec Kit runtime/skills. Governance files below are tracked.
 .agents/
