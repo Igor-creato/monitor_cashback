@@ -584,3 +584,74 @@ def test_proxy_models_defaults_and_relationships() -> None:
         assert endpoint.created_at is not None
         assert endpoint.updated_at is not None
         assert event.created_at is not None
+
+
+def test_proxy_pool_tier_is_validated() -> None:
+    pool = ProxyPool(
+        id=1,
+        source="testshop",
+        purpose="price_fetch",
+        tier="residential",
+    )
+    assert pool.tier == "residential"
+
+    with pytest.raises(ValueError, match="tier"):
+        ProxyPool(
+            id=2,
+            source="testshop",
+            purpose="other_purpose",
+            tier="ultra_premium",
+        )
+
+
+def test_proxy_pool_tier_cost_defaults() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pool = ProxyPool(
+            id=1,
+            source="testshop",
+            purpose="price_fetch",
+            tier="cheap",
+        )
+        session.add(pool)
+        session.flush()
+
+        assert pool.tier == "cheap"
+        assert pool.priority == 100
+        assert pool.sticky_session_supported is False
+        assert pool.cost_per_request is None
+        assert pool.cost_per_gb is None
+        assert pool.max_cost_per_success is None
+        assert pool.country_code is None
+        assert pool.region_code is None
+        assert pool.source_affinity is None
+
+
+def test_proxy_endpoint_quality_defaults() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        pool = ProxyPool(
+            id=1,
+            source="testshop",
+            purpose="price_fetch",
+        )
+        endpoint = ProxyEndpoint(
+            id=1,
+            pool=pool,
+            endpoint_ref="local-proxy-1",
+            max_concurrency=2,
+        )
+        session.add(endpoint)
+        session.flush()
+
+        assert endpoint.ban_score == 0
+        assert endpoint.success_rate_1h is None
+        assert endpoint.success_rate_24h is None
+        assert endpoint.avg_response_ms is None
+        assert endpoint.last_403_at is None
+        assert endpoint.last_429_at is None
+        assert endpoint.last_captcha_at is None

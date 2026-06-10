@@ -8,6 +8,7 @@ from sqlalchemy import (
     BigInteger,
     Boolean,
     DateTime,
+    Float,
     ForeignKey,
     Integer,
     Numeric,
@@ -77,6 +78,18 @@ PROXY_HEALTH_EVENT_TYPE_VALUES = frozenset(
     {"success", "http_403", "http_429", "captcha", "timeout", "error"}
 )
 PROXY_HEALTH_STATUS_VALUES = frozenset({"success", "failed"})
+PROXY_POOL_TIER_VALUES = frozenset(
+    {"free", "cheap", "standard", "residential", "premium", "reserved"}
+)
+# Порядок тиров от дешёвых к дорогим; индекс используется как ceiling-компаратор.
+PROXY_POOL_TIER_ORDER: list[str] = [
+    "free",
+    "cheap",
+    "standard",
+    "residential",
+    "premium",
+    "reserved",
+]
 
 
 def _validate_choice(
@@ -447,6 +460,39 @@ class ProxyPool(Base):
         default=True,
         server_default="1",
     )
+    tier: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="standard",
+        server_default="standard",
+    )
+    cost_per_request: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 8),
+        nullable=True,
+    )
+    cost_per_gb: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 8),
+        nullable=True,
+    )
+    country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    region_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    sticky_session_supported: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    max_cost_per_success: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 8),
+        nullable=True,
+    )
+    priority: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=100,
+        server_default="100",
+    )
+    source_affinity: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
@@ -463,6 +509,10 @@ class ProxyPool(Base):
         back_populates="pool",
         cascade="all, delete-orphan",
     )
+
+    @validates("tier")
+    def validate_tier(self, _: str, value: str) -> str:
+        return _validate_choice("tier", value, PROXY_POOL_TIER_VALUES)
 
 
 class ProxyEndpoint(Base):
@@ -489,6 +539,27 @@ class ProxyEndpoint(Base):
         server_default="0",
     )
     cooldown_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    success_rate_1h: Mapped[float | None] = mapped_column(Float, nullable=True)
+    success_rate_24h: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_response_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ban_score: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    last_403_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_429_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_captcha_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
     )
