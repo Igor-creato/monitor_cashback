@@ -104,7 +104,9 @@ def test_proxy_is_passed() -> None:
     fake = _FakeRequestsModule()
     transport = CurlCffiTransport(requests_module=fake)
 
-    transport.fetch("https://shop.local/p/1", proxy_url="http://user:pass@127.0.0.1:8080")
+    transport.fetch(
+        "https://shop.local/p/1", proxy_url="http://user:pass@127.0.0.1:8080"
+    )
 
     assert fake.calls[0]["proxies"] == {
         "http": "http://user:pass@127.0.0.1:8080",
