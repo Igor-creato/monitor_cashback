@@ -1,4 +1,5 @@
 <!-- rtk-instructions v2 -->
+
 # RTK (Rust Token Killer) - Token-Optimized Commands
 
 ## Golden Rule
@@ -6,6 +7,7 @@
 **Always prefix commands with `rtk`**. If RTK has a dedicated filter, it uses it. If not, it passes through unchanged. This means RTK is always safe to use.
 
 **Important**: Even in command chains with `&&`, use `rtk`:
+
 ```bash
 # ❌ Wrong
 git add . && git commit -m "msg" && git push
@@ -17,6 +19,7 @@ rtk git add . && rtk git commit -m "msg" && rtk git push
 ## RTK Commands by Workflow
 
 ### Build & Compile (80-90% savings)
+
 ```bash
 rtk cargo build         # Cargo build output
 rtk cargo check         # Cargo check output
@@ -28,6 +31,7 @@ rtk next build          # Next.js build with route metrics (87%)
 ```
 
 ### Test (90-99% savings)
+
 ```bash
 rtk cargo test          # Cargo test failures only (90%)
 rtk vitest run          # Vitest failures only (99.5%)
@@ -36,6 +40,7 @@ rtk test <cmd>          # Generic test wrapper - failures only
 ```
 
 ### Git (59-80% savings)
+
 ```bash
 rtk git status          # Compact status
 rtk git log             # Compact log (works with all git flags)
@@ -54,6 +59,7 @@ rtk git worktree        # Compact worktree
 Note: Git passthrough works for ALL subcommands, even those not explicitly listed.
 
 ### GitHub (26-87% savings)
+
 ```bash
 rtk gh pr view <num>    # Compact PR view (87%)
 rtk gh pr checks        # Compact PR checks (79%)
@@ -63,6 +69,7 @@ rtk gh api              # Compact API responses (26%)
 ```
 
 ### JavaScript/TypeScript Tooling (70-90% savings)
+
 ```bash
 rtk pnpm list           # Compact dependency tree (70%)
 rtk pnpm outdated       # Compact outdated packages (80%)
@@ -73,6 +80,7 @@ rtk prisma              # Prisma without ASCII art (88%)
 ```
 
 ### Files & Search (60-75% savings)
+
 ```bash
 rtk ls <path>           # Tree format, compact (65%)
 rtk read <file>         # Code reading with filtering (60%)
@@ -81,6 +89,7 @@ rtk find <pattern>      # Find grouped by directory (70%)
 ```
 
 ### Analysis & Debug (70-90%)
+
 ```bash
 rtk err <cmd>           # Filter errors only from any command
 rtk log <file>          # Deduplicated logs with counts
@@ -92,6 +101,7 @@ rtk diff                # Ultra-compact diffs
 ```
 
 ### Infrastructure (85% savings)
+
 ```bash
 rtk docker ps           # Compact container list
 rtk docker images       # Compact image list
@@ -101,12 +111,14 @@ rtk kubectl logs        # Deduplicated pod logs
 ```
 
 ### Network (65-70% savings)
+
 ```bash
 rtk curl <url>          # Compact HTTP responses (70%)
 rtk wget <url>          # Compact download output (65%)
 ```
 
 ### Meta Commands
+
 ```bash
 rtk gain                # View token savings statistics
 rtk gain --history      # View command history with savings
@@ -118,18 +130,19 @@ rtk init --global       # Add RTK to ~/.Codex/AGENTS.md
 
 ## Token Savings Overview
 
-| Category | Commands | Typical Savings |
-|----------|----------|-----------------|
-| Tests | vitest, playwright, cargo test | 90-99% |
-| Build | next, tsc, lint, prettier | 70-87% |
-| Git | status, log, diff, add, commit | 59-80% |
-| GitHub | gh pr, gh run, gh issue | 26-87% |
-| Package Managers | pnpm, npm, npx | 70-90% |
-| Files | ls, read, grep, find | 60-75% |
-| Infrastructure | docker, kubectl | 85% |
-| Network | curl, wget | 65-70% |
+| Category         | Commands                       | Typical Savings |
+| ---------------- | ------------------------------ | --------------- |
+| Tests            | vitest, playwright, cargo test | 90-99%          |
+| Build            | next, tsc, lint, prettier      | 70-87%          |
+| Git              | status, log, diff, add, commit | 59-80%          |
+| GitHub           | gh pr, gh run, gh issue        | 26-87%          |
+| Package Managers | pnpm, npm, npx                 | 70-90%          |
+| Files            | ls, read, grep, find           | 60-75%          |
+| Infrastructure   | docker, kubectl                | 85%             |
+| Network          | curl, wget                     | 65-70%          |
 
 Overall average: **60-90% token reduction** on common development operations.
+
 <!-- /rtk-instructions -->
 
 # Monitor Cashback — инструкции для агента
@@ -179,6 +192,8 @@ Cashback Plugin — это комплексная система кэшбэк-с
 - Внешние сбои обрабатывать явно: timeout, retry, backoff, DLQ или terminal status.
 - Денежные, балансовые, CPA-transaction и payout-related операции должны иметь проверяемую идемпотентность.
 - Любая интеграция с WordPress-плагином должна иметь понятный контракт, тесты и документацию.
+- Если невозможно по какойто причине получить данные, не выдумывать или придумывать никаких данных, остановиться и спросить об этом и предложить пути решения или получения этих данных.
+- Если видишь лучший вариант решения чем описан в промпте, обязательно остановиться и предлагать его.
 
 ## Python/FastAPI правила
 
@@ -212,11 +227,11 @@ Cashback Plugin — это комплексная система кэшбэк-с
 
 ### Последовательность правок
 
-| Что меняется | Шаги |
-| --- | --- |
-| **Monitor Cashback** | 1) локальный компьютер → 2) тесты → 3) коммит → 4) пуш. |
-| **Плагин** | 1) локальный компьютер → 2) коммит → 3) пуш. Дальше GitHub Actions сами выкатывают на сервер. |
-| **Стэк** | 1) локальный компьютер → 2) коммит → 3) пуш → 4) `git pull` на сервере. Без шага 4 правка на сервер не приедет. |
+| Что меняется                          | Шаги                                                                                                                                                            |
+| ------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Monitor Cashback**                  | 1) локальный компьютер → 2) тесты → 3) коммит → 4) пуш.                                                                                                         |
+| **Плагин**                            | 1) локальный компьютер → 2) коммит → 3) пуш. Дальше GitHub Actions сами выкатывают на сервер.                                                                   |
+| **Стэк**                              | 1) локальный компьютер → 2) коммит → 3) пуш → 4) `git pull` на сервере. Без шага 4 правка на сервер не приедет.                                                 |
 | **Серверная правка по явной команде** | 1) правка на сервере → 2) `git commit` + `git push` с сервера → 3) `git pull` на локальном компьютере. Это нужно, чтобы локальный клон и сервер не расходились. |
 
 ### Обязательные шаги после написания кода
@@ -276,71 +291,71 @@ Cashback Plugin — это комплексная система кэшбэк-с
 
 ### Карта vault'а — что где искать
 
-| Тема                                          | Файл в Obsidian                                        |
-| --------------------------------------------- | ------------------------------------------------------ |
-| Архитектура, поток данных                     | `atlas/архитектура системы.md`                         |
-| Стек технологий                               | `atlas/технологический стек.md`                        |
-| База данных, таблицы, триггеры                | `atlas/база данных.md`                                 |
-| Деплой, Docker, мониторинг                    | `atlas/деплой и инфраструктура.md`                     |
-| Ядро плагина, UUID v7, endpoints              | `atlas/ядро плагина.md`                                |
-| Webhook Receiver (Python)                     | `knowledge/integrations/webhook-receiver.md`           |
-| Monitor Cashback (Python/FastAPI)             | `knowledge/integrations/monitor-cashback.md`           |
-| Internal REST API для микросервисов           | `knowledge/integrations/internal-rest-api-price-monitor.md` |
-| Admitad / EPN / Advcake интеграции            | `knowledge/integrations/admitad.md`, `epn.md`, `advcake.md` |
-| API-клиент reconciliation                     | `knowledge/integrations/api-клиент reconciliation.md`  |
-| REST API браузерного расширения               | `knowledge/integrations/rest-api детали.md`            |
-| Браузерное расширение                         | `knowledge/integrations/браузерное расширение.md`      |
-| Вся admin-панель                              | `knowledge/admin/панель обзор.md`                      |
-| Выплаты (admin)                               | `knowledge/admin/управление выплатами.md`              |
-| Транзакции (admin)                            | `knowledge/admin/управление транзакциями.md`           |
-| Сверка баланса и ручная корректировка (admin) | `knowledge/admin/сверка баланса и корректировка.md`    |
-| Пользователи, бан (admin)                     | `knowledge/admin/управление пользователями.md`         |
-| Статистика KPI                                | `knowledge/admin/статистика и kpi.md`                  |
-| API синхронизация                             | `knowledge/admin/api валидация и синхронизация.md`     |
-| Health check БД                               | `knowledge/admin/health-check целостность бд.md`       |
-| Партнёрская программа (admin)                 | `knowledge/admin/партнёрская программа.md`             |
-| Уведомления (admin)                           | `knowledge/admin/уведомления.md`                       |
-| Заявки кэшбэка (admin)                        | `knowledge/admin/заявки кэшбэка.md`                    |
-| Партнёры CPA-сети (admin)                     | `knowledge/admin/управление партнёрами cpa.md`         |
-| Shop Importer v12 (автоимпорт магазинов)      | `knowledge/integrations/shop-importer.md`              |
-| Поддержка (admin)                             | `knowledge/admin/поддержка.md`                         |
-| Защита / Антифрод + капча (admin)             | `knowledge/admin/защита антифрод.md`                   |
-| Личный кабинет (все вкладки, шорткод баланса) | `knowledge/frontend/личный кабинет пользователя.md`    |
-| Раздельные /login/ и /register/ (sc-auth-pages) | `knowledge/frontend/раздельные login-register sc-auth-pages.md` |
-| Вывод кэшбэка (фронтенд)                      | `knowledge/patterns/вывод кэшбэка.md`                  |
-| История покупок/выплат                        | `knowledge/patterns/история покупок и выплат.md`       |
-| Антифрод: логика                              | `knowledge/patterns/антифрод система.md`               |
-| Антифрод: числовые пороги                     | `knowledge/patterns/антифрод настройки и пороги.md`    |
-| Антифрод: тумблеры подсистем                  | `knowledge/patterns/антифрод тумблеры подсистем.md`    |
-| Claims: процесс                               | `knowledge/patterns/claims модуль.md`                  |
-| Claims: скоринг с числами                     | `knowledge/patterns/claims скоринг детали.md`          |
-| Реферальная программа                         | `knowledge/patterns/реферальная программа.md`          |
-| Idempotency pattern                           | `knowledge/patterns/idempotency pattern.md`            |
-| Общая пагинация плагина                       | `knowledge/patterns/общая пагинация.md`                |
-| FOR UPDATE блокировки                         | `knowledge/patterns/for-update блокировки.md`          |
-| Ledger-first баланс (источник правды)         | `knowledge/patterns/ledger-first баланс.md`            |
-| Grey scoring: числа                           | `knowledge/patterns/grey scoring числа и пороги.md`    |
-| Шифрование AES-256                            | `knowledge/patterns/шифрование детали.md`              |
-| Trigger fallbacks (бан/баланс)                | `knowledge/patterns/trigger-fallbacks детали.md`       |
-| User profile defaults (rate/min_payout)       | `knowledge/patterns/user-profile-defaults.md`          |
-| Удаление плагина                              | `knowledge/patterns/удаление плагина.md`               |
-| Шорткоды                                      | `knowledge/patterns/шорткоды плагина.md`               |
-| Партнёрские URL WooCommerce                   | `knowledge/patterns/партнёрские url woocommerce.md`    |
-| Продукт, бизнес                               | `knowledge/business/продукт кэшбэк сервис.md`          |
-| CPA-монетизация                               | `knowledge/business/cpa-сети и монетизация.md`         |
-| Типичные баги                                 | `knowledge/debugging/типичные баги и решения.md`       |
-| Диагностика                                   | `knowledge/debugging/диагностика производительности.md` |
-| Архитектурные решения (ADR)                   | `knowledge/decisions/`                                 |
-| Legal compliance ADR (152/38/161/149-ФЗ, ГК 437) | `knowledge/decisions/legal-compliance-152fz.md`     |
-| Legal: append-only журнал согласий            | `knowledge/patterns/legal-consent-log.md`              |
-| Legal: defensive аудит сторонних форм         | `knowledge/patterns/legal-third-party-audit.md`        |
-| Legal: admin-раздел «Юр. документы»           | `knowledge/admin/юр документы.md`                      |
-| User anonymization (152-ФЗ + soft-delete)     | `knowledge/patterns/user-anonymization.md`             |
-| Bug: AJAX payload собран вручную (теряются поля) | `knowledge/debugging/ajax-payload-manual-сборка.md` |
-| Bug: nginx upstream keepalive vs FPM max_children | `knowledge/debugging/nginx-fpm-keepalive-pool-starvation.md` |
-| Bug: Wordfence WAF блокирует FPM на 25 сек    | `knowledge/debugging/wordfence-waf-blocking-curl-russia.md` |
-| Bug: msmtp logfile leak через webroot         | `knowledge/debugging/msmtp-syslog-leak-webroot.md`     |
-| Bug: WoodMart Loop Builder fatal на пустом каталоге | `knowledge/debugging/woodmart-loop-builder-empty-catalog-fatal.md` |
+| Тема                                                                 | Файл в Obsidian                                                        |
+| -------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| Архитектура, поток данных                                            | `atlas/архитектура системы.md`                                         |
+| Стек технологий                                                      | `atlas/технологический стек.md`                                        |
+| База данных, таблицы, триггеры                                       | `atlas/база данных.md`                                                 |
+| Деплой, Docker, мониторинг                                           | `atlas/деплой и инфраструктура.md`                                     |
+| Ядро плагина, UUID v7, endpoints                                     | `atlas/ядро плагина.md`                                                |
+| Webhook Receiver (Python)                                            | `knowledge/integrations/webhook-receiver.md`                           |
+| Monitor Cashback (Python/FastAPI)                                    | `knowledge/integrations/monitor-cashback.md`                           |
+| Internal REST API для микросервисов                                  | `knowledge/integrations/internal-rest-api-price-monitor.md`            |
+| Admitad / EPN / Advcake интеграции                                   | `knowledge/integrations/admitad.md`, `epn.md`, `advcake.md`            |
+| API-клиент reconciliation                                            | `knowledge/integrations/api-клиент reconciliation.md`                  |
+| REST API браузерного расширения                                      | `knowledge/integrations/rest-api детали.md`                            |
+| Браузерное расширение                                                | `knowledge/integrations/браузерное расширение.md`                      |
+| Вся admin-панель                                                     | `knowledge/admin/панель обзор.md`                                      |
+| Выплаты (admin)                                                      | `knowledge/admin/управление выплатами.md`                              |
+| Транзакции (admin)                                                   | `knowledge/admin/управление транзакциями.md`                           |
+| Сверка баланса и ручная корректировка (admin)                        | `knowledge/admin/сверка баланса и корректировка.md`                    |
+| Пользователи, бан (admin)                                            | `knowledge/admin/управление пользователями.md`                         |
+| Статистика KPI                                                       | `knowledge/admin/статистика и kpi.md`                                  |
+| API синхронизация                                                    | `knowledge/admin/api валидация и синхронизация.md`                     |
+| Health check БД                                                      | `knowledge/admin/health-check целостность бд.md`                       |
+| Партнёрская программа (admin)                                        | `knowledge/admin/партнёрская программа.md`                             |
+| Уведомления (admin)                                                  | `knowledge/admin/уведомления.md`                                       |
+| Заявки кэшбэка (admin)                                               | `knowledge/admin/заявки кэшбэка.md`                                    |
+| Партнёры CPA-сети (admin)                                            | `knowledge/admin/управление партнёрами cpa.md`                         |
+| Shop Importer v12 (автоимпорт магазинов)                             | `knowledge/integrations/shop-importer.md`                              |
+| Поддержка (admin)                                                    | `knowledge/admin/поддержка.md`                                         |
+| Защита / Антифрод + капча (admin)                                    | `knowledge/admin/защита антифрод.md`                                   |
+| Личный кабинет (все вкладки, шорткод баланса)                        | `knowledge/frontend/личный кабинет пользователя.md`                    |
+| Раздельные /login/ и /register/ (sc-auth-pages)                      | `knowledge/frontend/раздельные login-register sc-auth-pages.md`        |
+| Вывод кэшбэка (фронтенд)                                             | `knowledge/patterns/вывод кэшбэка.md`                                  |
+| История покупок/выплат                                               | `knowledge/patterns/история покупок и выплат.md`                       |
+| Антифрод: логика                                                     | `knowledge/patterns/антифрод система.md`                               |
+| Антифрод: числовые пороги                                            | `knowledge/patterns/антифрод настройки и пороги.md`                    |
+| Антифрод: тумблеры подсистем                                         | `knowledge/patterns/антифрод тумблеры подсистем.md`                    |
+| Claims: процесс                                                      | `knowledge/patterns/claims модуль.md`                                  |
+| Claims: скоринг с числами                                            | `knowledge/patterns/claims скоринг детали.md`                          |
+| Реферальная программа                                                | `knowledge/patterns/реферальная программа.md`                          |
+| Idempotency pattern                                                  | `knowledge/patterns/idempotency pattern.md`                            |
+| Общая пагинация плагина                                              | `knowledge/patterns/общая пагинация.md`                                |
+| FOR UPDATE блокировки                                                | `knowledge/patterns/for-update блокировки.md`                          |
+| Ledger-first баланс (источник правды)                                | `knowledge/patterns/ledger-first баланс.md`                            |
+| Grey scoring: числа                                                  | `knowledge/patterns/grey scoring числа и пороги.md`                    |
+| Шифрование AES-256                                                   | `knowledge/patterns/шифрование детали.md`                              |
+| Trigger fallbacks (бан/баланс)                                       | `knowledge/patterns/trigger-fallbacks детали.md`                       |
+| User profile defaults (rate/min_payout)                              | `knowledge/patterns/user-profile-defaults.md`                          |
+| Удаление плагина                                                     | `knowledge/patterns/удаление плагина.md`                               |
+| Шорткоды                                                             | `knowledge/patterns/шорткоды плагина.md`                               |
+| Партнёрские URL WooCommerce                                          | `knowledge/patterns/партнёрские url woocommerce.md`                    |
+| Продукт, бизнес                                                      | `knowledge/business/продукт кэшбэк сервис.md`                          |
+| CPA-монетизация                                                      | `knowledge/business/cpa-сети и монетизация.md`                         |
+| Типичные баги                                                        | `knowledge/debugging/типичные баги и решения.md`                       |
+| Диагностика                                                          | `knowledge/debugging/диагностика производительности.md`                |
+| Архитектурные решения (ADR)                                          | `knowledge/decisions/`                                                 |
+| Legal compliance ADR (152/38/161/149-ФЗ, ГК 437)                     | `knowledge/decisions/legal-compliance-152fz.md`                        |
+| Legal: append-only журнал согласий                                   | `knowledge/patterns/legal-consent-log.md`                              |
+| Legal: defensive аудит сторонних форм                                | `knowledge/patterns/legal-third-party-audit.md`                        |
+| Legal: admin-раздел «Юр. документы»                                  | `knowledge/admin/юр документы.md`                                      |
+| User anonymization (152-ФЗ + soft-delete)                            | `knowledge/patterns/user-anonymization.md`                             |
+| Bug: AJAX payload собран вручную (теряются поля)                     | `knowledge/debugging/ajax-payload-manual-сборка.md`                    |
+| Bug: nginx upstream keepalive vs FPM max_children                    | `knowledge/debugging/nginx-fpm-keepalive-pool-starvation.md`           |
+| Bug: Wordfence WAF блокирует FPM на 25 сек                           | `knowledge/debugging/wordfence-waf-blocking-curl-russia.md`            |
+| Bug: msmtp logfile leak через webroot                                | `knowledge/debugging/msmtp-syslog-leak-webroot.md`                     |
+| Bug: WoodMart Loop Builder fatal на пустом каталоге                  | `knowledge/debugging/woodmart-loop-builder-empty-catalog-fatal.md`     |
 | Methodology: Explore-агенты обрезают длинные файлы → false positives | `knowledge/debugging/explore-agent-truncated-files-false-positives.md` |
 
 ### При старте каждой сессии
@@ -369,6 +384,8 @@ Key tools: memory_store, memory_search, hooks_route, swarm_init, agent_spawn.
 Check system-reminder tags for [INTELLIGENCE] pattern suggestions before starting work.
 
 <!-- SPECKIT START -->
+
 For additional context about technologies to be used, project structure,
 shell commands, and other important information, read the current plan
+
 <!-- SPECKIT END -->
