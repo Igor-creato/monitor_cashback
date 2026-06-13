@@ -150,9 +150,7 @@ def parse_xml(
 ) -> list[dict[str, Any]]:
     root = ET.fromstring(_decode(content))
     offers = [
-        element
-        for element in root.iter()
-        if element.tag.lower() in {"offer", "item"}
+        element for element in root.iter() if element.tag.lower() in {"offer", "item"}
     ]
     return [_apply_mapping(_offer_to_record(offer), fields_mapping) for offer in offers]
 
