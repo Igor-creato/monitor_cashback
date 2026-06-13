@@ -62,9 +62,7 @@ SOURCE_HEALTH_EVENT_TYPE_VALUES = frozenset(
         "cashback_api_error",
     }
 )
-FETCH_ATTEMPT_STATUS_VALUES = frozenset(
-    {"success", "failed", "skipped", "quarantined"}
-)
+FETCH_ATTEMPT_STATUS_VALUES = frozenset({"success", "failed", "skipped", "quarantined"})
 SOURCE_DIFFICULTY_CLASS_VALUES = frozenset({"light", "medium", "heavy"})
 SOURCE_TRANSPORT_VALUES = frozenset(
     {"direct_http", "curl_cffi", "crawl4ai", "playwright", "camoufox"}

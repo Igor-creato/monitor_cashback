@@ -118,13 +118,16 @@ def _cost_per_success(
             FetchAttempt.created_at >= cutoff,
         )
     )
-    success_count = session.scalar(
-        select(func.count(FetchAttempt.id)).where(
-            FetchAttempt.source_code == source_code,
-            FetchAttempt.status == SUCCESS_STATUS,
-            FetchAttempt.created_at >= cutoff,
+    success_count = (
+        session.scalar(
+            select(func.count(FetchAttempt.id)).where(
+                FetchAttempt.source_code == source_code,
+                FetchAttempt.status == SUCCESS_STATUS,
+                FetchAttempt.created_at >= cutoff,
+            )
         )
-    ) or 0
+        or 0
+    )
 
     if success_count == 0:
         return Decimal("0")
@@ -138,25 +141,31 @@ def _strategy_success_rate(
     strategy: str,
     cutoff: datetime,
 ) -> float:
-    total = session.scalar(
-        select(func.count(FetchAttempt.id)).where(
-            FetchAttempt.source_code == source_code,
-            FetchAttempt.strategy == strategy,
-            FetchAttempt.created_at >= cutoff,
+    total = (
+        session.scalar(
+            select(func.count(FetchAttempt.id)).where(
+                FetchAttempt.source_code == source_code,
+                FetchAttempt.strategy == strategy,
+                FetchAttempt.created_at >= cutoff,
+            )
         )
-    ) or 0
+        or 0
+    )
 
     if total == 0:
         return 0.0
 
-    success = session.scalar(
-        select(func.count(FetchAttempt.id)).where(
-            FetchAttempt.source_code == source_code,
-            FetchAttempt.strategy == strategy,
-            FetchAttempt.status == SUCCESS_STATUS,
-            FetchAttempt.created_at >= cutoff,
+    success = (
+        session.scalar(
+            select(func.count(FetchAttempt.id)).where(
+                FetchAttempt.source_code == source_code,
+                FetchAttempt.strategy == strategy,
+                FetchAttempt.status == SUCCESS_STATUS,
+                FetchAttempt.created_at >= cutoff,
+            )
         )
-    ) or 0
+        or 0
+    )
 
     return success / total
 
