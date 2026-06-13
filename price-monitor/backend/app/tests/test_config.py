@@ -44,3 +44,15 @@ def test_settings_does_not_expose_cashback_api_secret(monkeypatch) -> None:
     assert "super-secret-value" not in repr(settings.model_dump())
     assert "admin-secret-value" not in repr(settings)
     assert "admin-secret-value" not in repr(settings.model_dump())
+
+
+def test_settings_does_not_expose_object_storage_secrets(monkeypatch) -> None:
+    monkeypatch.setenv("OBJECT_STORAGE_ACCESS_KEY", "object-access-secret")
+    monkeypatch.setenv("OBJECT_STORAGE_SECRET_KEY", "object-secret-secret")
+
+    settings = Settings(_env_file=None)
+
+    assert "object-access-secret" not in repr(settings)
+    assert "object-access-secret" not in repr(settings.model_dump())
+    assert "object-secret-secret" not in repr(settings)
+    assert "object-secret-secret" not in repr(settings.model_dump())
