@@ -10,7 +10,7 @@ jobs:
 
     services:
       mariadb:
-        image: mariadb:11.4
+        image: mariadb:11.8
         env:
           MYSQL_DATABASE: cashback
           MYSQL_USER: cashback
@@ -25,11 +25,11 @@ jobs:
           --health-retries=10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
-          python-version: "3.12"
+          python-version: "3.13"
 
       - name: Install backend dependencies
         working-directory: price-monitor/backend
