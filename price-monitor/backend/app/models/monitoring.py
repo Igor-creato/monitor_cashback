@@ -62,6 +62,9 @@ SOURCE_HEALTH_EVENT_TYPE_VALUES = frozenset(
         "cashback_api_error",
     }
 )
+FETCH_ATTEMPT_STATUS_VALUES = frozenset(
+    {"success", "failed", "skipped", "quarantined"}
+)
 SOURCE_DIFFICULTY_CLASS_VALUES = frozenset({"light", "medium", "heavy"})
 SOURCE_TRANSPORT_VALUES = frozenset(
     {"direct_http", "curl_cffi", "crawl4ai", "playwright", "camoufox"}
@@ -850,3 +853,68 @@ class FetchJob(Base):
     tracked_product: Mapped[TrackedProduct] = relationship(
         back_populates="fetch_jobs",
     )
+
+
+class FetchAttempt(Base):
+    __tablename__ = "fetch_attempts"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    fetch_job_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("fetch_jobs.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    tracked_product_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("tracked_products.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(64), nullable=False)
+    proxy_pool_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("proxy_pools.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    proxy_endpoint_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("proxy_endpoints.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    worker_name: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    status: Mapped[str] = mapped_column(String(32), nullable=False)
+    error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    http_status: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    response_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    cost_estimated: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 6),
+        nullable=True,
+    )
+    bytes_downloaded: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    product_data_found: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    price_found: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    image_found: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice("status", value, FETCH_ATTEMPT_STATUS_VALUES)
