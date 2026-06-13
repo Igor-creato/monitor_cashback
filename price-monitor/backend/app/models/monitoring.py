@@ -916,3 +916,91 @@ class FetchAttempt(Base):
     @validates("status")
     def validate_status(self, _: str, value: str) -> str:
         return _validate_choice("status", value, FETCH_ATTEMPT_STATUS_VALUES)
+
+
+class ProductFeedSource(Base):
+    __tablename__ = "product_feed_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "merchant_id",
+            "source_code",
+            "region_code",
+            name="uq_product_feed_sources_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    merchant_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    feed_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    format: Mapped[str] = mapped_column(String(32), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    region_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="default",
+        server_default="default",
+    )
+    fields_mapping_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    last_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    items: Mapped[list[ProductFeedItem]] = relationship(
+        back_populates="feed_source",
+        cascade="all, delete-orphan",
+    )
+
+
+class ProductFeedItem(Base):
+    __tablename__ = "product_feed_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "feed_source_id",
+            "canonical_url",
+            name="uq_product_feed_items_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    feed_source_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("product_feed_sources.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    external_product_id: Mapped[str | None] = mapped_column(String(191), nullable=True)
+    canonical_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    image_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    old_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    availability: Mapped[str] = mapped_column(String(32), nullable=False)
+    category_id: Mapped[str | None] = mapped_column(String(191), nullable=True)
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    feed_source: Mapped[ProductFeedSource] = relationship(back_populates="items")

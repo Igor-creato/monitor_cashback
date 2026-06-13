@@ -1,6 +1,8 @@
 from app.models.monitoring import (
     FetchJob,
     PriceHistory,
+    ProductFeedItem,
+    ProductFeedSource,
     TrackedProduct,
     UserProductSubscription,
 )
@@ -8,6 +10,8 @@ from app.models.monitoring import (
 __all__ = [
     "FetchJob",
     "PriceHistory",
+    "ProductFeedItem",
+    "ProductFeedSource",
     "TrackedProduct",
     "UserProductSubscription",
 ]
