@@ -1,3 +1,7 @@
+# Local Claude Code personal settings/hooks (not team-wide).
+.claude/settings.local.json
+.claude/monitor-cashback-reminder.txt
+
 # Local agent/Ruflo runtime state.
 .swarm/
 agentdb.rvf
