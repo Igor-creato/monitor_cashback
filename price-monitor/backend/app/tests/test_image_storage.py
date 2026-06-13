@@ -113,9 +113,7 @@ def test_valid_jpeg_is_stored(_enabled_storage: None) -> None:
     assert result.copied is True
     assert result.content_type == "image/jpeg"
     assert result.object_key == _object_key(42, content, "jpg")
-    assert result.image_url == (
-        "https://cdn.example.com/img/" + result.object_key
-    )
+    assert result.image_url == ("https://cdn.example.com/img/" + result.object_key)
     assert len(s3.calls) == 1
     assert s3.calls[0]["bucket"] == "product-images"
     assert s3.calls[0]["key"] == result.object_key
@@ -303,9 +301,7 @@ def test_download_image_returns_bytes_and_content_type() -> None:
         response=_FakeImageResponse(content=b"abc", content_type="image/png")
     )
 
-    content, content_type = download_image(
-        "https://shop.local/a.png", transport
-    )
+    content, content_type = download_image("https://shop.local/a.png", transport)
 
     assert content == b"abc"
     assert content_type == "image/png"
