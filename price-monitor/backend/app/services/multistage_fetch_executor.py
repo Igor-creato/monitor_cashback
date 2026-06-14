@@ -28,6 +28,7 @@ from app.services.product_feeds import (
 )
 from app.services.proxy_manager import lease_proxy, report_proxy_result
 from app.services.source_health import record_source_event
+from app.services.source_quarantine import apply_source_quarantine_policy
 from app.services.user_limits import UserPriceMonitorLimits
 from app.transports.base import (
     TransportNetworkError,
@@ -48,7 +49,18 @@ PROXY_HTTP_STRATEGIES = frozenset(
 BROWSER_STRATEGIES = frozenset({"crawl4ai", "playwright"})
 FALLBACK_ERROR_TYPES = frozenset({"http_403", "http_429"})
 SOURCE_HEALTH_EVENT_TYPES = frozenset(
-    {"success", "timeout", "http_403", "http_429", "parser_error", "price_not_found"}
+    {
+        "success",
+        "timeout",
+        "http_403",
+        "http_429",
+        "parser_error",
+        "captcha_detected",
+        "price_not_found",
+    }
+)
+SOURCE_QUARANTINE_POLICY_EVENTS = frozenset(
+    {"http_403", "http_429", "parser_error", "captcha_detected"}
 )
 FALLBACK_CHAINS: dict[str, tuple[str, ...]] = {
     "cheap_proxy_http": ("standard_proxy_http", "residential_proxy_http"),
@@ -79,6 +91,7 @@ class ProductFetchExecutionContext:
     proxy_reporter: Callable[..., Any] = report_proxy_result
     attempt_recorder: Callable[..., Any] = record_fetch_attempt
     health_recorder: Callable[..., Any] = record_source_event
+    quarantine_policy: Callable[..., Any] = apply_source_quarantine_policy
     schema_resolver: Callable[[TrackedProduct], Any] | None = None
 
 
@@ -522,6 +535,14 @@ def _record_source_health(
         status_code=metadata.http_status,
         response_ms=metadata.response_ms,
         session=context.session,
+    )
+    if event_type not in SOURCE_QUARANTINE_POLICY_EVENTS:
+        return
+    context.quarantine_policy(
+        source_code,
+        event_type,
+        session=context.session,
+        now=context.now,
     )
 
 

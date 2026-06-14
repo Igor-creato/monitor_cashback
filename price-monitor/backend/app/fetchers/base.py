@@ -10,6 +10,7 @@ FetchErrorType = Literal[
     "http_429",
     "timeout",
     "parser_error",
+    "captcha_detected",
     "price_not_found",
     "bad_content",
     "source_unavailable",

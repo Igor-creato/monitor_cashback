@@ -18,6 +18,7 @@ from app.models.monitoring import (
     SourceConfig,
     SourceFetchProfile,
     SourceHealthEvent,
+    SourceQuarantineState,
     TrackedProduct,
     TrackedProductCashback,
     UserProductSubscription,
@@ -63,6 +64,7 @@ def test_monitoring_tables_are_registered_in_metadata() -> None:
         "source_configs",
         "source_fetch_profiles",
         "source_health_events",
+        "source_quarantine_states",
         "proxy_pools",
         "proxy_endpoints",
         "proxy_leases",
@@ -86,6 +88,7 @@ def test_monitoring_unique_constraints_are_declared() -> None:
 
     assert ("source_code",) in _unique_constraint_columns("source_configs")
     assert ("source_code",) in _unique_constraint_columns("source_fetch_profiles")
+    assert ("source_code",) in _unique_constraint_columns("source_quarantine_states")
 
     assert ("source", "purpose") in _unique_constraint_columns("proxy_pools")
     assert ("lease_token",) in _unique_constraint_columns("proxy_leases")
@@ -525,6 +528,51 @@ def test_source_health_event_enum_values_are_validated_by_application() -> None:
             id=2,
             source_code="testshop",
             event_type="captcha_required",
+        )
+
+
+def test_source_quarantine_state_is_created() -> None:
+    engine = create_engine("sqlite:///:memory:")
+    Base.metadata.create_all(engine)
+
+    with Session(engine) as session:
+        state = SourceQuarantineState(
+            id=1,
+            source_code="testshop",
+            status="cooldown",
+            reason="too_many_429",
+            error_type="http_429",
+            quarantined_until=datetime(2026, 6, 14, 12, 15, tzinfo=UTC),
+        )
+
+        session.add(state)
+        session.flush()
+
+        assert state.id == 1
+        assert state.source_code == "testshop"
+        assert state.status == "cooldown"
+        assert state.reason == "too_many_429"
+        assert state.error_type == "http_429"
+        assert state.quarantined_until is not None
+        assert state.created_at is not None
+        assert state.updated_at is not None
+
+
+def test_source_quarantine_state_status_values_are_validated() -> None:
+    for status in ("active", "cooldown", "quarantined", "disabled"):
+        state = SourceQuarantineState(
+            id=1,
+            source_code=f"testshop-{status}",
+            status=status,
+        )
+
+        assert state.status == status
+
+    with pytest.raises(ValueError, match="status"):
+        SourceQuarantineState(
+            id=2,
+            source_code="testshop",
+            status="paused",
         )
 
 

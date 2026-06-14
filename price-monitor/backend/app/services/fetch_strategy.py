@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from app.db import SessionLocal
 from app.models.monitoring import SourceHealthEvent
 from app.services.source_profiles import SourceProfile, get_source_profile
+from app.services.source_quarantine import get_effective_source_quarantine_state
 from app.services.user_limits import UserPriceMonitorLimits
 
 RECENT_DEGRADATION_WINDOW = timedelta(minutes=30)
@@ -37,18 +38,18 @@ def select_fetch_strategy(
     cost_budget_exceeded: bool = False,
     now: datetime | None = None,
 ) -> FetchStrategyDecision:
-    if has_fresh_feed_data:
-        return _decision(
-            strategy="feed",
-            reason="fresh_feed_data",
-            cost_level="free",
-            max_attempts=1,
-        )
-
-    if cost_budget_exceeded:
-        return _quarantine("cost_budget_exceeded")
-
     if session is not None:
+        quarantine_reason = _source_quarantine_reason(
+            source_code,
+            session,
+            now=now,
+        )
+        if quarantine_reason is not None:
+            return _quarantine(quarantine_reason)
+        if has_fresh_feed_data:
+            return _feed_decision()
+        if cost_budget_exceeded:
+            return _quarantine("cost_budget_exceeded")
         return _select_with_session(
             source_code,
             session,
@@ -57,6 +58,10 @@ def select_fetch_strategy(
         )
 
     if SessionLocal is None:
+        if has_fresh_feed_data:
+            return _feed_decision()
+        if cost_budget_exceeded:
+            return _quarantine("cost_budget_exceeded")
         profile = get_source_profile(source_code)
         return _select_from_profile(
             profile,
@@ -65,12 +70,41 @@ def select_fetch_strategy(
         )
 
     with SessionLocal() as owned_session:
+        quarantine_reason = _source_quarantine_reason(
+            source_code,
+            owned_session,
+            now=now,
+        )
+        if quarantine_reason is not None:
+            return _quarantine(quarantine_reason)
+        if has_fresh_feed_data:
+            return _feed_decision()
+        if cost_budget_exceeded:
+            return _quarantine("cost_budget_exceeded")
         return _select_with_session(
             source_code,
             owned_session,
             user_limits=user_limits,
             now=now,
         )
+
+
+def _source_quarantine_reason(
+    source_code: str,
+    session: Session,
+    *,
+    now: datetime | None,
+) -> str | None:
+    state = get_effective_source_quarantine_state(
+        source_code,
+        session=session,
+        now=now,
+    )
+    if not state.is_blocked:
+        return None
+    if state.reason:
+        return f"source_{state.status}_{state.reason}"
+    return f"source_{state.status}"
 
 
 def _select_with_session(
@@ -153,6 +187,15 @@ def _select_from_profile(
         )
 
     return _quarantine("unsupported_source_difficulty")
+
+
+def _feed_decision() -> FetchStrategyDecision:
+    return _decision(
+        strategy="feed",
+        reason="fresh_feed_data",
+        cost_level="free",
+        max_attempts=1,
+    )
 
 
 def _recent_degradation_event(
