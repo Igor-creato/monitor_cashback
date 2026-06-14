@@ -28,6 +28,16 @@ class PriceFetchResult:
     fetched_at: datetime
 
 
+@dataclass(frozen=True)
+class FetchedPage:
+    content: dict | str | bytes
+    content_type: str
+    fetched_at: datetime
+    http_status: int | None = None
+    response_ms: int | None = None
+    bytes_downloaded: int | None = None
+
+
 class FetchError(Exception):
     def __init__(self, error_type: FetchErrorType, message: str | None = None) -> None:
         self.error_type = error_type

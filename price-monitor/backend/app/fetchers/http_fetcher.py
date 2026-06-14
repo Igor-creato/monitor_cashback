@@ -8,7 +8,7 @@ from typing import Any
 
 import httpx
 
-from app.fetchers.base import FetchError, PriceFetchResult
+from app.fetchers.base import FetchedPage, FetchError, PriceFetchResult
 
 
 class HTTPPriceFetcher:
@@ -41,6 +41,27 @@ class HTTPPriceFetcher:
         if "text/html" in content_type:
             return self._parse_html(response)
         raise FetchError("bad_content")
+
+    def fetch_page(self, url: str) -> FetchedPage:
+        try:
+            response = self._client.get(url)
+        except httpx.TimeoutException as exc:
+            raise FetchError("timeout") from exc
+        except httpx.RequestError as exc:
+            raise FetchError("source_unavailable") from exc
+
+        self._raise_for_status(response)
+        if not response.content:
+            raise FetchError("bad_content")
+
+        return FetchedPage(
+            content=response.text,
+            content_type=response.headers.get("Content-Type", ""),
+            fetched_at=self._time_provider(),
+            http_status=response.status_code,
+            response_ms=_response_elapsed_ms(response),
+            bytes_downloaded=len(response.content),
+        )
 
     @staticmethod
     def _raise_for_status(response: httpx.Response) -> None:
@@ -136,3 +157,10 @@ def _bool_value(value: Any, *, default: bool) -> bool:
     if isinstance(value, str):
         return value.strip().lower() in {"1", "true", "yes", "available"}
     return bool(value)
+
+
+def _response_elapsed_ms(response: httpx.Response) -> int | None:
+    try:
+        return int(response.elapsed.total_seconds() * 1000)
+    except RuntimeError:
+        return None
