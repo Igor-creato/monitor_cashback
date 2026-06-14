@@ -19,6 +19,7 @@ from app.schemas.watchlist import (
     WatchlistItemsResponse,
     WatchlistItemWithCashbackResponse,
 )
+from app.schemas.watchlist_ui import WatchlistUiResponse
 from app.services.deeplink import (
     DeeplinkCreationError,
     DeeplinkUnavailable,
@@ -35,6 +36,7 @@ from app.services.watchlist import (
     list_watchlist_items,
     patch_watchlist_item,
 )
+from app.services.watchlist_ui import build_watchlist_ui_response
 
 router = APIRouter(
     prefix="/v1/watchlist",
@@ -93,6 +95,31 @@ def get_watchlist_items(
             for subscription in subscriptions
         ],
         limit=limit,
+    )
+
+
+@router.get(
+    "/ui",
+    response_model=WatchlistUiResponse,
+    response_model_exclude_none=True,
+)
+def get_watchlist_ui(
+    request: Request,
+    site_id: str,
+    external_user_id: str,
+    session: DbSession,
+    include_chart_summary: bool = True,
+    limit: Annotated[int, Query(ge=1, le=100)] = 50,
+    offset: Annotated[int, Query(ge=0)] = 0,
+) -> WatchlistUiResponse:
+    _verify_site_matches_request(request, site_id)
+    return build_watchlist_ui_response(
+        session,
+        site_id=site_id,
+        external_user_id=external_user_id,
+        include_chart_summary=include_chart_summary,
+        limit=limit,
+        offset=offset,
     )
 
 

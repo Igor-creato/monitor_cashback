@@ -86,6 +86,13 @@ def build_price_chart(
     )
 
 
+def summarize_price_history(
+    history: list[PriceHistory],
+) -> tuple[PriceChartSummary, PriceChartLabels]:
+    summary = _summary(_raw_points(history))
+    return summary, PriceChartLabels(headline=_headline(summary))
+
+
 def _get_owned_active_product(
     session: Session,
     *,
