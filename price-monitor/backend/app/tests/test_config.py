@@ -56,3 +56,27 @@ def test_settings_does_not_expose_object_storage_secrets(monkeypatch) -> None:
     assert "object-access-secret" not in repr(settings.model_dump())
     assert "object-secret-secret" not in repr(settings)
     assert "object-secret-secret" not in repr(settings.model_dump())
+
+
+def test_settings_loads_object_storage_environment(monkeypatch) -> None:
+    monkeypatch.setenv("OBJECT_STORAGE_ENABLED", "true")
+    monkeypatch.setenv("OBJECT_STORAGE_ENDPOINT", "http://minio:9000")
+    monkeypatch.setenv("OBJECT_STORAGE_ACCESS_KEY", "minioadmin")
+    monkeypatch.setenv("OBJECT_STORAGE_SECRET_KEY", "minioadmin123")
+    monkeypatch.setenv("OBJECT_STORAGE_BUCKET", "product-images")
+    monkeypatch.setenv(
+        "OBJECT_STORAGE_PUBLIC_BASE_URL",
+        "http://localhost:9000/product-images",
+    )
+
+    settings = Settings(_env_file=None)
+
+    assert settings.object_storage_enabled is True
+    assert settings.object_storage_endpoint == "http://minio:9000"
+    assert settings.object_storage_access_key.get_secret_value() == "minioadmin"
+    assert settings.object_storage_secret_key.get_secret_value() == "minioadmin123"
+    assert settings.object_storage_bucket == "product-images"
+    assert (
+        settings.object_storage_public_base_url
+        == "http://localhost:9000/product-images"
+    )

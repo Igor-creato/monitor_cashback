@@ -23,3 +23,31 @@ Health endpoint:
 ```text
 GET /health
 ```
+
+## Local MinIO object storage
+
+Local development uses MinIO as an S3-compatible object storage for product
+images. The default bucket is `product-images`.
+
+Start only object storage:
+
+```powershell
+rtk docker compose up -d minio minio-init
+```
+
+Or start the full local stack:
+
+```powershell
+rtk docker compose up -d
+```
+
+MinIO endpoints:
+
+- API: `http://localhost:9000`
+- Console: `http://localhost:9001`
+- Bucket: `product-images`
+
+The backend talks to MinIO through `OBJECT_STORAGE_ENDPOINT=http://minio:9000`
+inside Docker Compose. For production, replace the `OBJECT_STORAGE_*`
+environment variables with credentials, endpoint, bucket, and public base URL
+for any S3-compatible storage/CDN.
