@@ -80,3 +80,22 @@ def test_settings_loads_object_storage_environment(monkeypatch) -> None:
         settings.object_storage_public_base_url
         == "http://localhost:9000/product-images"
     )
+
+
+def test_settings_loads_browserless_environment(monkeypatch) -> None:
+    monkeypatch.setenv("BROWSERLESS_WS_URL", "ws://browserless:3000/chromium")
+    monkeypatch.setenv("BROWSERLESS_TOKEN", "browserless-secret-token")
+
+    settings = Settings(_env_file=None)
+
+    assert settings.browserless_ws_url == "ws://browserless:3000/chromium"
+    assert settings.browserless_token.get_secret_value() == "browserless-secret-token"
+
+
+def test_settings_does_not_expose_browserless_token(monkeypatch) -> None:
+    monkeypatch.setenv("BROWSERLESS_TOKEN", "browserless-secret-token")
+
+    settings = Settings(_env_file=None)
+
+    assert "browserless-secret-token" not in repr(settings)
+    assert "browserless-secret-token" not in repr(settings.model_dump())

@@ -13,6 +13,7 @@ FetchErrorType = Literal[
     "price_not_found",
     "bad_content",
     "source_unavailable",
+    "browser_unavailable",
 ]
 
 

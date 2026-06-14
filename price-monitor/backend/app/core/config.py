@@ -22,6 +22,8 @@ class Settings(BaseSettings):
     object_storage_secret_key: SecretStr = SecretStr("")
     object_storage_bucket: str = ""
     object_storage_public_base_url: str = ""
+    browserless_ws_url: str = ""
+    browserless_token: SecretStr = SecretStr("")
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
