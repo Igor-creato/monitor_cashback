@@ -15,8 +15,11 @@ import app.db as db
 from app.core import config
 from app.main import app
 from app.models.monitoring import (
+    FetchAttempt,
     FetchJob,
     NotificationEvent,
+    ProxyEndpoint,
+    ProxyPool,
     SourceConfig,
     SourceHealthEvent,
     TrackedProduct,
@@ -169,6 +172,97 @@ def _fetch_job(
     session.add(job)
     session.commit()
     return job
+
+
+def _proxy_pool(
+    session: Session,
+    *,
+    pool_id: int = 1,
+    source: str = "testshop",
+    purpose: str = "price_fetch",
+    tier: str = "cheap",
+    enabled: bool = True,
+    cost_per_request: Decimal | None = Decimal("0.01000000"),
+) -> ProxyPool:
+    pool = ProxyPool(
+        id=pool_id,
+        source=source,
+        purpose=purpose,
+        tier=tier,
+        enabled=enabled,
+        cost_per_request=cost_per_request,
+        cost_per_gb=Decimal("1.50000000"),
+        max_cost_per_success=Decimal("0.10000000"),
+        country_code="RU",
+        region_code="msk",
+        sticky_session_supported=True,
+        priority=10,
+    )
+    session.add(pool)
+    session.commit()
+    return pool
+
+
+def _proxy_endpoint(
+    session: Session,
+    pool: ProxyPool,
+    *,
+    endpoint_id: int = 1,
+    endpoint_ref: str = "http://user:secret-password@proxy.local:8080",
+) -> ProxyEndpoint:
+    endpoint = ProxyEndpoint(
+        id=endpoint_id,
+        pool=pool,
+        endpoint_ref=endpoint_ref,
+        enabled=True,
+        max_concurrency=5,
+        current_concurrency=1,
+        success_rate_1h=0.75,
+        success_rate_24h=0.8,
+        avg_response_ms=320,
+        ban_score=2,
+    )
+    session.add(endpoint)
+    session.commit()
+    return endpoint
+
+
+def _fetch_attempt(
+    session: Session,
+    *,
+    attempt_id: int,
+    product: TrackedProduct,
+    source_code: str = "testshop",
+    strategy: str = "direct_http",
+    status: str = "success",
+    error_type: str | None = None,
+    http_status: int | None = 200,
+    cost_estimated: Decimal | None = Decimal("0.010000"),
+    proxy_pool_id: int | None = None,
+    proxy_endpoint_id: int | None = None,
+    created_at: datetime | None = None,
+) -> FetchAttempt:
+    attempt = FetchAttempt(
+        id=attempt_id,
+        tracked_product_id=product.id,
+        source_code=source_code,
+        strategy=strategy,
+        status=status,
+        error_type=error_type,
+        http_status=http_status,
+        response_ms=250,
+        cost_estimated=cost_estimated,
+        proxy_pool_id=proxy_pool_id,
+        proxy_endpoint_id=proxy_endpoint_id,
+        product_data_found=status == "success",
+        price_found=status == "success",
+        image_found=False,
+    )
+    if created_at is not None:
+        attempt.created_at = created_at.replace(tzinfo=None)
+    session.add(attempt)
+    session.commit()
+    return attempt
 
 
 def test_admin_overview_requires_admin_api_key(client: TestClient) -> None:
@@ -417,4 +511,266 @@ def test_admin_errors_returns_local_error_records(
         "fetch_job_failed",
         "notification_event_failed",
         "source_health_http_429",
+    ]
+
+
+def test_new_admin_fetch_endpoints_require_admin_api_key(
+    client: TestClient,
+) -> None:
+    endpoints = [
+        "/admin/fetch-economics",
+        "/admin/proxy-pools",
+        "/admin/proxy-pools/1",
+        "/admin/sources/testshop/health",
+        "/admin/fetch-attempts",
+    ]
+
+    for endpoint in endpoints:
+        response = client.get(endpoint)
+        assert response.status_code == 401
+
+
+def test_admin_fetch_economics_counts_cost_per_success_for_24h(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    now = datetime.now(UTC)
+    product = _tracked_product(db_session)
+    cheap_pool = _proxy_pool(
+        db_session,
+        pool_id=1,
+        tier="cheap",
+        cost_per_request=Decimal("0.01000000"),
+    )
+    standard_pool = _proxy_pool(
+        db_session,
+        pool_id=2,
+        source="othershop",
+        tier="standard",
+        cost_per_request=Decimal("0.02000000"),
+    )
+    _fetch_attempt(
+        db_session,
+        attempt_id=1,
+        product=product,
+        status="success",
+        strategy="cheap_proxy_http",
+        cost_estimated=Decimal("0.60"),
+        proxy_pool_id=cheap_pool.id,
+        created_at=now - timedelta(hours=1),
+    )
+    _fetch_attempt(
+        db_session,
+        attempt_id=2,
+        product=product,
+        status="success",
+        strategy="playwright",
+        cost_estimated=Decimal("0.30"),
+        created_at=now - timedelta(hours=2),
+    )
+    _fetch_attempt(
+        db_session,
+        attempt_id=3,
+        product=product,
+        status="failed",
+        strategy="standard_proxy_http",
+        error_type="http_403",
+        http_status=403,
+        cost_estimated=Decimal("0.10"),
+        proxy_pool_id=standard_pool.id,
+        created_at=now - timedelta(hours=3),
+    )
+    _fetch_attempt(
+        db_session,
+        attempt_id=4,
+        product=product,
+        status="failed",
+        strategy="camoufox",
+        error_type="captcha_detected",
+        http_status=None,
+        cost_estimated=Decimal("0.25"),
+        created_at=now - timedelta(days=2),
+    )
+
+    response = client.get("/admin/fetch-economics", headers=_admin_headers())
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["period"] == "24h"
+    assert body["cost_per_successful_fetch"] == "0.500000"
+    assert body["success_rate"] == "0.666667"
+    assert body["browser_fallback_rate"] == "0.333333"
+    assert body["http_403_count"] == 1
+    assert body["http_429_count"] == 0
+    assert body["captcha_count"] == 0
+    assert body["proxy_usage_by_tier"] == {
+        "cheap": 1,
+        "standard": 1,
+        "residential": 0,
+        "premium": 0,
+    }
+    assert body["proxy_cost_by_tier"] == {
+        "cheap": "0.600000",
+        "standard": "0.100000",
+        "residential": "0.000000",
+        "premium": "0.000000",
+    }
+    assert body["source_costs"] == [
+        {
+            "source_code": "testshop",
+            "total_cost": "1.000000",
+            "success_count": 2,
+            "attempt_count": 3,
+            "cost_per_successful_fetch": "0.500000",
+        }
+    ]
+
+
+def test_admin_proxy_pools_never_expose_endpoint_refs_or_passwords(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    pool = _proxy_pool(db_session)
+    _proxy_endpoint(db_session, pool)
+
+    list_response = client.get("/admin/proxy-pools", headers=_admin_headers())
+    detail_response = client.get(
+        f"/admin/proxy-pools/{pool.id}",
+        headers=_admin_headers(),
+    )
+
+    assert list_response.status_code == 200
+    assert detail_response.status_code == 200
+    list_body = list_response.text
+    detail_body = detail_response.text
+    assert "secret-password" not in list_body
+    assert "secret-password" not in detail_body
+    assert "endpoint_ref" not in list_body
+    assert "endpoint_ref" not in detail_body
+    assert list_response.json()["items"][0]["endpoint_count"] == 1
+    assert detail_response.json()["endpoints"][0]["endpoint_id"] == 1
+
+
+def test_admin_source_health_counts_403_and_429_for_24h(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    now = datetime.now(UTC)
+    db_session.add_all(
+        [
+            SourceHealthEvent(
+                source_code="testshop",
+                event_type="success",
+                status_code=200,
+                created_at=(now - timedelta(hours=1)).replace(tzinfo=None),
+            ),
+            SourceHealthEvent(
+                source_code="testshop",
+                event_type="http_403",
+                status_code=403,
+                created_at=(now - timedelta(hours=2)).replace(tzinfo=None),
+            ),
+            SourceHealthEvent(
+                source_code="testshop",
+                event_type="http_429",
+                status_code=429,
+                created_at=(now - timedelta(hours=3)).replace(tzinfo=None),
+            ),
+            SourceHealthEvent(
+                source_code="testshop",
+                event_type="captcha_detected",
+                created_at=(now - timedelta(days=2)).replace(tzinfo=None),
+            ),
+        ]
+    )
+    db_session.commit()
+
+    response = client.get(
+        "/admin/sources/testshop/health",
+        headers=_admin_headers(),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "source_code": "testshop",
+        "period": "24h",
+        "success_count": 1,
+        "failure_count": 2,
+        "total_count": 3,
+        "success_rate": "0.333333",
+        "http_403_count": 1,
+        "http_429_count": 1,
+        "captcha_count": 0,
+        "timeout_count": 0,
+        "parser_error_count": 0,
+        "price_not_found_count": 0,
+        "cashback_api_error_count": 0,
+    }
+
+
+def test_admin_fetch_attempts_filters_by_source_strategy_and_status(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    product = _tracked_product(db_session)
+    other_product = _tracked_product(db_session, product_id=2, source="othershop")
+    _fetch_attempt(
+        db_session,
+        attempt_id=1,
+        product=product,
+        source_code="testshop",
+        strategy="cheap_proxy_http",
+        status="success",
+    )
+    _fetch_attempt(
+        db_session,
+        attempt_id=2,
+        product=product,
+        source_code="testshop",
+        strategy="direct_http",
+        status="failed",
+        error_type="http_429",
+        http_status=429,
+    )
+    _fetch_attempt(
+        db_session,
+        attempt_id=3,
+        product=other_product,
+        source_code="othershop",
+        strategy="cheap_proxy_http",
+        status="failed",
+    )
+
+    response = client.get(
+        "/admin/fetch-attempts",
+        headers=_admin_headers(),
+        params={
+            "source": "testshop",
+            "strategy": "cheap_proxy_http",
+            "status": "success",
+        },
+    )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [
+        {
+            "attempt_id": 1,
+            "fetch_job_id": None,
+            "tracked_product_id": 1,
+            "source_code": "testshop",
+            "strategy": "cheap_proxy_http",
+            "proxy_pool_id": None,
+            "proxy_endpoint_id": None,
+            "worker_name": None,
+            "status": "success",
+            "error_type": None,
+            "http_status": 200,
+            "response_ms": 250,
+            "cost_estimated": "0.010000",
+            "bytes_downloaded": None,
+            "product_data_found": True,
+            "price_found": True,
+            "image_found": False,
+            "created_at": response.json()["items"][0]["created_at"],
+        }
     ]

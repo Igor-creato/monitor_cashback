@@ -4,11 +4,14 @@ from datetime import UTC, datetime, timedelta
 from decimal import Decimal
 
 from sqlalchemy import func, select
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session, joinedload, selectinload
 
 from app.models.monitoring import (
+    FetchAttempt,
     FetchJob,
     NotificationEvent,
+    ProxyEndpoint,
+    ProxyPool,
     SourceConfig,
     SourceHealthEvent,
     TrackedProduct,
@@ -17,12 +20,26 @@ from app.models.monitoring import (
 )
 from app.schemas.admin import (
     AdminErrorResponse,
+    AdminFetchAttemptResponse,
+    AdminFetchEconomicsResponse,
+    AdminFetchEconomicsSourceCostResponse,
     AdminJobResponse,
     AdminOverviewResponse,
     AdminProductCashbackResponse,
     AdminProductResponse,
+    AdminProxyEndpointResponse,
+    AdminProxyPoolDetailResponse,
+    AdminProxyPoolResponse,
+    AdminSourceHealthResponse,
     AdminSourcePatch,
     AdminSourceResponse,
+)
+
+ADMIN_PERIOD_LABEL = "24h"
+ADMIN_PERIOD = timedelta(hours=24)
+ADMIN_PROXY_TIERS = ("cheap", "standard", "residential", "premium")
+ADMIN_BROWSER_STRATEGIES = frozenset(
+    {"crawl4ai", "playwright", "camoufox", "crawl4ai_browser", "playwright_browser"}
 )
 
 
@@ -197,6 +214,137 @@ def list_admin_errors(session: Session) -> list[AdminErrorResponse]:
     return items
 
 
+def get_admin_fetch_economics(session: Session) -> AdminFetchEconomicsResponse:
+    cutoff = _admin_period_cutoff()
+    attempts = list(
+        session.scalars(
+            select(FetchAttempt)
+            .where(FetchAttempt.created_at >= cutoff)
+            .order_by(FetchAttempt.id.asc())
+        )
+    )
+    pools_by_id = _proxy_pools_by_id(session, attempts)
+
+    total_count = len(attempts)
+    success_count = _success_attempt_count(attempts)
+    total_cost = _attempt_total_cost(attempts)
+    proxy_cost_by_tier = {tier: Decimal("0") for tier in ADMIN_PROXY_TIERS}
+    proxy_usage_by_tier = {tier: 0 for tier in ADMIN_PROXY_TIERS}
+
+    for attempt in attempts:
+        if attempt.proxy_pool_id is None:
+            continue
+        pool = pools_by_id.get(attempt.proxy_pool_id)
+        if pool is None or pool.tier not in proxy_cost_by_tier:
+            continue
+        proxy_usage_by_tier[pool.tier] += 1
+        proxy_cost_by_tier[pool.tier] += attempt.cost_estimated or Decimal("0")
+
+    return AdminFetchEconomicsResponse(
+        period=ADMIN_PERIOD_LABEL,
+        cost_per_successful_fetch=_format_decimal(
+            _cost_per_success(total_cost, success_count)
+        ),
+        success_rate=_format_rate_decimal(success_count, total_count),
+        browser_fallback_rate=_format_rate_decimal(
+            _browser_attempt_count(attempts),
+            total_count,
+        ),
+        http_403_count=_attempt_error_count(attempts, "http_403", 403),
+        http_429_count=_attempt_error_count(attempts, "http_429", 429),
+        captcha_count=_attempt_captcha_count(attempts),
+        proxy_cost_by_tier={
+            tier: _format_decimal(proxy_cost_by_tier[tier])
+            for tier in ADMIN_PROXY_TIERS
+        },
+        proxy_usage_by_tier=proxy_usage_by_tier,
+        source_costs=_source_costs(attempts),
+    )
+
+
+def list_admin_proxy_pools(session: Session) -> list[AdminProxyPoolResponse]:
+    pools = session.scalars(
+        select(ProxyPool)
+        .options(selectinload(ProxyPool.endpoints))
+        .order_by(ProxyPool.id.asc())
+    )
+    return [_serialize_proxy_pool(pool) for pool in pools]
+
+
+def get_admin_proxy_pool(
+    session: Session,
+    pool_id: int,
+) -> AdminProxyPoolDetailResponse | None:
+    pool = session.scalar(
+        select(ProxyPool)
+        .options(selectinload(ProxyPool.endpoints))
+        .where(ProxyPool.id == pool_id)
+    )
+    if pool is None:
+        return None
+    base = _serialize_proxy_pool(pool)
+    return AdminProxyPoolDetailResponse(
+        **base.model_dump(),
+        endpoints=[
+            _serialize_proxy_endpoint(endpoint)
+            for endpoint in sorted(pool.endpoints, key=lambda item: item.id)
+        ],
+    )
+
+
+def get_admin_source_health(
+    session: Session,
+    source_code: str,
+) -> AdminSourceHealthResponse:
+    cutoff = _admin_period_cutoff()
+    events = list(
+        session.scalars(
+            select(SourceHealthEvent).where(
+                SourceHealthEvent.source_code == source_code,
+                SourceHealthEvent.created_at >= cutoff,
+            )
+        )
+    )
+    success_count = sum(1 for event in events if event.event_type == "success")
+    total_count = len(events)
+    failure_count = total_count - success_count
+
+    return AdminSourceHealthResponse(
+        source_code=source_code,
+        period=ADMIN_PERIOD_LABEL,
+        success_count=success_count,
+        failure_count=failure_count,
+        total_count=total_count,
+        success_rate=_format_rate_decimal(success_count, total_count),
+        http_403_count=_source_event_count(events, "http_403"),
+        http_429_count=_source_event_count(events, "http_429"),
+        captcha_count=_source_event_count(events, "captcha_detected"),
+        timeout_count=_source_event_count(events, "timeout"),
+        parser_error_count=_source_event_count(events, "parser_error"),
+        price_not_found_count=_source_event_count(events, "price_not_found"),
+        cashback_api_error_count=_source_event_count(events, "cashback_api_error"),
+    )
+
+
+def list_admin_fetch_attempts(
+    session: Session,
+    *,
+    source: str | None = None,
+    strategy: str | None = None,
+    status: str | None = None,
+) -> list[AdminFetchAttemptResponse]:
+    statement = select(FetchAttempt)
+    if source is not None:
+        statement = statement.where(FetchAttempt.source_code == source)
+    if strategy is not None:
+        statement = statement.where(FetchAttempt.strategy == strategy)
+    if status is not None:
+        statement = statement.where(FetchAttempt.status == status)
+
+    attempts = session.scalars(statement.order_by(FetchAttempt.id.asc()))
+    return [_serialize_fetch_attempt(attempt) for attempt in attempts]
+
+
 def _count(session: Session, statement) -> int:
     return int(session.scalar(statement) or 0)
 
@@ -303,3 +451,187 @@ def _format_rate(value: Decimal | None) -> str | None:
     if value is None:
         return None
     return format(value.normalize(), "f")
+
+
+def _admin_period_cutoff() -> datetime:
+    return _as_utc_naive(current_utc_datetime() - ADMIN_PERIOD)
+
+
+def _as_utc_naive(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value
+    return value.astimezone(UTC).replace(tzinfo=None)
+
+
+def _proxy_pools_by_id(
+    session: Session,
+    attempts: list[FetchAttempt],
+) -> dict[int, ProxyPool]:
+    pool_ids = {
+        attempt.proxy_pool_id
+        for attempt in attempts
+        if attempt.proxy_pool_id is not None
+    }
+    if not pool_ids:
+        return {}
+    pools = session.scalars(select(ProxyPool).where(ProxyPool.id.in_(pool_ids)))
+    return {pool.id: pool for pool in pools}
+
+
+def _success_attempt_count(attempts: list[FetchAttempt]) -> int:
+    return sum(1 for attempt in attempts if attempt.status == "success")
+
+
+def _browser_attempt_count(attempts: list[FetchAttempt]) -> int:
+    return sum(
+        1 for attempt in attempts if attempt.strategy in ADMIN_BROWSER_STRATEGIES
+    )
+
+
+def _attempt_total_cost(attempts: list[FetchAttempt]) -> Decimal:
+    return sum(
+        (attempt.cost_estimated or Decimal("0") for attempt in attempts),
+        Decimal("0"),
+    )
+
+
+def _cost_per_success(total_cost: Decimal, success_count: int) -> Decimal:
+    if success_count == 0:
+        return Decimal("0")
+    return total_cost / Decimal(success_count)
+
+
+def _attempt_error_count(
+    attempts: list[FetchAttempt],
+    error_type: str,
+    http_status: int,
+) -> int:
+    return sum(
+        1
+        for attempt in attempts
+        if attempt.error_type == error_type or attempt.http_status == http_status
+    )
+
+
+def _attempt_captcha_count(attempts: list[FetchAttempt]) -> int:
+    return sum(
+        1
+        for attempt in attempts
+        if attempt.error_type in {"captcha", "captcha_detected"}
+    )
+
+
+def _source_costs(
+    attempts: list[FetchAttempt],
+) -> list[AdminFetchEconomicsSourceCostResponse]:
+    grouped: dict[str, list[FetchAttempt]] = {}
+    for attempt in attempts:
+        grouped.setdefault(attempt.source_code, []).append(attempt)
+
+    items: list[AdminFetchEconomicsSourceCostResponse] = []
+    for source_code in sorted(grouped):
+        source_attempts = grouped[source_code]
+        total_cost = _attempt_total_cost(source_attempts)
+        success_count = _success_attempt_count(source_attempts)
+        items.append(
+            AdminFetchEconomicsSourceCostResponse(
+                source_code=source_code,
+                total_cost=_format_decimal(total_cost),
+                success_count=success_count,
+                attempt_count=len(source_attempts),
+                cost_per_successful_fetch=_format_decimal(
+                    _cost_per_success(total_cost, success_count)
+                ),
+            )
+        )
+    return items
+
+
+def _serialize_proxy_pool(pool: ProxyPool) -> AdminProxyPoolResponse:
+    return AdminProxyPoolResponse(
+        pool_id=pool.id,
+        source=pool.source,
+        purpose=pool.purpose,
+        enabled=pool.enabled,
+        tier=pool.tier,
+        cost_per_request=_format_decimal_or_none(pool.cost_per_request, places=8),
+        cost_per_gb=_format_decimal_or_none(pool.cost_per_gb, places=8),
+        max_cost_per_success=_format_decimal_or_none(
+            pool.max_cost_per_success,
+            places=8,
+        ),
+        country_code=pool.country_code,
+        region_code=pool.region_code,
+        sticky_session_supported=pool.sticky_session_supported,
+        priority=pool.priority,
+        endpoint_count=len(pool.endpoints),
+        enabled_endpoint_count=sum(
+            1 for endpoint in pool.endpoints if endpoint.enabled
+        ),
+        created_at=pool.created_at,
+        updated_at=pool.updated_at,
+    )
+
+
+def _serialize_proxy_endpoint(
+    endpoint: ProxyEndpoint,
+) -> AdminProxyEndpointResponse:
+    return AdminProxyEndpointResponse(
+        endpoint_id=endpoint.id,
+        enabled=endpoint.enabled,
+        max_concurrency=endpoint.max_concurrency,
+        current_concurrency=endpoint.current_concurrency,
+        cooldown_until=endpoint.cooldown_until,
+        success_rate_1h=endpoint.success_rate_1h,
+        success_rate_24h=endpoint.success_rate_24h,
+        avg_response_ms=endpoint.avg_response_ms,
+        ban_score=endpoint.ban_score,
+        last_403_at=endpoint.last_403_at,
+        last_429_at=endpoint.last_429_at,
+        last_captcha_at=endpoint.last_captcha_at,
+        created_at=endpoint.created_at,
+        updated_at=endpoint.updated_at,
+    )
+
+
+def _source_event_count(events: list[SourceHealthEvent], event_type: str) -> int:
+    return sum(1 for event in events if event.event_type == event_type)
+
+
+def _serialize_fetch_attempt(attempt: FetchAttempt) -> AdminFetchAttemptResponse:
+    return AdminFetchAttemptResponse(
+        attempt_id=attempt.id,
+        fetch_job_id=attempt.fetch_job_id,
+        tracked_product_id=attempt.tracked_product_id,
+        source_code=attempt.source_code,
+        strategy=attempt.strategy,
+        proxy_pool_id=attempt.proxy_pool_id,
+        proxy_endpoint_id=attempt.proxy_endpoint_id,
+        worker_name=attempt.worker_name,
+        status=attempt.status,
+        error_type=attempt.error_type,
+        http_status=attempt.http_status,
+        response_ms=attempt.response_ms,
+        cost_estimated=_format_decimal_or_none(attempt.cost_estimated),
+        bytes_downloaded=attempt.bytes_downloaded,
+        product_data_found=attempt.product_data_found,
+        price_found=attempt.price_found,
+        image_found=attempt.image_found,
+        created_at=attempt.created_at,
+    )
+
+
+def _format_rate_decimal(numerator: int, denominator: int) -> str:
+    if denominator == 0:
+        return _format_decimal(Decimal("0"))
+    return _format_decimal(Decimal(numerator) / Decimal(denominator))
+
+
+def _format_decimal(value: Decimal) -> str:
+    return f"{value:.6f}"
+
+
+def _format_decimal_or_none(value: Decimal | None, *, places: int = 6) -> str | None:
+    if value is None:
+        return None
+    return f"{value:.{places}f}"
