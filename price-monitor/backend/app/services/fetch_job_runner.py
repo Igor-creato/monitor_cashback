@@ -5,18 +5,14 @@ from datetime import UTC, datetime
 
 from app.clients.cashback_api import CashbackAPIError
 from app.db import SessionLocal
-from app.extraction import (
-    ExtractedProductData,
-    ExtractionError,
-    ExtractionSchema,
-    PriceNotFoundError,
-    RequiredFieldNotFoundError,
-    extract_product_data,
-)
-from app.fetchers.base import FetchError, PriceFetchResult
+from app.fetchers.base import PriceFetchResult
 from app.models.monitoring import FetchJob, PriceHistory
-from app.services.fetch_attempts import record_fetch_attempt
 from app.services.image_storage import StoredImage, store_product_image
+from app.services.multistage_fetch_executor import (
+    FetchPipelineFailed,
+    ProductFetchExecutionContext,
+    execute_product_fetch,
+)
 from app.services.notifications import evaluate_price_alerts
 from app.services.product_cashback import resolve_and_store_product_cashback
 
@@ -32,7 +28,10 @@ def run_http_fetch_job(
     image_transport=None,
     s3_client=None,
     strategy: str = "http_fetch",
+    product_fetch_executor=execute_product_fetch,
 ):
+    del strategy
+
     if SessionLocal is None:
         raise ValueError("Database is not configured.")
 
@@ -47,31 +46,15 @@ def run_http_fetch_job(
 
         tracked_product = job.tracked_product
 
-        page_metadata: dict[str, int | None] = {}
-        product_data_found = False
-        price_found = False
-        image_found = False
         try:
-            schema = _resolve_schema(schema_resolver, tracked_product)
-            if schema is None:
-                result = fetcher.fetch(tracked_product.canonical_url)
-            else:
-                page = fetcher.fetch_page(tracked_product.canonical_url)
-                page_metadata = {
-                    "http_status": page.http_status,
-                    "response_ms": page.response_ms,
-                    "bytes_downloaded": page.bytes_downloaded,
-                }
-                extracted = extract_product_data(page.content, schema)
-                result = _result_from_extracted(
-                    extracted,
-                    page.fetched_at,
-                    default_currency=tracked_product.currency,
-                )
-
-            product_data_found = True
-            price_found = result.price_current is not None
-            image_found = bool(result.image_url)
+            context = ProductFetchExecutionContext(
+                session=session,
+                fetch_job_id=job.id,
+                worker_name=job.worker_name,
+                http_fetcher=fetcher,
+                schema_resolver=schema_resolver,
+            )
+            result = product_fetch_executor(job.tracked_product_id, context)
             image_url, image_object_key = _copy_image(
                 tracked_product.id,
                 result.image_url,
@@ -79,24 +62,9 @@ def run_http_fetch_job(
                 image_transport=image_transport,
                 s3_client=s3_client,
             )
-        except Exception as exc:
-            error_type = _error_type(exc)
-            job.status = "failed"
-            job.finished_at = _now()
-            job.error_text = _error_text(error_type, exc)
-            tracked_product.fail_count = (tracked_product.fail_count or 0) + 1
-            tracked_product.last_status = error_type
-            _record_attempt(
-                session,
-                job,
-                strategy=strategy,
-                status="failed",
-                error_type=error_type,
-                product_data_found=product_data_found,
-                price_found=price_found,
-                image_found=image_found,
-                **page_metadata,
-            )
+        except FetchPipelineFailed as exc:
+            _apply_failure(job, exc.last_error_type, exc)
+            session.commit()
             return None
 
         _apply_success(
@@ -106,6 +74,7 @@ def run_http_fetch_job(
             image_object_key=image_object_key,
         )
         session.add(_price_history(job.tracked_product_id, result))
+        session.commit()
         try:
             resolve_and_store_product_cashback(
                 job.tracked_product_id,
@@ -124,17 +93,6 @@ def run_http_fetch_job(
                 exc_info=True,
             )
         evaluate_price_alerts(job.tracked_product_id)
-        _record_attempt(
-            session,
-            job,
-            strategy=strategy,
-            status="success",
-            error_type=None,
-            product_data_found=product_data_found,
-            price_found=price_found,
-            image_found=image_found,
-            **page_metadata,
-        )
         return None
 
 
@@ -177,34 +135,13 @@ def _price_history(tracked_product_id: int, result: PriceFetchResult) -> PriceHi
     )
 
 
-def _resolve_schema(schema_resolver, tracked_product) -> ExtractionSchema | None:
-    if schema_resolver is None:
-        return None
-    return schema_resolver(tracked_product)
-
-
-def _result_from_extracted(
-    extracted: ExtractedProductData,
-    fetched_at: datetime,
-    *,
-    default_currency: str | None,
-) -> PriceFetchResult:
-    if extracted.price_current is None:
-        raise PriceNotFoundError()
-
-    availability = (
-        extracted.availability if extracted.availability is not None else True
-    )
-    return PriceFetchResult(
-        product_name=extracted.title,
-        price_current=extracted.price_current,
-        price_old=extracted.price_old,
-        currency=extracted.currency or default_currency or "RUB",
-        availability=availability,
-        seller_name=extracted.seller_name,
-        image_url=extracted.image_url,
-        fetched_at=fetched_at,
-    )
+def _apply_failure(job: FetchJob, error_type: str, exc: Exception) -> None:
+    tracked_product = job.tracked_product
+    job.status = "failed"
+    job.finished_at = _now()
+    job.error_text = _error_text(error_type, exc)
+    tracked_product.fail_count = (tracked_product.fail_count or 0) + 1
+    tracked_product.last_status = error_type
 
 
 def _copy_image(
@@ -238,48 +175,6 @@ def _copy_image(
     if isinstance(stored, StoredImage):
         return stored.image_url, None
     return image_url, None
-
-
-def _record_attempt(
-    session,
-    job: FetchJob,
-    *,
-    strategy: str,
-    status: str,
-    error_type: str | None,
-    product_data_found: bool,
-    price_found: bool,
-    image_found: bool,
-    http_status: int | None = None,
-    response_ms: int | None = None,
-    bytes_downloaded: int | None = None,
-) -> None:
-    record_fetch_attempt(
-        tracked_product_id=job.tracked_product_id,
-        source_code=job.tracked_product.source,
-        strategy=strategy,
-        status=status,
-        fetch_job_id=job.id,
-        worker_name=job.worker_name,
-        error_type=error_type,
-        http_status=http_status,
-        response_ms=response_ms,
-        bytes_downloaded=bytes_downloaded,
-        product_data_found=product_data_found,
-        price_found=price_found,
-        image_found=image_found,
-        session=session,
-    )
-
-
-def _error_type(exc: Exception) -> str:
-    if isinstance(exc, FetchError):
-        return exc.error_type
-    if isinstance(exc, PriceNotFoundError):
-        return "price_not_found"
-    if isinstance(exc, RequiredFieldNotFoundError | ExtractionError):
-        return "parser_error"
-    return type(exc).__name__
 
 
 def _error_text(error_type: str, exc: Exception) -> str:

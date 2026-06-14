@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Iterator
 from datetime import UTC, datetime
 from decimal import Decimal
+from typing import Any
 
 import pytest
 from sqlalchemy import create_engine, func, select
@@ -11,8 +12,7 @@ from sqlalchemy.pool import StaticPool
 
 from app.clients.cashback_api import CashbackAPIUnavailableError
 from app.db import Base
-from app.extraction import ExtractionSchema
-from app.fetchers.base import FetchedPage, FetchError, PriceFetchResult
+from app.fetchers.base import PriceFetchResult
 from app.models.monitoring import (
     FetchAttempt,
     FetchJob,
@@ -22,36 +22,61 @@ from app.models.monitoring import (
 )
 from app.services.fetch_job_runner import run_http_fetch_job
 from app.services.image_storage import StoredImage
+from app.services.multistage_fetch_executor import (
+    FetchPipelineFailed,
+    ProductFetchExecutionContext,
+)
 from app.services.product_cashback import upsert_product_cashback_snapshot
 
 FETCHED_AT = datetime(2026, 6, 7, 12, 30, tzinfo=UTC)
 
 
 class FakeFetcher:
-    def __init__(self, result: PriceFetchResult | Exception) -> None:
-        self.result = result
-        self.urls: list[str] = []
+    pass
 
-    def fetch(self, url: str) -> PriceFetchResult:
-        self.urls.append(url)
+
+class FakeProductFetchExecutor:
+    def __init__(
+        self,
+        result: PriceFetchResult | Exception,
+        *,
+        record_attempt: bool = False,
+    ) -> None:
+        self.result = result
+        self.record_attempt = record_attempt
+        self.calls: list[dict[str, Any]] = []
+
+    def __call__(
+        self,
+        tracked_product_id: int,
+        context: ProductFetchExecutionContext,
+    ) -> PriceFetchResult:
+        self.calls.append(
+            {
+                "tracked_product_id": tracked_product_id,
+                "context": context,
+            }
+        )
+
+        if self.record_attempt:
+            product = context.session.get(TrackedProduct, tracked_product_id)
+            assert product is not None
+            context.attempt_recorder(
+                tracked_product_id=tracked_product_id,
+                source_code=product.source,
+                strategy="direct_http",
+                status="success",
+                fetch_job_id=context.fetch_job_id,
+                worker_name=context.worker_name,
+                product_data_found=True,
+                price_found=True,
+                image_found=True,
+                session=context.session,
+            )
+
         if isinstance(self.result, Exception):
             raise self.result
         return self.result
-
-
-class FakePageFetcher:
-    def __init__(self, page: FetchedPage | Exception) -> None:
-        self.page = page
-        self.urls: list[str] = []
-
-    def fetch_page(self, url: str) -> FetchedPage:
-        self.urls.append(url)
-        if isinstance(self.page, Exception):
-            raise self.page
-        return self.page
-
-    def fetch(self, url: str) -> PriceFetchResult:
-        raise AssertionError("schema-based runner must use fetch_page")
 
 
 @pytest.fixture
@@ -104,7 +129,12 @@ def _tracked_product(session: Session, *, fail_count: int = 0) -> TrackedProduct
     return tracked_product
 
 
-def _fetch_job(session: Session, *, status: str = "queued") -> FetchJob:
+def _fetch_job(
+    session: Session,
+    *,
+    status: str = "queued",
+    worker_name: str | None = None,
+) -> FetchJob:
     job = FetchJob(
         id=1,
         tracked_product_id=1,
@@ -112,6 +142,7 @@ def _fetch_job(session: Session, *, status: str = "queued") -> FetchJob:
         reason="scheduled",
         next_run_at=datetime(2026, 6, 7, 12, 0, tzinfo=UTC),
         error_text="previous error",
+        worker_name=worker_name,
     )
     session.add(job)
     session.commit()
@@ -131,91 +162,13 @@ def _successful_result() -> PriceFetchResult:
     )
 
 
-def _json_page(payload: str) -> FetchedPage:
-    return FetchedPage(
-        content=payload,
-        content_type="application/json",
-        fetched_at=FETCHED_AT,
-        http_status=200,
-        response_ms=123,
-        bytes_downloaded=len(payload.encode()),
-    )
-
-
-def _html_page(payload: str) -> FetchedPage:
-    return FetchedPage(
-        content=payload,
-        content_type="text/html; charset=utf-8",
-        fetched_at=FETCHED_AT,
-        http_status=200,
-        response_ms=234,
-        bytes_downloaded=len(payload.encode()),
-    )
-
-
-def _json_schema(*, price_path: str = "product.price.current") -> ExtractionSchema:
-    return ExtractionSchema(
+def _pipeline_failure(error_type: str = "http_429") -> FetchPipelineFailed:
+    return FetchPipelineFailed(
+        tracked_product_id=1,
         source_code="testshop",
-        version="json-v1",
-        content_type="json",
-        title_path="product.title",
-        price_path=price_path,
-        old_price_path="product.price.old",
-        currency_path="product.price.currency",
-        image_path="product.image",
-        availability_path="product.availability",
-        seller_path="product.seller",
-        required_fields=["price_current"],
+        attempted_strategies=["direct_http"],
+        last_error_type=error_type,
     )
-
-
-def _html_schema() -> ExtractionSchema:
-    return ExtractionSchema(
-        source_code="testshop",
-        version="html-v1",
-        content_type="html",
-        css_title=".product-title",
-        css_price=".price",
-        css_old_price=".old-price",
-        css_image=".product-image",
-        css_availability=".availability",
-        required_fields=["title", "price_current"],
-    )
-
-
-def _json_product_payload(*, price: str | None = "1499.90") -> str:
-    price_value = "null" if price is None else f'"{price}"'
-    return f"""
-    {{
-      "product": {{
-        "title": "Schema Phone",
-        "price": {{
-          "current": {price_value},
-          "old": "1999.00",
-          "currency": "RUB"
-        }},
-        "image": "https://testshop.local/images/schema-phone.jpg",
-        "availability": "in_stock",
-        "seller": "Schema Seller"
-      }}
-    }}
-    """
-
-
-def _html_product_payload() -> str:
-    return """
-    <html>
-      <body>
-        <article>
-          <h1 class="product-title">Schema Coat</h1>
-          <span class="price">809,70 ₽</span>
-          <span class="old-price">999,00 ₽</span>
-          <img class="product-image" src="https://testshop.local/images/coat.jpg" />
-          <span class="availability">available</span>
-        </article>
-      </body>
-    </html>
-    """
 
 
 def _attempts(session: Session) -> list[FetchAttempt]:
@@ -226,17 +179,47 @@ def _price_history_count(session: Session) -> int:
     return session.scalar(select(func.count(PriceHistory.id))) or 0
 
 
-def test_successful_job_updates_tracked_product(db_session: Session) -> None:
+def test_runner_calls_product_fetch_executor_with_context(
+    db_session: Session,
+) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session, worker_name="worker-1")
+    fetcher = FakeFetcher()
+    executor = FakeProductFetchExecutor(_successful_result())
+
+    def schema_resolver(*_):
+        return None
+
+    run_http_fetch_job(
+        1,
+        fetcher,
+        schema_resolver=schema_resolver,
+        product_fetch_executor=executor,
+    )
+
+    assert len(executor.calls) == 1
+    call = executor.calls[0]
+    context = call["context"]
+    assert call["tracked_product_id"] == 1
+    assert context.session.get(TrackedProduct, 1) is not None
+    assert context.fetch_job_id == 1
+    assert context.worker_name == "worker-1"
+    assert context.http_fetcher is fetcher
+    assert context.schema_resolver is schema_resolver
+
+
+def test_successful_executor_result_updates_tracked_product(
+    db_session: Session,
+) -> None:
     _tracked_product(db_session, fail_count=2)
     _fetch_job(db_session)
-    fetcher = FakeFetcher(_successful_result())
+    executor = FakeProductFetchExecutor(_successful_result())
 
-    run_http_fetch_job(1, fetcher)
+    run_http_fetch_job(1, FakeFetcher(), product_fetch_executor=executor)
 
     product = db_session.get(TrackedProduct, 1)
     assert product is not None
     db_session.refresh(product)
-    assert fetcher.urls == ["https://testshop.local/product/1"]
     assert product.product_name == "Fresh phone"
     assert product.last_price == Decimal("1499.90")
     assert product.last_old_price == Decimal("1999.00")
@@ -249,55 +232,47 @@ def test_successful_job_updates_tracked_product(db_session: Session) -> None:
     assert product.fail_count == 0
 
 
-def test_json_extraction_updates_title_price_image_and_history(
-    db_session: Session,
-) -> None:
-    _tracked_product(db_session, fail_count=2)
-    _fetch_job(db_session)
-    fetcher = FakePageFetcher(_json_page(_json_product_payload()))
-
-    run_http_fetch_job(1, fetcher, schema_resolver=lambda *_: _json_schema())
-
-    product = db_session.get(TrackedProduct, 1)
-    history = db_session.scalar(select(PriceHistory))
-    assert product is not None
-    assert history is not None
-    db_session.refresh(product)
-    assert fetcher.urls == ["https://testshop.local/product/1"]
-    assert product.product_name == "Schema Phone"
-    assert product.last_price == Decimal("1499.90")
-    assert product.last_old_price == Decimal("1999.00")
-    assert product.currency == "RUB"
-    assert product.last_availability is True
-    assert product.image_url == "https://testshop.local/images/schema-phone.jpg"
-    assert product.last_checked_at == FETCHED_AT.replace(tzinfo=None)
-    assert product.last_status == "ok"
-    assert product.fail_count == 0
-    assert history.price_current == Decimal("1499.90")
-    assert history.seller_name == "Schema Seller"
-
-
-def test_html_extraction_updates_title_price_image_and_history(
+def test_successful_executor_result_writes_price_history(
     db_session: Session,
 ) -> None:
     _tracked_product(db_session)
     _fetch_job(db_session)
-    fetcher = FakePageFetcher(_html_page(_html_product_payload()))
 
-    run_http_fetch_job(1, fetcher, schema_resolver=lambda *_: _html_schema())
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
 
-    product = db_session.get(TrackedProduct, 1)
     history = db_session.scalar(select(PriceHistory))
-    assert product is not None
     assert history is not None
-    db_session.refresh(product)
-    assert product.product_name == "Schema Coat"
-    assert product.last_price == Decimal("809.70")
-    assert product.last_old_price == Decimal("999.00")
-    assert product.currency == "RUB"
-    assert product.last_availability is True
-    assert product.image_url == "https://testshop.local/images/coat.jpg"
-    assert history.price_current == Decimal("809.70")
+    assert history.tracked_product_id == 1
+    assert history.price_current == Decimal("1499.90")
+    assert history.price_old == Decimal("1999.00")
+    assert history.currency == "RUB"
+    assert history.availability is False
+    assert history.seller_name == "Test Seller"
+    assert history.fetched_at == FETCHED_AT.replace(tzinfo=None)
+    assert _price_history_count(db_session) == 1
+
+
+def test_successful_executor_result_marks_job_done(db_session: Session) -> None:
+    _tracked_product(db_session)
+    _fetch_job(db_session)
+
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
+
+    job = db_session.get(FetchJob, 1)
+    assert job is not None
+    db_session.refresh(job)
+    assert job.status == "done"
+    assert job.started_at is not None
+    assert job.finished_at is not None
+    assert job.error_text is None
 
 
 def test_image_copy_success_saves_image_object_key(db_session: Session) -> None:
@@ -306,7 +281,7 @@ def test_image_copy_success_saves_image_object_key(db_session: Session) -> None:
 
     def fake_image_store(tracked_product_id, image_url, **kwargs):
         assert tracked_product_id == 1
-        assert image_url == "https://testshop.local/images/schema-phone.jpg"
+        assert image_url == "https://testshop.local/images/1.jpg"
         return StoredImage(
             image_url="https://cdn.example.com/products/1/copied.webp",
             object_key="products/1/copied.webp",
@@ -317,9 +292,9 @@ def test_image_copy_success_saves_image_object_key(db_session: Session) -> None:
 
     run_http_fetch_job(
         1,
-        FakePageFetcher(_json_page(_json_product_payload())),
-        schema_resolver=lambda *_: _json_schema(),
+        FakeFetcher(),
         image_store=fake_image_store,
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
     )
 
     product = db_session.get(TrackedProduct, 1)
@@ -340,9 +315,9 @@ def test_image_copy_failure_does_not_fail_job_and_keeps_image_url(
 
     run_http_fetch_job(
         1,
-        FakePageFetcher(_json_page(_json_product_payload())),
-        schema_resolver=lambda *_: _json_schema(),
+        FakeFetcher(),
         image_store=failing_image_store,
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
     )
 
     product = db_session.get(TrackedProduct, 1)
@@ -354,11 +329,37 @@ def test_image_copy_failure_does_not_fail_job_and_keeps_image_url(
     assert job.status == "done"
     assert product.last_status == "ok"
     assert product.image_object_key is None
-    assert product.image_url == "https://testshop.local/images/schema-phone.jpg"
+    assert product.image_url == "https://testshop.local/images/1.jpg"
     assert _price_history_count(db_session) == 1
 
 
-def test_missing_extracted_price_fails_job_without_history_or_alerts(
+def test_pipeline_failure_marks_job_failed_and_increments_fail_count(
+    db_session: Session,
+) -> None:
+    _tracked_product(db_session, fail_count=2)
+    _fetch_job(db_session)
+
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_pipeline_failure()),
+    )
+
+    job = db_session.get(FetchJob, 1)
+    product = db_session.get(TrackedProduct, 1)
+    assert job is not None
+    assert product is not None
+    db_session.refresh(job)
+    db_session.refresh(product)
+    assert job.status == "failed"
+    assert job.finished_at is not None
+    assert "http_429" in (job.error_text or "")
+    assert product.fail_count == 3
+    assert product.last_status == "http_429"
+    assert _price_history_count(db_session) == 0
+
+
+def test_pipeline_failure_does_not_call_cashback_or_alerts(
     db_session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -384,80 +385,18 @@ def test_missing_extracted_price_fails_job_without_history_or_alerts(
 
     run_http_fetch_job(
         1,
-        FakePageFetcher(_json_page(_json_product_payload(price=None))),
-        schema_resolver=lambda *_: _json_schema(price_path="product.price.current"),
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(
+            _pipeline_failure("price_not_found")
+        ),
     )
 
     job = db_session.get(FetchJob, 1)
-    product = db_session.get(TrackedProduct, 1)
     assert job is not None
-    assert product is not None
     db_session.refresh(job)
-    db_session.refresh(product)
     assert job.status == "failed"
-    assert "price_not_found" in (job.error_text or "")
-    assert product.last_status == "price_not_found"
-    assert product.fail_count == 1
-    assert _price_history_count(db_session) == 0
     assert cashback_calls == []
     assert alert_calls == []
-
-
-def test_fetch_attempt_records_extraction_flags(db_session: Session) -> None:
-    _tracked_product(db_session)
-    _fetch_job(db_session)
-
-    run_http_fetch_job(
-        1,
-        FakePageFetcher(_json_page(_json_product_payload())),
-        schema_resolver=lambda *_: _json_schema(),
-    )
-
-    attempts = _attempts(db_session)
-    assert len(attempts) == 1
-    assert attempts[0].status == "success"
-    assert attempts[0].fetch_job_id == 1
-    assert attempts[0].tracked_product_id == 1
-    assert attempts[0].source_code == "testshop"
-    assert attempts[0].strategy == "http_fetch"
-    assert attempts[0].http_status == 200
-    assert attempts[0].response_ms == 123
-    assert attempts[0].product_data_found is True
-    assert attempts[0].price_found is True
-    assert attempts[0].image_found is True
-
-
-def test_successful_job_writes_price_history(db_session: Session) -> None:
-    _tracked_product(db_session)
-    _fetch_job(db_session)
-
-    run_http_fetch_job(1, FakeFetcher(_successful_result()))
-
-    history = db_session.scalar(select(PriceHistory))
-    assert history is not None
-    assert history.tracked_product_id == 1
-    assert history.price_current == Decimal("1499.90")
-    assert history.price_old == Decimal("1999.00")
-    assert history.currency == "RUB"
-    assert history.availability is False
-    assert history.seller_name == "Test Seller"
-    assert history.fetched_at == FETCHED_AT.replace(tzinfo=None)
-    assert _price_history_count(db_session) == 1
-
-
-def test_successful_job_marks_job_done(db_session: Session) -> None:
-    _tracked_product(db_session)
-    _fetch_job(db_session)
-
-    run_http_fetch_job(1, FakeFetcher(_successful_result()))
-
-    job = db_session.get(FetchJob, 1)
-    assert job is not None
-    db_session.refresh(job)
-    assert job.status == "done"
-    assert job.started_at is not None
-    assert job.finished_at is not None
-    assert job.error_text is None
 
 
 def test_successful_job_calls_cashback_resolver(
@@ -489,7 +428,11 @@ def test_successful_job_calls_cashback_resolver(
         raising=False,
     )
 
-    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
 
     assert len(calls) == 1
     assert calls[0]["tracked_product_id"] == 1
@@ -520,7 +463,11 @@ def test_successful_job_evaluates_price_alerts(
         raising=False,
     )
 
-    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
 
     assert calls == [1]
 
@@ -531,7 +478,6 @@ def test_cashback_api_error_does_not_fail_successful_fetch_job(
 ) -> None:
     _tracked_product(db_session)
     _fetch_job(db_session)
-    fetcher = FakeFetcher(_successful_result())
 
     def failing_resolver(*args, **kwargs):
         raise CashbackAPIUnavailableError("Cashback API is unavailable.")
@@ -545,7 +491,11 @@ def test_cashback_api_error_does_not_fail_successful_fetch_job(
         raising=False,
     )
 
-    run_http_fetch_job(1, fetcher)
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
 
     job = db_session.get(FetchJob, 1)
     product = db_session.get(TrackedProduct, 1)
@@ -553,7 +503,6 @@ def test_cashback_api_error_does_not_fail_successful_fetch_job(
     assert product is not None
     db_session.refresh(job)
     db_session.refresh(product)
-    assert fetcher.urls == ["https://testshop.local/product/1"]
     assert job.status == "done"
     assert product.last_status == "ok"
     assert _price_history_count(db_session) == 1
@@ -586,7 +535,11 @@ def test_successful_job_persists_no_partner_cashback_snapshot(
         raising=False,
     )
 
-    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
 
     snapshot = db_session.scalar(select(TrackedProductCashback))
     assert snapshot is not None
@@ -629,7 +582,11 @@ def test_successful_job_persists_partner_estimated_cashback_snapshot(
         raising=False,
     )
 
-    run_http_fetch_job(1, FakeFetcher(_successful_result()))
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(_successful_result()),
+    )
 
     snapshot = db_session.scalar(select(TrackedProductCashback))
     assert snapshot is not None
@@ -640,110 +597,50 @@ def test_successful_job_persists_partner_estimated_cashback_snapshot(
     assert snapshot.display_policy == "show_range_use_min_for_effective_price"
 
 
-def test_fetch_error_marks_job_failed(db_session: Session) -> None:
-    _tracked_product(db_session)
-    _fetch_job(db_session)
-
-    run_http_fetch_job(1, FakeFetcher(FetchError("http_429", "too many requests")))
-
-    job = db_session.get(FetchJob, 1)
-    assert job is not None
-    db_session.refresh(job)
-    assert job.status == "failed"
-    assert job.finished_at is not None
-    assert "http_429" in (job.error_text or "")
-    assert "too many requests" in (job.error_text or "")
-
-
-def test_fetch_error_increments_product_fail_count(db_session: Session) -> None:
-    _tracked_product(db_session, fail_count=2)
-    _fetch_job(db_session)
-
-    run_http_fetch_job(1, FakeFetcher(FetchError("http_429", "too many requests")))
-
-    product = db_session.get(TrackedProduct, 1)
-    assert product is not None
-    db_session.refresh(product)
-    assert product.fail_count == 3
-    assert product.last_status == "http_429"
-
-
-def test_price_not_found_does_not_call_cashback_resolver(
+def test_fetch_attempt_is_saved_by_executor_without_runner_duplicate(
     db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     _tracked_product(db_session)
-    _fetch_job(db_session)
-    calls = []
+    _fetch_job(db_session, worker_name="worker-1")
 
-    def fake_resolver(*args, **kwargs):
-        calls.append((args, kwargs))
-        return None
-
-    import app.services.fetch_job_runner as runner
-
-    monkeypatch.setattr(
-        runner,
-        "resolve_and_store_product_cashback",
-        fake_resolver,
-        raising=False,
+    run_http_fetch_job(
+        1,
+        FakeFetcher(),
+        product_fetch_executor=FakeProductFetchExecutor(
+            _successful_result(),
+            record_attempt=True,
+        ),
     )
 
-    run_http_fetch_job(1, FakeFetcher(FetchError("price_not_found", "missing price")))
-
-    job = db_session.get(FetchJob, 1)
-    assert job is not None
-    db_session.refresh(job)
-    assert calls == []
-    assert job.status == "failed"
-
-
-def test_price_not_found_does_not_evaluate_price_alerts(
-    db_session: Session,
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    _tracked_product(db_session)
-    _fetch_job(db_session)
-    calls = []
-
-    def fake_evaluate_price_alerts(*args, **kwargs):
-        calls.append((args, kwargs))
-        return []
-
-    import app.services.fetch_job_runner as runner
-
-    monkeypatch.setattr(
-        runner,
-        "evaluate_price_alerts",
-        fake_evaluate_price_alerts,
-        raising=False,
-    )
-
-    run_http_fetch_job(1, FakeFetcher(FetchError("price_not_found", "missing price")))
-
-    job = db_session.get(FetchJob, 1)
-    assert job is not None
-    db_session.refresh(job)
-    assert calls == []
-    assert job.status == "failed"
+    attempts = _attempts(db_session)
+    assert len(attempts) == 1
+    assert attempts[0].status == "success"
+    assert attempts[0].fetch_job_id == 1
+    assert attempts[0].tracked_product_id == 1
+    assert attempts[0].source_code == "testshop"
+    assert attempts[0].strategy == "direct_http"
+    assert attempts[0].worker_name == "worker-1"
+    assert attempts[0].product_data_found is True
+    assert attempts[0].price_found is True
+    assert attempts[0].image_found is True
 
 
 def test_done_job_is_not_fetched_twice(db_session: Session) -> None:
     _tracked_product(db_session)
     _fetch_job(db_session, status="done")
-    fetcher = FakeFetcher(_successful_result())
+    executor = FakeProductFetchExecutor(_successful_result())
 
-    run_http_fetch_job(1, fetcher)
+    run_http_fetch_job(1, FakeFetcher(), product_fetch_executor=executor)
 
-    assert fetcher.urls == []
+    assert executor.calls == []
     assert _price_history_count(db_session) == 0
 
 
 def test_missing_job_is_safe(db_session: Session) -> None:
     _tracked_product(db_session)
-    fetcher = FakeFetcher(_successful_result())
+    executor = FakeProductFetchExecutor(_successful_result())
 
-    run_http_fetch_job(999, fetcher)
+    run_http_fetch_job(999, FakeFetcher(), product_fetch_executor=executor)
 
-    assert fetcher.urls == []
+    assert executor.calls == []
     assert _price_history_count(db_session) == 0
