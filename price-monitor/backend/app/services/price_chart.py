@@ -5,10 +5,10 @@ from decimal import ROUND_HALF_UP, Decimal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from app.models.monitoring import (
-    PriceHistory,
-    TrackedProduct,
-    UserProductSubscription,
+from app.models.monitoring import TrackedProduct, UserProductSubscription
+from app.repositories.price_history_repository import (
+    PriceHistoryPoint,
+    get_price_history_repository,
 )
 from app.schemas.price_chart import (
     PriceChartLabels,
@@ -52,10 +52,11 @@ def build_price_chart(
     if tracked_product is None:
         return None
 
-    history = _list_history_points(
-        session,
+    period_start = current_utc_datetime() - timedelta(days=days)
+    repository = get_price_history_repository(session)
+    history = repository.get_price_points(
         tracked_product_id=tracked_product_id,
-        days=days,
+        fetched_at_from=period_start,
         currency=currency,
     )
     chart_points = (
@@ -87,7 +88,7 @@ def build_price_chart(
 
 
 def summarize_price_history(
-    history: list[PriceHistory],
+    history: list[PriceHistoryPoint],
 ) -> tuple[PriceChartSummary, PriceChartLabels]:
     summary = _summary(_raw_points(history))
     return summary, PriceChartLabels(headline=_headline(summary))
@@ -114,26 +115,7 @@ def _get_owned_active_product(
     return session.scalar(statement)
 
 
-def _list_history_points(
-    session: Session,
-    *,
-    tracked_product_id: int,
-    days: int,
-    currency: str | None,
-) -> list[PriceHistory]:
-    period_start = current_utc_datetime() - timedelta(days=days)
-    statement = select(PriceHistory).where(
-        PriceHistory.tracked_product_id == tracked_product_id,
-        PriceHistory.fetched_at >= period_start,
-    )
-    if currency is not None:
-        statement = statement.where(PriceHistory.currency == currency)
-
-    statement = statement.order_by(PriceHistory.fetched_at.asc(), PriceHistory.id.asc())
-    return list(session.scalars(statement))
-
-
-def _raw_points(history: list[PriceHistory]) -> list[_ChartSourcePoint]:
+def _raw_points(history: list[PriceHistoryPoint]) -> list[_ChartSourcePoint]:
     return [
         _ChartSourcePoint(
             ts=_format_instant(point.fetched_at),
@@ -144,8 +126,8 @@ def _raw_points(history: list[PriceHistory]) -> list[_ChartSourcePoint]:
     ]
 
 
-def _daily_points(history: list[PriceHistory]) -> list[_ChartSourcePoint]:
-    points_by_day: dict[datetime.date, PriceHistory] = {}
+def _daily_points(history: list[PriceHistoryPoint]) -> list[_ChartSourcePoint]:
+    points_by_day: dict[datetime.date, PriceHistoryPoint] = {}
     for point in history:
         points_by_day[_as_utc_naive(point.fetched_at).date()] = point
 

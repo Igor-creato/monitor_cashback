@@ -6,7 +6,7 @@ from sqlalchemy.orm import Session
 
 from app.core.incoming_hmac import verify_incoming_hmac_request
 from app.db import get_db
-from app.models.monitoring import PriceHistory
+from app.repositories.price_history_repository import PriceHistoryPoint
 from app.schemas.price_chart import PriceChartGranularity, PriceChartResponse
 from app.schemas.product_history import (
     ProductPriceHistoryPoint,
@@ -81,7 +81,7 @@ def _verify_site_matches_request(request: Request, site_id: str) -> None:
         raise HTTPException(status_code=403, detail="Incoming authentication failed.")
 
 
-def _serialize_history_point(point: PriceHistory) -> ProductPriceHistoryPoint:
+def _serialize_history_point(point: PriceHistoryPoint) -> ProductPriceHistoryPoint:
     return ProductPriceHistoryPoint(
         price_current=_format_money(point.price_current),
         price_old=_format_money(point.price_old),

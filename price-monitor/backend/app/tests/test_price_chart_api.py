@@ -19,6 +19,7 @@ from app.models.monitoring import (
     TrackedProduct,
     UserProductSubscription,
 )
+from app.repositories.price_history_repository import PriceHistoryPoint
 
 SECRET = "incoming-test-secret"
 SITE_ID = "savelloclub.ru"
@@ -439,3 +440,60 @@ def test_price_chart_response_does_not_include_cashback(
 
     assert response.status_code == 200
     assert "cashback" not in str(response.json()).lower()
+
+
+def test_price_chart_endpoint_uses_price_history_repository(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    import app.services.price_chart as price_chart
+
+    _tracked_product(db_session)
+    _subscription(db_session)
+    now = datetime(2026, 6, 8, 12, 0, 0)
+    calls = []
+
+    class FakePriceHistoryRepository:
+        def get_price_points(self, *, tracked_product_id, fetched_at_from, currency):
+            calls.append(
+                {
+                    "tracked_product_id": tracked_product_id,
+                    "fetched_at_from": fetched_at_from,
+                    "currency": currency,
+                }
+            )
+            return [
+                PriceHistoryPoint(
+                    id=101,
+                    tracked_product_id=tracked_product_id,
+                    price_current=Decimal("777.00"),
+                    price_old=None,
+                    currency="USD",
+                    availability=True,
+                    seller_name=None,
+                    fetched_at=datetime(2026, 5, 27, 10, 0, 0),
+                )
+            ]
+
+    fake_repository = FakePriceHistoryRepository()
+    monkeypatch.setattr(price_chart, "current_utc_datetime", lambda: now)
+    monkeypatch.setattr(
+        price_chart,
+        "get_price_history_repository",
+        lambda session: fake_repository,
+    )
+
+    response = client.get(_chart_url(currency="USD"), headers=_headers())
+
+    assert response.status_code == 200
+    assert response.json()["series"] == [
+        {"ts": "2026-05-27T10:00:00Z", "price": "777.00"},
+    ]
+    assert calls == [
+        {
+            "tracked_product_id": 1,
+            "fetched_at_from": now - timedelta(days=30),
+            "currency": "USD",
+        }
+    ]

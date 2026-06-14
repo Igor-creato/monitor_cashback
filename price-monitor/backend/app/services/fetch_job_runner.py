@@ -6,7 +6,8 @@ from datetime import UTC, datetime
 from app.clients.cashback_api import CashbackAPIError
 from app.db import SessionLocal
 from app.fetchers.base import PriceFetchResult
-from app.models.monitoring import FetchJob, PriceHistory
+from app.models.monitoring import FetchJob
+from app.repositories.price_history_repository import get_price_history_repository
 from app.services.image_storage import StoredImage, store_product_image
 from app.services.multistage_fetch_executor import (
     FetchPipelineFailed,
@@ -73,7 +74,16 @@ def run_http_fetch_job(
             image_url=image_url,
             image_object_key=image_object_key,
         )
-        session.add(_price_history(job.tracked_product_id, result))
+        repository = get_price_history_repository(session)
+        repository.write_price_point(
+            tracked_product_id=job.tracked_product_id,
+            price_current=result.price_current,
+            price_old=result.price_old,
+            currency=result.currency,
+            availability=result.availability,
+            seller_name=result.seller_name,
+            fetched_at=_db_datetime(result.fetched_at),
+        )
         session.commit()
         try:
             resolve_and_store_product_cashback(
@@ -121,18 +131,6 @@ def _apply_success(
     job.status = "done"
     job.finished_at = _now()
     job.error_text = None
-
-
-def _price_history(tracked_product_id: int, result: PriceFetchResult) -> PriceHistory:
-    return PriceHistory(
-        tracked_product_id=tracked_product_id,
-        price_current=result.price_current,
-        price_old=result.price_old,
-        currency=result.currency,
-        availability=result.availability,
-        seller_name=result.seller_name,
-        fetched_at=_db_datetime(result.fetched_at),
-    )
 
 
 def _apply_failure(job: FetchJob, error_type: str, exc: Exception) -> None:
