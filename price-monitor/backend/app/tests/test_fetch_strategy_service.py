@@ -10,7 +10,11 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models.monitoring import SourceFetchProfile, SourceHealthEvent
+from app.models.monitoring import (
+    SourceFetchProfile,
+    SourceHealthEvent,
+    SourceQuarantineState,
+)
 from app.services.fetch_strategy import select_fetch_strategy
 from app.services.user_limits import (
     CashbackLimitValues,
@@ -158,6 +162,26 @@ def test_quarantined_source_returns_quarantine(db_session: Session) -> None:
     assert decision.max_attempts == 0
     assert decision.allow_fallback is False
     assert "disabled" in decision.reason
+
+
+def test_source_quarantine_state_blocks_fetch_strategy(db_session: Session) -> None:
+    db_session.add(
+        SourceQuarantineState(
+            source_code="testshop",
+            status="quarantined",
+            reason="too_many_403",
+            error_type="http_403",
+            quarantined_until=(NOW + timedelta(hours=1)).replace(tzinfo=None),
+        )
+    )
+    db_session.commit()
+
+    decision = select_fetch_strategy("testshop", session=db_session, now=NOW)
+
+    assert decision.strategy == "quarantine"
+    assert decision.cost_level == "blocked"
+    assert decision.max_attempts == 0
+    assert decision.reason == "source_quarantined_too_many_403"
 
 
 def test_free_limits_do_not_receive_expensive_browser_strategy(

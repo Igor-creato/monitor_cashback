@@ -58,11 +58,15 @@ SOURCE_HEALTH_EVENT_TYPE_VALUES = frozenset(
         "http_403",
         "http_429",
         "parser_error",
+        "captcha_detected",
         "price_not_found",
         "cashback_api_error",
     }
 )
 FETCH_ATTEMPT_STATUS_VALUES = frozenset({"success", "failed", "skipped", "quarantined"})
+SOURCE_QUARANTINE_STATUS_VALUES = frozenset(
+    {"active", "cooldown", "quarantined", "disabled"}
+)
 SOURCE_DIFFICULTY_CLASS_VALUES = frozenset({"light", "medium", "heavy"})
 SOURCE_TRANSPORT_VALUES = frozenset(
     {"direct_http", "curl_cffi", "crawl4ai", "playwright", "camoufox"}
@@ -444,6 +448,43 @@ class SourceHealthEvent(Base):
             value,
             SOURCE_HEALTH_EVENT_TYPE_VALUES,
         )
+
+
+class SourceQuarantineState(Base):
+    __tablename__ = "source_quarantine_states"
+    __table_args__ = (
+        UniqueConstraint("source_code", name="uq_source_quarantine_states_source_code"),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="active",
+        server_default="active",
+    )
+    reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    quarantined_until: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice("status", value, SOURCE_QUARANTINE_STATUS_VALUES)
 
 
 class ProxyPool(Base):

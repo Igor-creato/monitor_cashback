@@ -14,6 +14,7 @@ PRICE_FETCH_FAILURE_EVENTS = frozenset(
         "http_403",
         "http_429",
         "parser_error",
+        "captcha_detected",
         "price_not_found",
     }
 )
