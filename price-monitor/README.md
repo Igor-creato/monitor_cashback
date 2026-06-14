@@ -55,3 +55,27 @@ for any S3-compatible storage/CDN.
 ## Frontend contract
 
 - [Price chart contract](docs/frontend-price-chart-spec.md)
+
+## Demo seed data
+
+Development-only demo seed data creates two local GPU products, subscriptions
+for `wp:savelloclub.ru:demo`, cashback snapshots, and 30 days of price history
+for checking product cards and the price chart.
+
+The local database must already exist and be migrated. The seed script does not
+create tables and refuses to run unless `APP_ENV=development`.
+
+Docker:
+
+```powershell
+rtk docker compose exec -e APP_ENV=development backend-api python -m app.dev.seed_demo_data
+```
+
+Local backend:
+
+```powershell
+Set-Location backend
+$env:APP_ENV = "development"
+$env:DATABASE_URL = "mysql+pymysql://cashback:cashback@localhost:3306/cashback"
+rtk python -m app.dev.seed_demo_data
+```
