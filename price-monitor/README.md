@@ -51,3 +51,7 @@ The backend talks to MinIO through `OBJECT_STORAGE_ENDPOINT=http://minio:9000`
 inside Docker Compose. For production, replace the `OBJECT_STORAGE_*`
 environment variables with credentials, endpoint, bucket, and public base URL
 for any S3-compatible storage/CDN.
+
+## Frontend contract
+
+- [Price chart contract](docs/frontend-price-chart-spec.md)
