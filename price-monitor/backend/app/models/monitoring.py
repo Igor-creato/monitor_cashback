@@ -450,6 +450,31 @@ class SourceHealthEvent(Base):
         )
 
 
+class MetricCounter(Base):
+    __tablename__ = "metrics_counters"
+    __table_args__ = (UniqueConstraint("name", name="uq_metrics_counters_name"),)
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    name: Mapped[str] = mapped_column(String(191), nullable=False)
+    value: Mapped[int] = mapped_column(
+        BigInteger,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
 class SourceQuarantineState(Base):
     __tablename__ = "source_quarantine_states"
     __table_args__ = (

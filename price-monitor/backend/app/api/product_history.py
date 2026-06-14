@@ -12,6 +12,7 @@ from app.schemas.product_history import (
     ProductPriceHistoryPoint,
     ProductPriceHistoryResponse,
 )
+from app.services.metrics import CHART_REQUESTS_METRIC, increment_metric_counter
 from app.services.price_chart import build_price_chart
 from app.services.product_history import list_product_price_history
 
@@ -59,6 +60,7 @@ def get_product_price_chart(
     currency: str | None = None,
 ) -> PriceChartResponse:
     _verify_site_matches_request(request, site_id)
+    increment_metric_counter(session, CHART_REQUESTS_METRIC)
     chart = build_price_chart(
         session,
         tracked_product_id=tracked_product_id,
