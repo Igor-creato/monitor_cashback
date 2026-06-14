@@ -81,6 +81,21 @@ def get_effective_source_quarantine_state(
         return _effective_state(source_code, owned_session, now)
 
 
+def refresh_source_quarantine_states(
+    *,
+    session: Session | None = None,
+    now: datetime | None = None,
+) -> int:
+    if session is not None:
+        return _refresh_states(session, now)
+
+    if SessionLocal is None:
+        raise ValueError("Database is not configured.")
+
+    with SessionLocal() as owned_session:
+        return _refresh_states(owned_session, now)
+
+
 def _apply_policy(
     source_code: str,
     error_type: str,
@@ -198,6 +213,31 @@ def _effective_state(
         error_type=state.error_type,
         quarantined_until=state.quarantined_until,
     )
+
+
+def _refresh_states(session: Session, now: datetime | None) -> int:
+    now_utc = _as_utc_naive(now)
+    expired_states = list(
+        session.scalars(
+            select(SourceQuarantineState).where(
+                SourceQuarantineState.status.in_((COOLDOWN_STATUS, QUARANTINED_STATUS)),
+                SourceQuarantineState.quarantined_until.is_not(None),
+                SourceQuarantineState.quarantined_until <= now_utc,
+            )
+        ).all()
+    )
+
+    for state in expired_states:
+        _set_state(
+            state,
+            status=ACTIVE_STATUS,
+            reason=None,
+            error_type=None,
+            quarantined_until=None,
+        )
+
+    session.commit()
+    return len(expired_states)
 
 
 def _get_state(

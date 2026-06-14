@@ -9,6 +9,7 @@ import pytest
 def _reload_celery_modules(monkeypatch: pytest.MonkeyPatch):
     monkeypatch.setenv("RABBITMQ_URL", "amqp://unit-test-broker//")
     for module_name in (
+        "app.tasks.periodic",
         "app.tasks.http_fetch",
         "app.tasks",
         "app.celery_app",

@@ -181,3 +181,69 @@ def test_disabled_source_does_not_activate_automatically(db_session: Session) ->
 
     assert effective.status == "disabled"
     assert effective.reason == "manual_disable"
+
+
+def test_refresh_source_quarantine_states_activates_expired_states(
+    db_session: Session,
+) -> None:
+    cooldown = apply_source_quarantine_policy(
+        "cooldown-shop",
+        "captcha_detected",
+        session=db_session,
+        now=NOW,
+    )
+    cooldown.status = "cooldown"
+    cooldown.reason = "too_many_429"
+    cooldown.error_type = "http_429"
+    cooldown.quarantined_until = (NOW - timedelta(minutes=1)).replace(tzinfo=None)
+    quarantined = apply_source_quarantine_policy(
+        "quarantined-shop",
+        "captcha_detected",
+        session=db_session,
+        now=NOW,
+    )
+    quarantined.quarantined_until = (NOW - timedelta(minutes=1)).replace(tzinfo=None)
+    db_session.commit()
+
+    import app.services.source_quarantine as source_quarantine
+
+    refreshed_count = source_quarantine.refresh_source_quarantine_states(
+        session=db_session,
+        now=NOW,
+    )
+
+    assert refreshed_count == 2
+    assert cooldown.status == "active"
+    assert cooldown.reason is None
+    assert cooldown.error_type is None
+    assert cooldown.quarantined_until is None
+    assert quarantined.status == "active"
+    assert quarantined.reason is None
+    assert quarantined.error_type is None
+    assert quarantined.quarantined_until is None
+
+
+def test_refresh_source_quarantine_states_does_not_activate_disabled(
+    db_session: Session,
+) -> None:
+    state = apply_source_quarantine_policy(
+        "disabled-shop",
+        "captcha_detected",
+        session=db_session,
+        now=NOW,
+    )
+    state.status = "disabled"
+    state.reason = "manual_disable"
+    state.quarantined_until = (NOW - timedelta(days=1)).replace(tzinfo=None)
+    db_session.commit()
+
+    import app.services.source_quarantine as source_quarantine
+
+    refreshed_count = source_quarantine.refresh_source_quarantine_states(
+        session=db_session,
+        now=NOW,
+    )
+
+    assert refreshed_count == 0
+    assert state.status == "disabled"
+    assert state.reason == "manual_disable"

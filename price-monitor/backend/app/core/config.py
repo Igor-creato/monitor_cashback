@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     object_storage_public_base_url: str = ""
     browserless_ws_url: str = ""
     browserless_token: SecretStr = SecretStr("")
+    scheduler_due_fetch_limit: int = 100
+    celery_scheduler_interval_seconds: int = 300
+    celery_cleanup_interval_seconds: int = 86400
+    celery_quarantine_refresh_interval_seconds: int = 600
+    cleanup_price_history_retention_days: int = 30
+    cleanup_fetch_jobs_retention_days: int = 30
+    cleanup_notification_events_retention_days: int = 30
 
     model_config = SettingsConfigDict(
         env_file=(".env", "../.env"),
