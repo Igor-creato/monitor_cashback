@@ -1,7 +1,7 @@
 # Local Claude Code personal settings/hooks (not team-wide).
 .claude/settings.local.json
 .claude/monitor-cashback-reminder.txt
-
+/graphify-out/
 # Local agent/Ruflo runtime state.
 .swarm/
 .claude-flow/
