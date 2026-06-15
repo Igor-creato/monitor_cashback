@@ -365,10 +365,12 @@ Cashback Plugin — это комплексная система кэшбэк-с
 2. Прочитай `F:\wamp64\www\kash-back\wp-content\plugins\cash-back\obsidian\00-home\текущие приоритеты.md`.
 3. Если задача касается `monitor_cashback`, прочитай или создай в общем vault заметку `knowledge/integrations/monitor-cashback.md`.
 4. Если задача касается FastAPI/Python микросервисов, прочитай `knowledge/integrations/webhook-receiver.md` как ближайший существующий пример архитектуры.
-5. Если задача касается конкретного модуля — найди нужную заметку по карте выше и прочитай её.
-6. Не читай `context/` без необходимости — обращайся туда только если в Obsidian заметке не хватает деталей.
-7. Не создавай локальную папку `obsidian/` в `F:\cash-back\monitor_cashback`.
-8. Отвечай всегда на русском языке.
+5. Перед любым написанием кода, тестов, миграций, API, UI, worker/fetch pipeline, browser extension интеграции или WordPress proxy для Monitor Cashback Price Assistant обязательно прочитай `F:\cash-back\monitor_cashback\spec.md` и явно сверь scope задачи с разделами `Non-goals`, `Privacy And Security Requirements`, `API Contracts`, `Phased Roadmap`, `Threat Model` и `Implementation Prompts`.
+6. Если задача противоречит `spec.md` или требует этап, который ещё не запрошен пользователем, остановись и сообщи о конфликте вместо реализации.
+7. Если задача касается конкретного модуля — найди нужную заметку по карте выше и прочитай её.
+8. Не читай `context/` без необходимости — обращайся туда только если в Obsidian заметке не хватает деталей.
+9. Не создавай локальную папку `obsidian/` в `F:\cash-back\monitor_cashback`.
+10. Отвечай всегда на русском языке.
 
 ### При завершении сессии (пользователь: "сохрани сессию")
 
