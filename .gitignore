@@ -4,6 +4,7 @@
 
 # Local agent/Ruflo runtime state.
 .swarm/
+.claude-flow/
 agentdb.rvf
 agentdb.rvf.lock
 ruvector.db
