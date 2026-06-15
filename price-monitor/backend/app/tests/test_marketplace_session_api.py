@@ -23,6 +23,7 @@ from app.models.monitoring import (
     MarketplaceSessionSecret,
     MarketplaceSessionSource,
 )
+from app.services.marketplace_sessions import decrypt_session_bundle_for_sync
 
 SITE_ID = "savelloclub.ru"
 INCOMING_SECRET = "incoming-secret"
@@ -142,9 +143,28 @@ def _connect_payload(
         "captured_at": "2026-06-15T10:00:00Z",
         "connector_version": "0.1.0",
         "session_bundle": {
-            "cookies": [{"name": "session-id", "value": "secret-cookie"}],
-            "tokens": [{"name": "x-token", "value": "secret-token"}],
-            "metadata": {"region": "msk"},
+            "cookies": [
+                {
+                    "name": "session-id",
+                    "value": "secret-cookie",
+                    "domain": ".ozon.ru",
+                    "path": "/",
+                    "expires": "2026-06-16T10:00:00Z",
+                    "secure": True,
+                    "httpOnly": True,
+                    "sameSite": "Lax",
+                }
+            ],
+            "tokens": [
+                {
+                    "name": "x-token",
+                    "value": "secret-token",
+                    "expires": "2026-06-16T10:00:00Z",
+                }
+            ],
+            "captured_at": "2026-06-15T10:00:00Z",
+            "user_agent_hint": "desktop-chromium",
+            "region_hint": "msk",
         },
     }
 
@@ -188,23 +208,53 @@ def test_connect_stores_encrypted_bundle_and_returns_no_secrets(
     assert secret.key_version == "v1"
 
 
-def test_connect_rejects_password_and_non_allowlisted_values(
+def test_connect_rejects_password_and_filters_non_allowlisted_values(
     client: TestClient,
     db_session: Session,
 ) -> None:
     _enable_marketplace(db_session)
     password_payload = _connect_payload()
     password_payload["session_bundle"]["password"] = "marketplace-password"
-    non_allowlisted_payload = _connect_payload()
-    non_allowlisted_payload["session_bundle"]["cookies"][0]["name"] = "not-allowed"
+    mixed_payload = _connect_payload()
+    mixed_payload["session_bundle"]["cookies"].append(
+        {
+            "name": "not-allowed",
+            "value": "drop-me",
+            "domain": ".ozon.ru",
+            "path": "/",
+            "expires": None,
+            "secure": True,
+            "httpOnly": False,
+            "sameSite": "Lax",
+        }
+    )
+    empty_after_filter_payload = _connect_payload()
+    empty_after_filter_payload["session_bundle"]["cookies"][0]["name"] = "not-allowed"
+    empty_after_filter_payload["session_bundle"]["tokens"][0]["name"] = "also-denied"
 
     password_response = _post_signed(client, password_payload)
-    non_allowlisted_response = _post_signed(client, non_allowlisted_payload)
+    mixed_response = _post_signed(client, mixed_payload)
+    empty_after_filter_response = _post_signed(client, empty_after_filter_payload)
 
     assert password_response.status_code == 422
     assert password_response.json()["detail"] == "prohibited_session_field"
-    assert non_allowlisted_response.status_code == 422
-    assert non_allowlisted_response.json()["detail"] == "session_value_not_allowlisted"
+    assert mixed_response.status_code == 200
+    connection = db_session.get(
+        MarketplaceConnection, mixed_response.json()["connection_id"]
+    )
+    assert connection is not None
+    decrypted = decrypt_session_bundle_for_sync(
+        db_session,
+        connection.id,
+        worker_name="test-worker",
+    )
+    assert [cookie["name"] for cookie in decrypted["cookies"]] == ["session-id"]
+    assert "drop-me" not in json.dumps(decrypted)
+    assert empty_after_filter_response.status_code == 422
+    assert (
+        empty_after_filter_response.json()["detail"]
+        == "session_bundle_contains_no_allowlisted_values"
+    )
 
 
 def test_connect_rejects_disabled_marketplace_and_empty_allowlist(

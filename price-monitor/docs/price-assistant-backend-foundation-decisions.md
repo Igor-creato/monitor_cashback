@@ -57,6 +57,20 @@ Existing `marketplace_connections` and `marketplace_session_secrets` are not
 renamed. Encrypted bundles continue to use the existing AES-256-GCM envelope
 encryption model and redaction rules.
 
+The session encryption layer now records `payload_format_version`. Existing
+direct service-layer ciphertext remains legacy payload format `1`; new API
+marketplace session bundles are normalized to payload format `2` before
+encryption. Format `2` stores only `format_version`, `marketplace`, allowlisted
+cookie/token entries, `captured_at`, and optional `user_agent_hint` /
+`region_hint`. Non-allowlisted cookie/token names are dropped before encryption;
+if nothing allowlisted remains, the request fails closed.
+
+Key rotation keeps the existing keyring env contract. The active key version is
+the primary key for new writes and DEK rewraps; other configured versions are
+previous keys for decrypting existing secrets. The service-layer rotation
+function rewraps only the DEK and writes a `rotation` audit event without
+returning plaintext.
+
 ## Comparison Scope
 
 `GET /v1/products/{id}/compare` reads only local `product_offers` records for a

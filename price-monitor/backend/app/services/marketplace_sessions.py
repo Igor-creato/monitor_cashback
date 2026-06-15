@@ -28,6 +28,8 @@ from app.schemas.marketplace_sessions import (
 )
 
 ENCRYPTION_ALG = "AES-256-GCM"
+CURRENT_PAYLOAD_FORMAT_VERSION = 2
+LEGACY_PAYLOAD_FORMAT_VERSION = 1
 NONCE_BYTES = 12
 GCM_TAG_BYTES = 16
 MAX_BUNDLE_BYTES = 16 * 1024
@@ -112,7 +114,7 @@ def connect_marketplace_session(
         session.commit()
         raise MarketplaceDisabledError("marketplace_disabled")
 
-    _validate_allowlisted_bundle(session, request)
+    encrypted_payload = _build_allowlisted_encrypted_payload(session, request)
     connection = _get_connection(
         session,
         site_id=request.site_id,
@@ -146,9 +148,10 @@ def connect_marketplace_session(
     encrypt_session_bundle_for_connection(
         session,
         connection,
-        _bundle_to_plain_dict(request.session_bundle),
+        encrypted_payload,
         now=now,
         commit=False,
+        payload_format_version=CURRENT_PAYLOAD_FORMAT_VERSION,
     )
     session.commit()
     session.refresh(connection)
@@ -258,7 +261,7 @@ def attach_session_bundle_to_connection(
         session.commit()
         raise MarketplaceDisabledError("marketplace_disabled")
 
-    _validate_allowlisted_bundle(session, request)
+    encrypted_payload = _build_allowlisted_encrypted_payload(session, request)
     connection.status = "connected"
     connection.scope_json = request.scope
     connection.consent_version = request.consent_version
@@ -270,9 +273,10 @@ def attach_session_bundle_to_connection(
     encrypt_session_bundle_for_connection(
         session,
         connection,
-        _bundle_to_plain_dict(request.session_bundle),
+        encrypted_payload,
         now=now,
         commit=False,
+        payload_format_version=CURRENT_PAYLOAD_FORMAT_VERSION,
     )
     session.commit()
     session.refresh(connection)
@@ -339,6 +343,7 @@ def encrypt_session_bundle_for_connection(
     *,
     now: datetime | None = None,
     commit: bool = True,
+    payload_format_version: int = LEGACY_PAYLOAD_FORMAT_VERSION,
 ) -> MarketplaceSessionSecret:
     now = _as_utc_naive(now or current_utc_datetime())
     keyring = _load_keyring()
@@ -363,6 +368,7 @@ def encrypt_session_bundle_for_connection(
         aad_json=aad_json,
         key_version=key_version,
         encryption_alg=ENCRYPTION_ALG,
+        payload_format_version=payload_format_version,
         bundle_fingerprint=hashlib.sha256(ciphertext + tag).hexdigest(),
         created_at=now,
     )
@@ -413,7 +419,7 @@ def decrypt_session_bundle_for_sync(
             secret.key_version,
             connection.id,
         )
-        aad = _canonical_json_bytes(_connection_aad(connection, secret.key_version))
+        aad = _canonical_json_bytes(_payload_aad_for_decrypt(connection, secret))
         ciphertext_with_tag = _b64decode(secret.encrypted_cookie_bundle) + _b64decode(
             secret.tag
         )
@@ -435,6 +441,54 @@ def decrypt_session_bundle_for_sync(
     )
     session.commit()
     return json.loads(plaintext.decode())
+
+
+def rotate_session_secret_key_for_connection(
+    session: Session,
+    connection_id: int,
+    *,
+    actor_type: str = "system",
+    now: datetime | None = None,
+) -> MarketplaceSessionSecret | None:
+    now = _as_utc_naive(now or current_utc_datetime())
+    connection = session.scalar(
+        select(MarketplaceConnection)
+        .options(joinedload(MarketplaceConnection.secrets))
+        .where(MarketplaceConnection.id == connection_id)
+    )
+    if connection is None:
+        return None
+    secret = _active_secret(connection)
+    if secret is None:
+        return None
+
+    keyring = _load_keyring()
+    if secret.key_version == keyring.active_version:
+        return secret
+
+    old_kek = keyring.key_for_version(secret.key_version)
+    dek = _unwrap_dek(
+        _b64decode(secret.dek_ciphertext),
+        old_kek,
+        secret.key_version,
+        connection.id,
+    )
+    secret.dek_ciphertext = _b64encode(
+        _wrap_dek(dek, keyring.active_key(), keyring.active_version, connection.id)
+    )
+    secret.key_version = keyring.active_version
+    secret.rotated_at = now
+    _audit_event(
+        session,
+        connection=connection,
+        event_type="rotation",
+        actor_type=actor_type,
+        metadata={"key_version": keyring.active_version},
+        now=now,
+    )
+    session.commit()
+    session.refresh(secret)
+    return secret
 
 
 def record_marketplace_sync_auth_failure(
@@ -600,6 +654,20 @@ def _connection_aad(
     }
 
 
+def _payload_aad_for_decrypt(
+    connection: MarketplaceConnection,
+    secret: MarketplaceSessionSecret,
+) -> dict[str, Any]:
+    aad_json = secret.aad_json
+    expected = _connection_aad(
+        connection,
+        str(aad_json.get("key_version", secret.key_version)),
+    )
+    if aad_json != expected:
+        raise ValueError("session_bundle_decryption_failed")
+    return aad_json
+
+
 def _validate_bundle_contract(bundle: MarketplaceSessionBundle) -> None:
     extra_fields = set(bundle.model_extra or {})
     if extra_fields & PROHIBITED_BUNDLE_FIELDS:
@@ -615,10 +683,33 @@ def _validate_bundle_contract(bundle: MarketplaceSessionBundle) -> None:
             raise MarketplaceSessionError("prohibited_session_field")
 
 
-def _validate_allowlisted_bundle(
+def _cookie_to_plain_dict(cookie: Any) -> dict[str, Any]:
+    return {
+        "name": cookie.name,
+        "value": _secret_to_plain(cookie.value),
+        "domain": cookie.domain,
+        "path": cookie.path,
+        "expires": _datetime_to_json(cookie.expires),
+        "secure": cookie.secure,
+        "httpOnly": cookie.httpOnly,
+        "sameSite": cookie.sameSite,
+    }
+
+
+def _token_to_plain_dict(token: Any) -> dict[str, Any]:
+    return {
+        "name": token.name,
+        "value": _secret_to_plain(token.value),
+        "expires": _datetime_to_json(token.expires),
+    }
+
+
+def _build_allowlisted_encrypted_payload(
     session: Session,
     request: MarketplaceConnectionCreate,
-) -> None:
+) -> dict[str, Any]:
+    if request.session_bundle is None:
+        raise MarketplaceSessionError("session_bundle_required")
     allowlist_items = list(
         session.scalars(
             select(MarketplaceSessionAllowlist).where(
@@ -636,14 +727,32 @@ def _validate_allowlisted_bundle(
         for item in allowlist_items
         if item.scope in request.scope
     }
+    cookies = []
     for cookie in request.session_bundle.cookies:
-        if not any(
-            ("cookie", scope, cookie.name) in allowed for scope in request.scope
-        ):
-            raise MarketplaceSessionError("session_value_not_allowlisted")
+        if any(("cookie", scope, cookie.name) in allowed for scope in request.scope):
+            cookies.append(_cookie_to_plain_dict(cookie))
+
+    tokens = []
     for token in request.session_bundle.tokens:
-        if not any(("token", scope, token.name) in allowed for scope in request.scope):
-            raise MarketplaceSessionError("session_value_not_allowlisted")
+        if any(("token", scope, token.name) in allowed for scope in request.scope):
+            tokens.append(_token_to_plain_dict(token))
+
+    if not cookies and not tokens:
+        raise MarketplaceSessionError("session_bundle_contains_no_allowlisted_values")
+
+    bundle = request.session_bundle
+    payload: dict[str, Any] = {
+        "format_version": CURRENT_PAYLOAD_FORMAT_VERSION,
+        "marketplace": request.marketplace,
+        "cookies": cookies,
+        "tokens": tokens,
+        "captured_at": _datetime_to_json(bundle.captured_at or request.captured_at),
+    }
+    if bundle.user_agent_hint is not None:
+        payload["user_agent_hint"] = bundle.user_agent_hint
+    if bundle.region_hint is not None:
+        payload["region_hint"] = bundle.region_hint
+    return payload
 
 
 def _get_marketplace_source(
@@ -737,7 +846,31 @@ def _audit_event(
 
 
 def _bundle_to_plain_dict(bundle: MarketplaceSessionBundle) -> dict[str, Any]:
-    return bundle.model_dump(mode="json")
+    payload: dict[str, Any] = {
+        "cookies": [_cookie_to_plain_dict(cookie) for cookie in bundle.cookies],
+        "tokens": [_token_to_plain_dict(token) for token in bundle.tokens],
+    }
+    if bundle.captured_at is not None:
+        payload["captured_at"] = _datetime_to_json(bundle.captured_at)
+    if bundle.user_agent_hint is not None:
+        payload["user_agent_hint"] = bundle.user_agent_hint
+    if bundle.region_hint is not None:
+        payload["region_hint"] = bundle.region_hint
+    return payload
+
+
+def _secret_to_plain(value: Any) -> str:
+    if hasattr(value, "get_secret_value"):
+        return value.get_secret_value()
+    return str(value)
+
+
+def _datetime_to_json(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.isoformat()
+    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
 
 
 def _canonical_json_bytes(value: Any) -> bytes:

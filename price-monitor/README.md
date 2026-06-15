@@ -66,9 +66,19 @@ not configured.
 Required encryption settings:
 
 ```text
-MARKETPLACE_SESSION_KEYRING=v1:<base64-encoded-32-byte-key>
-MARKETPLACE_SESSION_ACTIVE_KEY_VERSION=v1
+MARKETPLACE_SESSION_KEYRING=v1:<base64-encoded-32-byte-key>[,v2:<base64-encoded-32-byte-key>]
+MARKETPLACE_SESSION_ACTIVE_KEY_VERSION=v2
 ```
+
+`MARKETPLACE_SESSION_ACTIVE_KEY_VERSION` is the primary key for new writes.
+Other configured key versions remain previous keys for decrypting existing
+secrets. Session secret rows store `payload_format_version`: legacy direct
+service-layer payloads use version `1`, while API-captured marketplace bundles
+use version `2` with `format_version`, `marketplace`, allowlisted cookies,
+allowlisted tokens, `captured_at`, and optional `user_agent_hint`/`region_hint`.
+
+Non-allowlisted cookie/token names are dropped before encryption. A bundle that
+contains no allowlisted values after filtering is rejected fail-closed.
 
 Do not put marketplace passwords in requests or logs. Admin diagnostics expose
 connection status and `key_version` only, never cookies, tokens, ciphertext, or

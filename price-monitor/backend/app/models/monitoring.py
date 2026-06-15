@@ -728,6 +728,12 @@ class MarketplaceSessionSecret(Base):
         default="AES-256-GCM",
         server_default="AES-256-GCM",
     )
+    payload_format_version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+        server_default="1",
+    )
     bundle_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
