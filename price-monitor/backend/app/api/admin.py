@@ -10,6 +10,7 @@ from app.schemas.admin import (
     AdminFetchAttemptsResponse,
     AdminFetchEconomicsResponse,
     AdminJobsResponse,
+    AdminMarketplaceConnectionsResponse,
     AdminOverviewResponse,
     AdminProductResponse,
     AdminProductsResponse,
@@ -29,6 +30,7 @@ from app.services.admin import (
     list_admin_errors,
     list_admin_fetch_attempts,
     list_admin_jobs,
+    list_admin_marketplace_connections,
     list_admin_products,
     list_admin_proxy_pools,
     list_admin_sources,
@@ -134,3 +136,13 @@ def admin_fetch_attempts(
             status=status,
         )
     )
+
+
+@router.get(
+    "/marketplace-connections",
+    response_model=AdminMarketplaceConnectionsResponse,
+)
+def admin_marketplace_connections(
+    session: DbSession,
+) -> AdminMarketplaceConnectionsResponse:
+    return list_admin_marketplace_connections(session)

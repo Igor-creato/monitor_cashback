@@ -9,6 +9,8 @@ from sqlalchemy.orm import Session, joinedload, selectinload
 from app.models.monitoring import (
     FetchAttempt,
     FetchJob,
+    MarketplaceConnection,
+    MarketplaceSessionSecret,
     NotificationEvent,
     ProxyEndpoint,
     ProxyPool,
@@ -24,6 +26,8 @@ from app.schemas.admin import (
     AdminFetchEconomicsResponse,
     AdminFetchEconomicsSourceCostResponse,
     AdminJobResponse,
+    AdminMarketplaceConnectionResponse,
+    AdminMarketplaceConnectionsResponse,
     AdminOverviewResponse,
     AdminProductCashbackResponse,
     AdminProductResponse,
@@ -345,6 +349,21 @@ def list_admin_fetch_attempts(
     return [_serialize_fetch_attempt(attempt) for attempt in attempts]
 
 
+def list_admin_marketplace_connections(
+    session: Session,
+) -> AdminMarketplaceConnectionsResponse:
+    connections = session.scalars(
+        select(MarketplaceConnection)
+        .options(selectinload(MarketplaceConnection.secrets))
+        .order_by(MarketplaceConnection.id.asc())
+    )
+    return AdminMarketplaceConnectionsResponse(
+        items=[
+            _serialize_marketplace_connection(connection) for connection in connections
+        ]
+    )
+
+
 def _count(session: Session, statement) -> int:
     return int(session.scalar(statement) or 0)
 
@@ -619,6 +638,39 @@ def _serialize_fetch_attempt(attempt: FetchAttempt) -> AdminFetchAttemptResponse
         image_found=attempt.image_found,
         created_at=attempt.created_at,
     )
+
+
+def _serialize_marketplace_connection(
+    connection: MarketplaceConnection,
+) -> AdminMarketplaceConnectionResponse:
+    secret = _latest_active_marketplace_secret(connection)
+    return AdminMarketplaceConnectionResponse(
+        connection_id=connection.id,
+        site_id=connection.site_id,
+        external_user_id=connection.external_user_id,
+        marketplace=connection.marketplace,
+        status=connection.status,
+        key_version=secret.key_version if secret is not None else None,
+        has_secret=secret is not None,
+        consent_version=connection.consent_version,
+        consented_at=connection.consented_at,
+        expires_at=connection.expires_at,
+        last_validated_at=connection.last_validated_at,
+        last_synced_at=connection.last_synced_at,
+        next_retry_at=connection.next_retry_at,
+        reconnect_reason=connection.reconnect_reason,
+        created_at=connection.created_at,
+        updated_at=connection.updated_at,
+    )
+
+
+def _latest_active_marketplace_secret(
+    connection: MarketplaceConnection,
+) -> MarketplaceSessionSecret | None:
+    active = [secret for secret in connection.secrets if secret.deleted_at is None]
+    if not active:
+        return None
+    return sorted(active, key=lambda item: item.id, reverse=True)[0]
 
 
 def _format_rate_decimal(numerator: int, denominator: int) -> str:

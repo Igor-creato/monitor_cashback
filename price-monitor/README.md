@@ -56,6 +56,24 @@ for any S3-compatible storage/CDN.
 
 - [Price chart contract](docs/frontend-price-chart-spec.md)
 
+## Marketplace session storage
+
+Marketplace session bundles are accepted only through the HMAC-protected
+`/v1/marketplace-connections` endpoints, after source-specific allowlist rows
+exist in the database. The service rejects bundle persistence when encryption is
+not configured.
+
+Required encryption settings:
+
+```text
+MARKETPLACE_SESSION_KEYRING=v1:<base64-encoded-32-byte-key>
+MARKETPLACE_SESSION_ACTIVE_KEY_VERSION=v1
+```
+
+Do not put marketplace passwords in requests or logs. Admin diagnostics expose
+connection status and `key_version` only, never cookies, tokens, ciphertext, or
+wrapped DEKs.
+
 ## Demo seed data
 
 Development-only demo seed data creates two local GPU products, subscriptions

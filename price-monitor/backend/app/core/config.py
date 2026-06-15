@@ -24,6 +24,8 @@ class Settings(BaseSettings):
     object_storage_public_base_url: str = ""
     browserless_ws_url: str = ""
     browserless_token: SecretStr = SecretStr("")
+    marketplace_session_keyring: SecretStr = SecretStr("")
+    marketplace_session_active_key_version: str = ""
     scheduler_due_fetch_limit: int = 100
     celery_scheduler_interval_seconds: int = 300
     celery_cleanup_interval_seconds: int = 86400

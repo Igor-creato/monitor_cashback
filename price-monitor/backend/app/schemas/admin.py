@@ -217,3 +217,26 @@ class AdminFetchAttemptResponse(BaseModel):
 
 class AdminFetchAttemptsResponse(BaseModel):
     items: list[AdminFetchAttemptResponse]
+
+
+class AdminMarketplaceConnectionResponse(BaseModel):
+    connection_id: int
+    site_id: str
+    external_user_id: str
+    marketplace: str
+    status: str
+    key_version: str | None
+    has_secret: bool
+    consent_version: str
+    consented_at: datetime
+    expires_at: datetime | None
+    last_validated_at: datetime | None
+    last_synced_at: datetime | None
+    next_retry_at: datetime | None
+    reconnect_reason: str | None
+    created_at: datetime
+    updated_at: datetime
+
+
+class AdminMarketplaceConnectionsResponse(BaseModel):
+    items: list[AdminMarketplaceConnectionResponse]

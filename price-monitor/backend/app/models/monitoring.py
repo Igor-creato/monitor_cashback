@@ -67,6 +67,32 @@ FETCH_ATTEMPT_STATUS_VALUES = frozenset({"success", "failed", "skipped", "quaran
 SOURCE_QUARANTINE_STATUS_VALUES = frozenset(
     {"active", "cooldown", "quarantined", "disabled"}
 )
+MARKETPLACE_CONNECTION_STATUS_VALUES = frozenset(
+    {
+        "connecting",
+        "connected",
+        "sync_failed_retryable",
+        "source_limited",
+        "reconnect_required",
+        "disconnected",
+    }
+)
+MARKETPLACE_SESSION_VALUE_KIND_VALUES = frozenset({"cookie", "token"})
+MARKETPLACE_SESSION_AUDIT_EVENT_TYPE_VALUES = frozenset(
+    {
+        "connect",
+        "decrypt_for_sync",
+        "sync_auth_failure",
+        "rotation",
+        "disconnect",
+        "delete",
+        "reconnect_required",
+        "kill_switch_blocked",
+    }
+)
+MARKETPLACE_SESSION_AUDIT_ACTOR_TYPE_VALUES = frozenset(
+    {"user", "worker", "admin", "system"}
+)
 SOURCE_DIFFICULTY_CLASS_VALUES = frozenset({"light", "medium", "heavy"})
 SOURCE_TRANSPORT_VALUES = frozenset(
     {"direct_http", "curl_cffi", "crawl4ai", "playwright", "camoufox"}
@@ -510,6 +536,241 @@ class SourceQuarantineState(Base):
     @validates("status")
     def validate_status(self, _: str, value: str) -> str:
         return _validate_choice("status", value, SOURCE_QUARANTINE_STATUS_VALUES)
+
+
+class MarketplaceSessionSource(Base):
+    __tablename__ = "marketplace_session_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "marketplace",
+            name="uq_marketplace_session_sources_marketplace",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    disabled_reason: Mapped[str | None] = mapped_column(String(255), nullable=True)
+    disabled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class MarketplaceSessionAllowlist(Base):
+    __tablename__ = "marketplace_session_allowlist"
+    __table_args__ = (
+        UniqueConstraint(
+            "marketplace",
+            "name",
+            "kind",
+            "scope",
+            name="uq_marketplace_session_allowlist_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    marketplace: Mapped[str] = mapped_column(String(64), nullable=False)
+    name: Mapped[str] = mapped_column(String(191), nullable=False)
+    kind: Mapped[str] = mapped_column(String(16), nullable=False)
+    scope: Mapped[str] = mapped_column(String(64), nullable=False)
+    purpose: Mapped[str] = mapped_column(String(64), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    @validates("kind")
+    def validate_kind(self, _: str, value: str) -> str:
+        return _validate_choice("kind", value, MARKETPLACE_SESSION_VALUE_KIND_VALUES)
+
+
+class MarketplaceConnection(Base):
+    __tablename__ = "marketplace_connections"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "external_user_id",
+            "marketplace",
+            name="uq_marketplace_connections_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    marketplace: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="connecting",
+        server_default="connecting",
+    )
+    scope_json: Mapped[list[str]] = mapped_column(JSON, nullable=False)
+    consent_version: Mapped[str] = mapped_column(String(191), nullable=False)
+    consented_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+    )
+    expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_validated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_synced_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    next_retry_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reconnect_reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    kill_switch_blocked_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    secrets: Mapped[list[MarketplaceSessionSecret]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+    )
+    audit_events: Mapped[list[MarketplaceSessionAuditEvent]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+    )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "status",
+            value,
+            MARKETPLACE_CONNECTION_STATUS_VALUES,
+        )
+
+
+class MarketplaceSessionSecret(Base):
+    __tablename__ = "marketplace_session_secrets"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    connection_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("marketplace_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    encrypted_cookie_bundle: Mapped[str] = mapped_column(Text, nullable=False)
+    dek_ciphertext: Mapped[str] = mapped_column(Text, nullable=False)
+    nonce: Mapped[str] = mapped_column(String(64), nullable=False)
+    tag: Mapped[str] = mapped_column(String(64), nullable=False)
+    aad_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    key_version: Mapped[str] = mapped_column(String(64), nullable=False)
+    encryption_alg: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="AES-256-GCM",
+        server_default="AES-256-GCM",
+    )
+    bundle_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    rotated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    deleted_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    connection: Mapped[MarketplaceConnection] = relationship(back_populates="secrets")
+
+
+class MarketplaceSessionAuditEvent(Base):
+    __tablename__ = "marketplace_session_audit_events"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    connection_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("marketplace_connections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    marketplace: Mapped[str] = mapped_column(String(64), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    connection: Mapped[MarketplaceConnection | None] = relationship(
+        back_populates="audit_events",
+    )
+
+    @validates("event_type")
+    def validate_event_type(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "event_type",
+            value,
+            MARKETPLACE_SESSION_AUDIT_EVENT_TYPE_VALUES,
+        )
+
+    @validates("actor_type")
+    def validate_actor_type(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "actor_type",
+            value,
+            MARKETPLACE_SESSION_AUDIT_ACTOR_TYPE_VALUES,
+        )
 
 
 class ProxyPool(Base):
