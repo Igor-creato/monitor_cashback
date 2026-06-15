@@ -196,6 +196,16 @@ Cashback Plugin — это комплексная система кэшбэк-с
 - Если видишь лучший вариант решения чем описан в промпте, обязательно остановиться и предложить его.
 - После написания кода обязательна его проверка на ошибки и безопасность.
 
+## Price Assistant pre-code gate
+
+Перед написанием любого кода, тестов, миграций, API, worker, UI, extension/WebView или интеграции, связанной с Monitor Cashback Price Assistant, агент обязан:
+
+1. Прочитать корневой `F:\cash-back\monitor_cashback\spec.md` командой `rtk read spec.md`.
+2. Сверить задачу с Product + Risk Spec: production-моделью, risk matrix, roadmap, go/no-go gates и ADR backlog.
+3. Явно держать scope текущего промпта: если задача выходит за фазу/границы из `spec.md`, остановиться и сообщить пользователю, что именно требует отдельного решения или ADR.
+4. Не писать код, который противоречит spec.md: marketplace login/password storage запрещён; допускаются только allowlisted session cookies/tokens после explicit consent; backend хранит session bundle только encrypted; `401/403/login_required/expired` должны вести к `reconnect_required`; captcha bypass запрещён.
+5. Если для реализации нужны решения из ADR backlog `spec.md`, сначала остановиться и предложить создать/утвердить соответствующий ADR, а не придумывать контракт на ходу.
+
 ## Python/FastAPI правила
 
 - Используй типизацию и явные модели данных.
