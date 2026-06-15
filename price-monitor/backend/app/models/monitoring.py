@@ -93,6 +93,14 @@ MARKETPLACE_SESSION_AUDIT_EVENT_TYPE_VALUES = frozenset(
 MARKETPLACE_SESSION_AUDIT_ACTOR_TYPE_VALUES = frozenset(
     {"user", "worker", "admin", "system"}
 )
+IMPORTED_COLLECTION_TYPE_VALUES = frozenset(
+    {"cart", "favorites", "manual_link", "search"}
+)
+MARKETPLACE_SYNC_SESSION_STATUS_VALUES = frozenset({"running", "succeeded", "failed"})
+IMPORTED_COLLECTION_STATUS_VALUES = frozenset({"active", "archived"})
+STORE_SOURCE_TYPE_VALUES = frozenset({"feed", "api", "manual"})
+PRODUCT_MATCH_LABEL_VALUES = frozenset({"same_product", "analog"})
+AUDIT_ACTOR_TYPE_VALUES = frozenset({"user", "worker", "admin", "system"})
 SOURCE_DIFFICULTY_CLASS_VALUES = frozenset({"light", "medium", "heavy"})
 SOURCE_TRANSPORT_VALUES = frozenset(
     {"direct_http", "curl_cffi", "crawl4ai", "playwright", "camoufox"}
@@ -682,6 +690,13 @@ class MarketplaceConnection(Base):
         back_populates="connection",
         cascade="all, delete-orphan",
     )
+    sync_sessions: Mapped[list[MarketplaceSyncSession]] = relationship(
+        back_populates="connection",
+        cascade="all, delete-orphan",
+    )
+    imported_collections: Mapped[list[ImportedCollection]] = relationship(
+        back_populates="connection",
+    )
 
     @validates("status")
     def validate_status(self, _: str, value: str) -> str:
@@ -771,6 +786,500 @@ class MarketplaceSessionAuditEvent(Base):
             value,
             MARKETPLACE_SESSION_AUDIT_ACTOR_TYPE_VALUES,
         )
+
+
+class UserRegion(Base):
+    __tablename__ = "user_regions"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "external_user_id",
+            "region_code",
+            name="uq_user_regions_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    region_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    country_code: Mapped[str | None] = mapped_column(String(8), nullable=True)
+    is_default: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=False,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class ImportedCollection(Base):
+    __tablename__ = "imported_collections"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "external_user_id",
+            "source",
+            "collection_type",
+            name="uq_imported_collections_owner_source_type",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    connection_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("marketplace_connections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    collection_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="active",
+        server_default="active",
+    )
+    imported_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    connection: Mapped[MarketplaceConnection | None] = relationship(
+        back_populates="imported_collections",
+    )
+    sync_sessions: Mapped[list[MarketplaceSyncSession]] = relationship(
+        back_populates="collection",
+    )
+    items: Mapped[list[ImportedItem]] = relationship(
+        back_populates="collection",
+        cascade="all, delete-orphan",
+    )
+
+    @validates("collection_type")
+    def validate_collection_type(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "collection_type",
+            value,
+            IMPORTED_COLLECTION_TYPE_VALUES,
+        )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice("status", value, IMPORTED_COLLECTION_STATUS_VALUES)
+
+
+class MarketplaceSyncSession(Base):
+    __tablename__ = "marketplace_sync_sessions"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    connection_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("marketplace_connections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    collection_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("imported_collections.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    collection_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    status: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="running",
+        server_default="running",
+    )
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False
+    )
+    finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    reason: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    item_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    connection: Mapped[MarketplaceConnection] = relationship(
+        back_populates="sync_sessions",
+    )
+    collection: Mapped[ImportedCollection | None] = relationship(
+        back_populates="sync_sessions",
+    )
+    items: Mapped[list[ImportedItem]] = relationship(back_populates="sync_session")
+
+    @validates("collection_type")
+    def validate_collection_type(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "collection_type",
+            value,
+            IMPORTED_COLLECTION_TYPE_VALUES,
+        )
+
+    @validates("status")
+    def validate_status(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "status",
+            value,
+            MARKETPLACE_SYNC_SESSION_STATUS_VALUES,
+        )
+
+
+class ImportedItem(Base):
+    __tablename__ = "imported_items"
+    __table_args__ = (
+        UniqueConstraint(
+            "collection_id",
+            "external_item_id",
+            name="uq_imported_items_collection_external_item",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    collection_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("imported_collections.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    sync_session_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("marketplace_sync_sessions.id", ondelete="SET NULL"),
+        nullable=True,
+    )
+    external_item_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    source_product_id: Mapped[str | None] = mapped_column(String(191), nullable=True)
+    product_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    quantity: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    last_seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    collection: Mapped[ImportedCollection] = relationship(back_populates="items")
+    sync_session: Mapped[MarketplaceSyncSession | None] = relationship(
+        back_populates="items",
+    )
+
+
+class Store(Base):
+    __tablename__ = "stores"
+    __table_args__ = (UniqueConstraint("store_code", name="uq_stores_store_code"),)
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    store_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    homepage_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    sources: Mapped[list[StoreSource]] = relationship(
+        back_populates="store",
+        cascade="all, delete-orphan",
+    )
+    offers: Mapped[list[ProductOffer]] = relationship(back_populates="store")
+
+
+class StoreSource(Base):
+    __tablename__ = "store_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "store_id",
+            "source_code",
+            name="uq_store_sources_store_source",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    store_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    source_type: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="feed",
+        server_default="feed",
+    )
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    store: Mapped[Store] = relationship(back_populates="sources")
+
+    @validates("source_type")
+    def validate_source_type(self, _: str, value: str) -> str:
+        return _validate_choice("source_type", value, STORE_SOURCE_TYPE_VALUES)
+
+
+class ProductMatchGroup(Base):
+    __tablename__ = "product_match_groups"
+    __table_args__ = (
+        UniqueConstraint(
+            "tracked_product_id",
+            "match_key",
+            name="uq_product_match_groups_product_key",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    tracked_product_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("tracked_products.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    match_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    label: Mapped[str] = mapped_column(String(32), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    tracked_product: Mapped[TrackedProduct] = relationship()
+    offers: Mapped[list[ProductOffer]] = relationship(
+        back_populates="match_group",
+        cascade="all, delete-orphan",
+    )
+
+    @validates("confidence")
+    def validate_confidence(self, _: str, value: str) -> str:
+        return _validate_choice("confidence", value, CONFIDENCE_VALUES)
+
+    @validates("label")
+    def validate_label(self, _: str, value: str) -> str:
+        return _validate_choice("label", value, PRODUCT_MATCH_LABEL_VALUES)
+
+
+class ProductOffer(Base):
+    __tablename__ = "product_offers"
+    __table_args__ = (
+        UniqueConstraint(
+            "match_group_id",
+            "store_id",
+            "external_product_id",
+            name="uq_product_offers_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    match_group_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("product_match_groups.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    store_id: Mapped[int] = mapped_column(
+        BigInteger,
+        ForeignKey("stores.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    source_code: Mapped[str] = mapped_column(String(64), nullable=False)
+    external_product_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    product_url: Mapped[str] = mapped_column(String(2048), nullable=False)
+    title: Mapped[str | None] = mapped_column(String(512), nullable=True)
+    price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    availability: Mapped[str] = mapped_column(String(32), nullable=False)
+    delivery_cost: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
+    expected_cashback: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+    effective_price: Mapped[Decimal | None] = mapped_column(
+        Numeric(12, 2),
+        nullable=True,
+    )
+    match_confidence: Mapped[str] = mapped_column(String(16), nullable=False)
+    match_label: Mapped[str] = mapped_column(String(32), nullable=False)
+    raw_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+    match_group: Mapped[ProductMatchGroup] = relationship(back_populates="offers")
+    store: Mapped[Store] = relationship(back_populates="offers")
+
+    @validates("match_confidence")
+    def validate_match_confidence(self, _: str, value: str) -> str:
+        return _validate_choice("match_confidence", value, CONFIDENCE_VALUES)
+
+    @validates("match_label")
+    def validate_match_label(self, _: str, value: str) -> str:
+        return _validate_choice("match_label", value, PRODUCT_MATCH_LABEL_VALUES)
+
+
+class NotificationPreference(Base):
+    __tablename__ = "notification_preferences"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "external_user_id",
+            "event_type",
+            "channel",
+            name="uq_notification_preferences_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    enabled: Mapped[bool] = mapped_column(
+        Boolean,
+        nullable=False,
+        default=True,
+        server_default="1",
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+        onupdate=func.now(),
+    )
+
+
+class AuditEvent(Base):
+    __tablename__ = "audit_events"
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str | None] = mapped_column(String(191), nullable=True)
+    external_user_id: Mapped[str | None] = mapped_column(String(191), nullable=True)
+    actor_type: Mapped[str] = mapped_column(String(32), nullable=False)
+    event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    entity_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    entity_id: Mapped[str | None] = mapped_column(String(191), nullable=True)
+    metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+    @validates("actor_type")
+    def validate_actor_type(self, _: str, value: str) -> str:
+        return _validate_choice("actor_type", value, AUDIT_ACTOR_TYPE_VALUES)
+
+
+class IdempotencyRecord(Base):
+    __tablename__ = "idempotency_records"
+    __table_args__ = (
+        UniqueConstraint("scope", "idempotency_key", name="uq_idempotency_records_key"),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    scope: Mapped[str] = mapped_column(String(128), nullable=False)
+    idempotency_key: Mapped[str] = mapped_column(String(191), nullable=False)
+    request_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    response_status: Mapped[int] = mapped_column(Integer, nullable=False)
+    response_json: Mapped[dict] = mapped_column(JSON, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
 
 
 class ProxyPool(Base):

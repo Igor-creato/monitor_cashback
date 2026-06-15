@@ -90,6 +90,8 @@ def connect_marketplace_session(
     *,
     now: datetime | None = None,
 ) -> MarketplaceConnection:
+    if request.session_bundle is None:
+        return create_marketplace_connection(session, request, now=now)
     now = _as_utc_naive(now or current_utc_datetime())
     _validate_bundle_contract(request.session_bundle)
     source = _get_marketplace_source(session, request.marketplace)
@@ -141,6 +143,130 @@ def connect_marketplace_session(
         connection.kill_switch_blocked_at = None
         _delete_active_secrets(session, connection, now=now)
 
+    encrypt_session_bundle_for_connection(
+        session,
+        connection,
+        _bundle_to_plain_dict(request.session_bundle),
+        now=now,
+        commit=False,
+    )
+    session.commit()
+    session.refresh(connection)
+    return connection
+
+
+def create_marketplace_connection(
+    session: Session,
+    request: MarketplaceConnectionCreate,
+    *,
+    now: datetime | None = None,
+) -> MarketplaceConnection:
+    now = _as_utc_naive(now or current_utc_datetime())
+    source = _get_marketplace_source(session, request.marketplace)
+    if source is None:
+        raise MarketplaceSessionError("marketplace_unknown")
+    if not source.enabled:
+        _audit_event(
+            session,
+            connection=None,
+            site_id=request.site_id,
+            external_user_id=request.external_user_id,
+            marketplace=request.marketplace,
+            event_type="kill_switch_blocked",
+            actor_type="user",
+            metadata={"reason": source.disabled_reason},
+            now=now,
+        )
+        session.commit()
+        raise MarketplaceDisabledError("marketplace_disabled")
+
+    connection = _get_connection(
+        session,
+        site_id=request.site_id,
+        external_user_id=request.external_user_id,
+        marketplace=request.marketplace,
+    )
+    if connection is None:
+        connection = MarketplaceConnection(
+            site_id=request.site_id,
+            external_user_id=request.external_user_id,
+            marketplace=request.marketplace,
+            status="connecting",
+            scope_json=request.scope,
+            consent_version=request.consent_version,
+            consented_at=_as_utc_naive(request.captured_at),
+            expires_at=_as_utc_naive_or_none(request.expires_at),
+        )
+        session.add(connection)
+    else:
+        connection.scope_json = request.scope
+        connection.consent_version = request.consent_version
+        connection.consented_at = _as_utc_naive(request.captured_at)
+        connection.expires_at = _as_utc_naive_or_none(request.expires_at)
+        if connection.status == "disconnected":
+            connection.status = "connecting"
+        connection.reconnect_reason = None
+        connection.next_retry_at = None
+
+    _audit_event(
+        session,
+        connection=connection,
+        event_type="connect",
+        actor_type="user",
+        metadata={"mode": "create_only"},
+        now=now,
+    )
+    session.commit()
+    session.refresh(connection)
+    return connection
+
+
+def attach_session_bundle_to_connection(
+    session: Session,
+    *,
+    connection_id: int,
+    request: MarketplaceConnectionCreate,
+    now: datetime | None = None,
+) -> MarketplaceConnection | None:
+    if request.session_bundle is None:
+        raise MarketplaceSessionError("session_bundle_required")
+    now = _as_utc_naive(now or current_utc_datetime())
+    connection = session.scalar(
+        select(MarketplaceConnection).where(
+            MarketplaceConnection.id == connection_id,
+            MarketplaceConnection.site_id == request.site_id,
+            MarketplaceConnection.external_user_id == request.external_user_id,
+        )
+    )
+    if connection is None:
+        return None
+
+    request.marketplace = connection.marketplace
+    _validate_bundle_contract(request.session_bundle)
+    source = _get_marketplace_source(session, connection.marketplace)
+    if source is None:
+        raise MarketplaceSessionError("marketplace_unknown")
+    if not source.enabled:
+        _audit_event(
+            session,
+            connection=connection,
+            event_type="kill_switch_blocked",
+            actor_type="user",
+            metadata={"reason": source.disabled_reason},
+            now=now,
+        )
+        session.commit()
+        raise MarketplaceDisabledError("marketplace_disabled")
+
+    _validate_allowlisted_bundle(session, request)
+    connection.status = "connected"
+    connection.scope_json = request.scope
+    connection.consent_version = request.consent_version
+    connection.consented_at = _as_utc_naive(request.captured_at)
+    connection.expires_at = _as_utc_naive_or_none(request.expires_at)
+    connection.reconnect_reason = None
+    connection.next_retry_at = None
+    _delete_active_secrets(session, connection, now=now)
     encrypt_session_bundle_for_connection(
         session,
         connection,
@@ -342,6 +468,38 @@ def record_marketplace_sync_auth_failure(
     session.commit()
     session.refresh(connection)
     return connection
+
+
+def mark_marketplace_connection_reconnect_required(
+    session: Session,
+    *,
+    connection_id: int,
+    site_id: str,
+    external_user_id: str,
+    reason: str,
+    now: datetime | None = None,
+) -> MarketplaceConnection | None:
+    if reason not in AUTH_FAILURE_REASONS:
+        raise MarketplaceSessionError("invalid_reconnect_reason")
+    connection = session.scalar(
+        select(MarketplaceConnection).where(
+            MarketplaceConnection.id == connection_id,
+            MarketplaceConnection.site_id == site_id,
+            MarketplaceConnection.external_user_id == external_user_id,
+        )
+    )
+    if connection is None:
+        return None
+    return record_marketplace_sync_auth_failure(
+        session,
+        connection.id,
+        reason=reason,
+        now=now,
+    )
+
+
+def connection_has_active_secret(connection: MarketplaceConnection) -> bool:
+    return any(secret.deleted_at is None for secret in connection.secrets)
 
 
 def serialize_marketplace_connection(

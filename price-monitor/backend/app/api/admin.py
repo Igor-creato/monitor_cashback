@@ -21,6 +21,16 @@ from app.schemas.admin import (
     AdminSourceResponse,
     AdminSourcesResponse,
 )
+from app.schemas.price_assistant import (
+    AdminDiagnosticsResponse,
+    AdminImportsResponse,
+    AdminStoreCreate,
+    AdminStorePatch,
+    AdminStoreResponse,
+    AdminStoreSourceCreate,
+    AdminStoreSourceResponse,
+    AdminStoresResponse,
+)
 from app.services.admin import (
     get_admin_fetch_economics,
     get_admin_overview,
@@ -35,6 +45,14 @@ from app.services.admin import (
     list_admin_proxy_pools,
     list_admin_sources,
     patch_admin_source,
+)
+from app.services.price_assistant import (
+    create_admin_store,
+    create_admin_store_source,
+    get_admin_diagnostics,
+    list_admin_imports,
+    list_admin_stores,
+    patch_admin_store,
 )
 
 router = APIRouter(
@@ -146,3 +164,53 @@ def admin_marketplace_connections(
     session: DbSession,
 ) -> AdminMarketplaceConnectionsResponse:
     return list_admin_marketplace_connections(session)
+
+
+@router.get("/stores", response_model=AdminStoresResponse)
+def admin_stores(session: DbSession) -> AdminStoresResponse:
+    return list_admin_stores(session)
+
+
+@router.post("/stores", response_model=AdminStoreResponse)
+def admin_create_store(
+    payload: AdminStoreCreate,
+    session: DbSession,
+) -> AdminStoreResponse:
+    return create_admin_store(session, payload)
+
+
+@router.patch("/stores/{store_id}", response_model=AdminStoreResponse)
+def admin_patch_store(
+    store_id: int,
+    payload: AdminStorePatch,
+    session: DbSession,
+) -> AdminStoreResponse:
+    store = patch_admin_store(session, store_id, payload)
+    if store is None:
+        raise HTTPException(status_code=404, detail="Store not found.")
+    return store
+
+
+@router.post(
+    "/stores/{store_id}/sources",
+    response_model=AdminStoreSourceResponse,
+)
+def admin_create_store_source(
+    store_id: int,
+    payload: AdminStoreSourceCreate,
+    session: DbSession,
+) -> AdminStoreSourceResponse:
+    source = create_admin_store_source(session, store_id, payload)
+    if source is None:
+        raise HTTPException(status_code=404, detail="Store not found.")
+    return source
+
+
+@router.get("/imports", response_model=AdminImportsResponse)
+def admin_imports(session: DbSession) -> AdminImportsResponse:
+    return list_admin_imports(session)
+
+
+@router.get("/diagnostics", response_model=AdminDiagnosticsResponse)
+def admin_diagnostics(session: DbSession) -> AdminDiagnosticsResponse:
+    return get_admin_diagnostics(session)

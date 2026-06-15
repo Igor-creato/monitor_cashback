@@ -29,7 +29,7 @@ class MarketplaceConnectionCreate(BaseModel):
     scope: list[str] = Field(min_length=1)
     captured_at: datetime
     connector_version: str = Field(min_length=1, max_length=64)
-    session_bundle: MarketplaceSessionBundle
+    session_bundle: MarketplaceSessionBundle | None = None
     expires_at: datetime | None = None
 
     model_config = ConfigDict(extra="forbid")
