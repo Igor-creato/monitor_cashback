@@ -5,9 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 
 DOC_PATH = (
-    Path(__file__).resolve().parents[3]
-    / "docs"
-    / "mobile-webview-flow-decision.md"
+    Path(__file__).resolve().parents[3] / "docs" / "mobile-webview-flow-decision.md"
 )
 
 
