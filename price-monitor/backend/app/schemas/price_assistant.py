@@ -162,6 +162,15 @@ class AdminStoreSourceCreate(BaseModel):
     display_name: str | None = Field(default=None, max_length=255)
     enabled: bool = True
     source_type: str = Field(default="feed", max_length=32)
+    domains: list[str] = Field(default_factory=list)
+    search_template: str | None = Field(default=None, max_length=2048)
+    region_support: list[str] = Field(default_factory=list)
+    priority: int = Field(default=100, ge=0, le=1000)
+    extraction_mode: str = Field(default="json", max_length=16)
+    proxy_tier_policy: str = Field(default="none", max_length=32)
+    min_fetch_interval_minutes: int = Field(default=60, ge=1, le=1440)
+    matching_threshold: int = Field(default=65, ge=0, le=100)
+    cashback_merchant_mapping: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
 
     model_config = ConfigDict(extra="forbid")
@@ -173,6 +182,15 @@ class AdminStoreSourceResponse(BaseModel):
     display_name: str
     source_type: str
     enabled: bool
+    domains: list[str] = Field(default_factory=list)
+    search_template: str | None = None
+    region_support: list[str] = Field(default_factory=list)
+    priority: int
+    extraction_mode: str
+    proxy_tier_policy: str
+    min_fetch_interval_minutes: int
+    matching_threshold: int
+    cashback_merchant_mapping: dict[str, Any] | None = None
     metadata_json: dict[str, Any] | None = None
 
 

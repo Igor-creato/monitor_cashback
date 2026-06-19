@@ -1104,6 +1104,43 @@ class StoreSource(Base):
         default=True,
         server_default="1",
     )
+    domains_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    search_template: Mapped[str | None] = mapped_column(String(2048), nullable=True)
+    region_support_json: Mapped[list[str] | None] = mapped_column(JSON, nullable=True)
+    priority: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=100,
+        server_default="100",
+    )
+    extraction_mode: Mapped[str] = mapped_column(
+        String(16),
+        nullable=False,
+        default="json",
+        server_default="json",
+    )
+    proxy_tier_policy: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="none",
+        server_default="none",
+    )
+    min_fetch_interval_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=60,
+        server_default="60",
+    )
+    matching_threshold: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=65,
+        server_default="65",
+    )
+    cashback_merchant_mapping_json: Mapped[dict | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
     metadata_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1122,6 +1159,18 @@ class StoreSource(Base):
     @validates("source_type")
     def validate_source_type(self, _: str, value: str) -> str:
         return _validate_choice("source_type", value, STORE_SOURCE_TYPE_VALUES)
+
+    @validates("extraction_mode")
+    def validate_extraction_mode(self, _: str, value: str) -> str:
+        return _validate_choice("extraction_mode", value, SOURCE_EXTRACTION_MODE_VALUES)
+
+    @validates("proxy_tier_policy")
+    def validate_proxy_tier_policy(self, _: str, value: str) -> str:
+        return _validate_choice(
+            "proxy_tier_policy",
+            value,
+            SOURCE_PROXY_TIER_POLICY_VALUES,
+        )
 
 
 class ProductMatchGroup(Base):
