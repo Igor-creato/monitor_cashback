@@ -11,7 +11,7 @@ from app.services.product_matching import (
 def test_normalize_product_text_cleans_noise_and_extracts_attributes() -> None:
     profile = normalize_product_text(
         "🔥 Смартфон Apple iPhone 15 Pro Max 256GB Blue Titanium "
-        "SKU: A3108 EAN 4612345678901, 6.7\", новый!!! Купить со скидкой"
+        'SKU: A3108 EAN 4612345678901, 6.7", новый!!! Купить со скидкой'
     )
 
     assert profile.cleaned_text == (
