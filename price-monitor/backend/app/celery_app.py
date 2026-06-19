@@ -21,6 +21,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.periodic.refresh_source_quarantine_task",
         "schedule": settings.celery_quarantine_refresh_interval_seconds,
     },
+    "sync-due-marketplace-connections": {
+        "task": "app.tasks.periodic.sync_due_marketplace_connections_task",
+        "schedule": settings.celery_marketplace_sync_interval_seconds,
+    },
 }
 
 import_module("app.tasks.http_fetch")

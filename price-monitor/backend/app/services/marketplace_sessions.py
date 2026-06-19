@@ -5,7 +5,7 @@ import hashlib
 import json
 import os
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from cryptography.exceptions import InvalidTag
@@ -131,6 +131,7 @@ def connect_marketplace_session(
             consent_version=request.consent_version,
             consented_at=_as_utc_naive(request.captured_at),
             expires_at=_as_utc_naive_or_none(request.expires_at),
+            next_sync_at=_next_sync_at(now),
         )
         session.add(connection)
         session.flush()
@@ -141,6 +142,7 @@ def connect_marketplace_session(
         connection.consented_at = _as_utc_naive(request.captured_at)
         connection.expires_at = _as_utc_naive_or_none(request.expires_at)
         connection.reconnect_reason = None
+        connection.next_sync_at = _next_sync_at(now)
         connection.next_retry_at = None
         connection.kill_switch_blocked_at = None
         _delete_active_secrets(session, connection, now=now)
@@ -199,6 +201,7 @@ def create_marketplace_connection(
             consent_version=request.consent_version,
             consented_at=_as_utc_naive(request.captured_at),
             expires_at=_as_utc_naive_or_none(request.expires_at),
+            next_sync_at=_next_sync_at(now),
         )
         session.add(connection)
     else:
@@ -206,6 +209,7 @@ def create_marketplace_connection(
         connection.consent_version = request.consent_version
         connection.consented_at = _as_utc_naive(request.captured_at)
         connection.expires_at = _as_utc_naive_or_none(request.expires_at)
+        connection.next_sync_at = _next_sync_at(now)
         if connection.status == "disconnected":
             connection.status = "connecting"
         connection.reconnect_reason = None
@@ -268,6 +272,7 @@ def attach_session_bundle_to_connection(
     connection.consented_at = _as_utc_naive(request.captured_at)
     connection.expires_at = _as_utc_naive_or_none(request.expires_at)
     connection.reconnect_reason = None
+    connection.next_sync_at = _next_sync_at(now)
     connection.next_retry_at = None
     _delete_active_secrets(session, connection, now=now)
     encrypt_session_bundle_for_connection(
@@ -320,6 +325,7 @@ def disconnect_marketplace_connection(
         return None
 
     connection.status = "disconnected"
+    connection.next_sync_at = None
     connection.next_retry_at = None
     connection.reconnect_reason = None
     _audit_event(
@@ -506,6 +512,8 @@ def record_marketplace_sync_auth_failure(
     if reason in AUTH_FAILURE_REASONS:
         connection.status = "reconnect_required"
         event_type = "reconnect_required"
+        connection.next_sync_at = None
+        connection.next_retry_at = None
     else:
         connection.status = "sync_failed_retryable"
         event_type = "sync_auth_failure"
@@ -895,3 +903,7 @@ def _as_utc_naive_or_none(value: datetime | None) -> datetime | None:
     if value is None:
         return None
     return _as_utc_naive(value)
+
+
+def _next_sync_at(now: datetime) -> datetime:
+    return now + timedelta(seconds=settings.marketplace_sync_interval_seconds)

@@ -1,13 +1,18 @@
 # Sync Worker Idempotency and Adapters Decision
 
 Date: 2026-06-15
-Status: ADR-first gate, not implementation
+Updated: 2026-06-19
+Status: Worker orchestrator implemented; real marketplace adapters still gated
 
 ## Decision
 
-Future cart/favorites sync must use the existing encrypted session bundle and
-sync-session foundation. Worker/adapters remain blocked until source-specific
-legal/security approval and fixture-based contracts exist.
+Cart/favorites sync uses the existing encrypted session bundle and sync-session
+foundation. The 2026-06-19 implementation adds the worker orchestrator, due
+connection scheduling, fake/fixture adapter boundary, safe failure mapping, and
+tracked product/subscription promotion for items with stable source product ids.
+
+Real marketplace adapters remain blocked until source-specific legal/security
+approval and fixture-based contracts exist.
 
 Immediate import from the connector is allowed only as sanitized product item
 data sent through the existing WordPress/FastAPI sync-session flow. It must not
@@ -30,7 +35,7 @@ method and allowlist. Adapter tests must default to fixtures/fake network.
 
 ## Idempotency Model
 
-Future worker/import writes must be idempotent by:
+Worker/import writes must be idempotent by:
 
 - `site_id`;
 - `external_user_id`;
@@ -41,15 +46,14 @@ Future worker/import writes must be idempotent by:
 - observation timestamp or sync window;
 - idempotency key for mutating API calls.
 
-The current foundation already supports:
+The current foundation supports:
 
 - `POST /v1/sync-sessions`;
 - `POST /v1/sync-sessions/{sync_session_id}/items`;
 - `POST /v1/sync-sessions/{sync_session_id}/finish`;
 - owner-scoped `GET /v1/collections`.
 
-Future implementation should reuse these contracts instead of adding a parallel
-import API.
+The worker reuses these contracts instead of adding a parallel import API.
 
 ## Broken Page and Failure Behavior
 
@@ -79,16 +83,15 @@ field rather than inventing it.
 ## Required Future Tests
 
 - Duplicate sync runs do not duplicate imported items.
-- Duplicate item upload with the same idempotency key returns the stored response.
 - Same item observed twice updates the item instead of creating another row.
 - Broken marketplace page produces safe failure and no secret logging.
 - `401`, `403`, `login_required`, and `expired` set `reconnect_required`.
 - Captcha/block/fingerprint challenge does not trigger bypass.
-- Immediate sanitized import uses existing sync-session/items endpoints.
 - Ozon/WB/YandexMarket adapters run only against fixtures/fake network until
   source gates pass.
 
 ## Explicit Non-Goals
 
-This ADR does not add worker tasks, Celery schedules, marketplace adapters,
-fixture files, network code, parser code, migrations, or public API changes.
+This decision still does not approve or add real marketplace adapters, network
+code, parser code for Ozon/WB/YandexMarket, captcha/fingerprint bypass,
+allowlist names, or public API changes.

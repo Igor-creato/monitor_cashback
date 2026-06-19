@@ -32,6 +32,10 @@ def test_periodic_tasks_are_registered(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.tasks.periodic.refresh_source_quarantine_task"
         in celery_module.celery_app.tasks
     )
+    assert (
+        "app.tasks.periodic.sync_due_marketplace_connections_task"
+        in celery_module.celery_app.tasks
+    )
 
 
 def test_beat_schedule_contains_scheduler_task(
@@ -45,6 +49,10 @@ def test_beat_schedule_contains_scheduler_task(
         "app.tasks.periodic.schedule_due_fetch_jobs_task"
     )
     assert schedule["schedule-due-fetch-jobs"]["schedule"] == 300
+    assert schedule["sync-due-marketplace-connections"]["task"] == (
+        "app.tasks.periodic.sync_due_marketplace_connections_task"
+    )
+    assert schedule["sync-due-marketplace-connections"]["schedule"] == 300
 
 
 def test_scheduler_task_calls_service_with_configured_limit(
@@ -141,6 +149,55 @@ def test_quarantine_refresh_task_calls_service(
 
     assert result == 4
     assert calls == 1
+
+
+def test_marketplace_sync_task_calls_service_with_configured_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reload_celery_modules(monkeypatch)
+    task_module = importlib.import_module("app.tasks.periodic")
+    calls: list[int] = []
+
+    class FakeSession:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, exc_type, exc, traceback) -> None:
+            return None
+
+    class FakeReport:
+        processed_connections = 1
+        skipped_connections = 2
+        synced_collections = 3
+        failed_collections = 4
+        imported_items = 5
+        tracked_products_updated = 6
+
+    def fake_session_local() -> FakeSession:
+        return FakeSession()
+
+    def fake_sync_due_marketplace_connections(session, *, limit: int) -> FakeReport:
+        calls.append(limit)
+        return FakeReport()
+
+    monkeypatch.setattr(task_module, "SessionLocal", fake_session_local)
+    monkeypatch.setattr(
+        task_module,
+        "sync_due_marketplace_connections",
+        fake_sync_due_marketplace_connections,
+    )
+
+    result = task_module.sync_due_marketplace_connections_task.run()
+
+    assert result == {
+        "processed_connections": 1,
+        "skipped_connections": 2,
+        "synced_collections": 3,
+        "failed_collections": 4,
+        "imported_items": 5,
+        "tracked_products_updated": 6,
+    }
+    assert calls == [100]
 
 
 def test_task_logs_and_reraises_service_errors(

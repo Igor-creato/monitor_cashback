@@ -661,6 +661,10 @@ class MarketplaceConnection(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    next_sync_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
     next_retry_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
         nullable=True,
