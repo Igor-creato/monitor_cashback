@@ -86,6 +86,11 @@ def upgrade() -> None:
             ["site_id", "external_user_id", "source", "collection_type", "region_code"],
         )
 
+    op.create_index(
+        "ix_product_offers_match_group_id",
+        "product_offers",
+        ["match_group_id"],
+    )
     with op.batch_alter_table("product_offers") as batch_op:
         batch_op.drop_constraint("uq_product_offers_identity", type_="unique")
         batch_op.create_unique_constraint(
@@ -101,6 +106,10 @@ def downgrade() -> None:
             "uq_product_offers_identity",
             ["match_group_id", "store_id", "external_product_id"],
         )
+    op.drop_index(
+        "ix_product_offers_match_group_id",
+        table_name="product_offers",
+    )
 
     with op.batch_alter_table("imported_collections") as batch_op:
         batch_op.drop_constraint(

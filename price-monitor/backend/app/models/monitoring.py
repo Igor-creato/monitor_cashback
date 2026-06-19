@@ -10,6 +10,7 @@ from sqlalchemy import (
     DateTime,
     Float,
     ForeignKey,
+    Index,
     Integer,
     Numeric,
     String,
@@ -1172,6 +1173,7 @@ class ProductMatchGroup(Base):
 class ProductOffer(Base):
     __tablename__ = "product_offers"
     __table_args__ = (
+        Index("ix_product_offers_match_group_id", "match_group_id"),
         UniqueConstraint(
             "match_group_id",
             "store_id",
