@@ -147,7 +147,10 @@ def test_admin_store_source_policy_fields_round_trip_and_audit(
     source = stores.json()["items"][0]["sources"][0]
     assert source["source_code"] == "dns-api"
     assert source["domains"] == ["dns-shop.ru", "www.dns-shop.ru"]
-    assert source["search_template"] == "https://www.dns-shop.ru/search/?q={query}&city={region}"
+    assert (
+        source["search_template"]
+        == "https://www.dns-shop.ru/search/?q={query}&city={region}"
+    )
     assert source["region_support"] == ["msk", "spb"]
     assert source["priority"] == 40
     assert source["extraction_mode"] == "json"
