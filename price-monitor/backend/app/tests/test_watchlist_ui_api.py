@@ -93,6 +93,8 @@ def _product(
     title: str = "Palit Видеокарта GeForce RTX 5070",
     source: str = "ozon",
     source_display_name: str | None = "Ozon",
+    external_product_id: str | None = None,
+    region_code: str = "default",
     price: str = "809.70",
     currency: str = "USD",
     availability: bool = True,
@@ -101,9 +103,9 @@ def _product(
         id=product_id,
         source=source,
         source_display_name=source_display_name,
-        external_product_id=f"sku-{product_id}",
+        external_product_id=external_product_id or f"sku-{product_id}",
         canonical_url=f"https://example.local/product/{product_id}",
-        region_code="default",
+        region_code=region_code,
         product_name=title,
         image_url=f"https://saved.example/products/{product_id}.jpg",
         image_object_key=f"products/{product_id}.jpg",
@@ -124,10 +126,13 @@ def _subscription(
     external_user_id: str = USER_ID,
     is_active: bool = True,
 ) -> UserProductSubscription:
+    product = session.get(TrackedProduct, product_id)
+    region_code = product.region_code if product is not None else "default"
     subscription = UserProductSubscription(
         site_id=SITE_ID,
         external_user_id=external_user_id,
         tracked_product_id=product_id,
+        region_code=region_code,
         is_active=is_active,
     )
     session.add(subscription)
@@ -207,6 +212,8 @@ def test_watchlist_ui_returns_card_fields(
             {
                 "subscription_id": subscription.id,
                 "tracked_product_id": 1,
+                "region_code": "default",
+                "price_region_text": "Цена для региона default",
                 "title": "Palit Видеокарта GeForce RTX 5070",
                 "source_display_name": "Ozon",
                 "image_url": "https://cdn.example.com/images/products/1.jpg",
@@ -226,7 +233,77 @@ def test_watchlist_ui_returns_card_fields(
             "total": 1,
             "has_more": False,
         },
+        "user_region": {
+            "region_code": "default",
+            "is_default": True,
+        },
     }
+
+
+def test_watchlist_ui_keeps_same_product_regions_separate(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    _product(
+        db_session,
+        product_id=1,
+        external_product_id="shared-sku",
+        region_code="msk",
+        price="1000.00",
+        availability=True,
+    )
+    _product(
+        db_session,
+        product_id=2,
+        external_product_id="shared-sku",
+        region_code="spb",
+        price="1200.00",
+        availability=False,
+    )
+    _subscription(db_session, product_id=1)
+    _subscription(db_session, product_id=2)
+    _history_point(
+        db_session,
+        product_id=1,
+        price="900.00",
+        fetched_at=datetime(2026, 6, 6, 10, 0, 0),
+    )
+    _history_point(
+        db_session,
+        product_id=1,
+        price="1000.00",
+        fetched_at=datetime(2026, 6, 8, 10, 0, 0),
+    )
+    _history_point(
+        db_session,
+        product_id=2,
+        price="1300.00",
+        fetched_at=datetime(2026, 6, 6, 10, 0, 0),
+    )
+    _history_point(
+        db_session,
+        product_id=2,
+        price="1200.00",
+        fetched_at=datetime(2026, 6, 8, 10, 0, 0),
+    )
+
+    response = client.get(_ui_url(), headers=_headers())
+
+    assert response.status_code == 200
+    items = response.json()["items"]
+    assert [
+        (
+            item["region_code"],
+            item["price_region_text"],
+            item["current_price"],
+            item["availability"],
+            item["chart_summary"]["trend"],
+        )
+        for item in items
+    ] == [
+        ("msk", "Цена для региона msk", "1000.00", True, "above_usual"),
+        ("spb", "Цена для региона spb", "1200.00", False, "below_usual"),
+    ]
 
 
 def test_watchlist_ui_default_includes_chart_summary(

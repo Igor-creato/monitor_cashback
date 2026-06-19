@@ -519,6 +519,7 @@ def test_product_compare_is_owner_scoped_and_local_only(
             "store_code": "dns",
             "store_display_name": "DNS",
             "source_code": "dns",
+            "region_code": "default",
             "product_url": "https://dns-shop.local/product/10",
             "title": "Compare product",
             "price": "950.00",

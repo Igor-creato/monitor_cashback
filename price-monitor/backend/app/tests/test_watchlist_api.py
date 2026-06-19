@@ -21,6 +21,7 @@ from app.models.monitoring import (
     TrackedProduct,
     TrackedProductCashback,
     UserProductSubscription,
+    UserRegion,
 )
 from app.services.user_limits import (
     CashbackLimitValues,
@@ -238,6 +239,101 @@ def test_post_creates_product_and_subscription(
     assert db_session.scalar(select(func.count(TrackedProduct.id))) == 1
     assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 1
     assert db_session.scalar(select(func.count(FetchJob.id))) == 0
+
+
+def test_watchlist_create_uses_request_region_when_url_has_no_region(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    first_response = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123")
+        | {"region_code": "msk"},
+    )
+    second_response = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://testshop.local/product/123")
+        | {"region_code": "spb"},
+    )
+
+    assert first_response.status_code == 200
+    assert second_response.status_code == 200
+    assert first_response.json()["result"] == "created"
+    assert second_response.json()["result"] == "created"
+    assert first_response.json()["region_code"] == "msk"
+    assert second_response.json()["region_code"] == "spb"
+    assert (
+        first_response.json()["tracked_product_id"]
+        != second_response.json()["tracked_product_id"]
+    )
+    assert db_session.scalar(select(func.count(TrackedProduct.id))) == 2
+    assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 2
+
+
+def test_patch_user_region_sets_single_default(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    body = _json_body(
+        {
+            "site_id": SITE_ID,
+            "external_user_id": "wp:savelloclub.ru:123",
+            "region_code": "msk",
+            "country_code": "RU",
+        }
+    )
+
+    first = client.patch("/v1/user-region", content=body, headers=_headers(body))
+
+    second_body = _json_body(
+        {
+            "site_id": SITE_ID,
+            "external_user_id": "wp:savelloclub.ru:123",
+            "region_code": "spb",
+            "country_code": "RU",
+        }
+    )
+    second = client.patch(
+        "/v1/user-region",
+        content=second_body,
+        headers=_headers(second_body),
+    )
+    other_body = _json_body(
+        {
+            "site_id": SITE_ID,
+            "external_user_id": "wp:savelloclub.ru:456",
+            "region_code": "ekb",
+        }
+    )
+    other = client.patch(
+        "/v1/user-region",
+        content=other_body,
+        headers=_headers(other_body),
+    )
+
+    assert first.status_code == 200
+    assert first.json() == {
+        "region_code": "msk",
+        "country_code": "RU",
+        "is_default": True,
+    }
+    assert second.status_code == 200
+    assert second.json() == {
+        "region_code": "spb",
+        "country_code": "RU",
+        "is_default": True,
+    }
+    assert other.status_code == 200
+    assert other.json()["region_code"] == "ekb"
+    own_regions = db_session.scalars(
+        select(UserRegion)
+        .where(UserRegion.external_user_id == "wp:savelloclub.ru:123")
+        .order_by(UserRegion.region_code.asc())
+    ).all()
+    assert [(item.region_code, item.is_default) for item in own_regions] == [
+        ("msk", False),
+        ("spb", True),
+    ]
 
 
 def test_duplicate_url_with_utm_does_not_create_second_product(

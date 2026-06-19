@@ -42,6 +42,7 @@ class MarketplaceConnectionCreate(BaseModel):
     site_id: str = Field(min_length=1, max_length=191)
     external_user_id: str = Field(min_length=1, max_length=191)
     marketplace: str = Field(min_length=1, max_length=64)
+    region_code: str | None = Field(default=None, min_length=1, max_length=64)
     consent_version: str = Field(min_length=1, max_length=191)
     scope: list[str] = Field(min_length=1)
     captured_at: datetime
@@ -55,6 +56,7 @@ class MarketplaceConnectionCreate(BaseModel):
 class MarketplaceConnectionStatusResponse(BaseModel):
     connection_id: int
     marketplace: str
+    region_code: str
     status: str
     last_validated_at: datetime | None
     last_synced_at: datetime | None

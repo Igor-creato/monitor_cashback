@@ -14,6 +14,7 @@ from sqlalchemy.pool import StaticPool
 from app.core import config
 from app.db import Base
 from app.models.monitoring import (
+    ImportedCollection,
     ImportedItem,
     MarketplaceConnection,
     MarketplaceSessionAllowlist,
@@ -79,6 +80,15 @@ def db_session(monkeypatch: pytest.MonkeyPatch) -> Iterator[Session]:
 
 
 def _enable_marketplace(session: Session, *, enabled: bool = True) -> None:
+    existing = session.scalar(
+        select(MarketplaceSessionSource).where(
+            MarketplaceSessionSource.marketplace == "ozon"
+        )
+    )
+    if existing is not None:
+        existing.enabled = enabled
+        session.commit()
+        return
     session.add(MarketplaceSessionSource(marketplace="ozon", enabled=enabled))
     session.add_all(
         [
@@ -108,6 +118,7 @@ def _connect_marketplace(
     *,
     enabled: bool = True,
     scope: list[str] | None = None,
+    region_hint: str = "msk",
 ) -> MarketplaceConnection:
     _enable_marketplace(session, enabled=enabled)
     scope = scope or ["cart_read", "favorites_read"]
@@ -135,7 +146,7 @@ def _connect_marketplace(
                     )
                 ],
                 captured_at=NOW,
-                region_hint="msk",
+                region_hint=region_hint,
             ),
         ),
         now=NOW,
@@ -200,6 +211,52 @@ def test_success_sync_imports_items_tracks_products_and_sets_next_sync(
     assert len(db_session.scalars(select(ImportedItem)).all()) == 2
     assert len(db_session.scalars(select(TrackedProduct)).all()) == 2
     assert len(db_session.scalars(select(UserProductSubscription)).all()) == 2
+
+
+def test_marketplace_sync_worker_uses_region_hint_without_mixing_imports(
+    db_session: Session,
+) -> None:
+    _connect_marketplace(db_session, scope=["cart_read"], region_hint="msk")
+    adapter = FakeAdapter(MarketplaceSyncAdapterResult.success(items=[_item()]))
+
+    first_report = sync_due_marketplace_connections(
+        db_session,
+        adapter_registry={("ozon", "cart"): adapter},
+        now=NOW,
+        worker_name="unit-test-worker",
+    )
+
+    _connect_marketplace(db_session, scope=["cart_read"], region_hint="spb")
+    second_report = sync_due_marketplace_connections(
+        db_session,
+        adapter_registry={("ozon", "cart"): adapter},
+        now=NOW + timedelta(minutes=59),
+        worker_name="unit-test-worker",
+    )
+
+    collections = db_session.scalars(
+        select(ImportedCollection).order_by(ImportedCollection.region_code.asc())
+    ).all()
+    products = db_session.scalars(
+        select(TrackedProduct).order_by(TrackedProduct.region_code.asc())
+    ).all()
+    subscriptions = db_session.scalars(
+        select(UserProductSubscription).order_by(UserProductSubscription.region_code.asc())
+    ).all()
+
+    assert first_report.tracked_products_updated == 1
+    assert second_report.tracked_products_updated == 1
+    assert [
+        (item.source, item.collection_type, item.region_code) for item in collections
+    ] == [
+        ("ozon", "cart", "msk"),
+        ("ozon", "cart", "spb"),
+    ]
+    assert [(item.external_product_id, item.region_code) for item in products] == [
+        ("ozon-sku-1", "msk"),
+        ("ozon-sku-1", "spb"),
+    ]
+    assert [item.region_code for item in subscriptions] == ["msk", "spb"]
 
 
 def test_expired_token_marks_reconnect_required_and_does_not_log_plaintext(

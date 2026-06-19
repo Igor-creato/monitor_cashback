@@ -62,6 +62,7 @@ def test_write_price_point_persists_same_mariadb_fields() -> None:
 
         point = repository.write_price_point(
             tracked_product_id=1,
+            region_code="msk",
             price_current=Decimal("1499.90"),
             price_old=Decimal("1999.00"),
             currency="RUB",
@@ -75,6 +76,8 @@ def test_write_price_point_persists_same_mariadb_fields() -> None:
         assert stored is not None
         assert point.id == stored.id
         assert stored.tracked_product_id == 1
+        assert point.region_code == "msk"
+        assert stored.region_code == "msk"
         assert stored.price_current == Decimal("1499.90")
         assert stored.price_old == Decimal("1999.00")
         assert stored.currency == "RUB"
