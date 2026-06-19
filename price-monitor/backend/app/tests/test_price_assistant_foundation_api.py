@@ -18,6 +18,7 @@ import app.db as db
 from app.core import config
 from app.main import app
 from app.models.monitoring import (
+    ImportedCollection,
     ImportedItem,
     MarketplaceConnection,
     MarketplaceSessionAllowlist,
@@ -534,3 +535,54 @@ def test_product_compare_is_owner_scoped_and_local_only(
         }
     ]
     assert other.status_code == 404
+
+
+def test_delete_imported_collection_is_owner_scoped_and_redacted(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    collection = ImportedCollection(
+        site_id=SITE_ID,
+        external_user_id=USER_ID,
+        source="ozon",
+        region_code="default",
+        collection_type="cart",
+        status="active",
+    )
+    collection.items.append(
+        ImportedItem(
+            external_item_id="cart-line-secret",
+            product_url="https://ozon.ru/product/secret",
+            title="Imported product",
+            raw_json={"cookie": "secret-cookie", "token": "secret-token"},
+        )
+    )
+    db_session.add(collection)
+    db_session.commit()
+
+    other = client.delete(
+        f"/v1/collections/{collection.id}?site_id={SITE_ID}&external_user_id={OTHER_USER_ID}",
+        headers=_signed_headers(),
+    )
+    owner = client.delete(
+        f"/v1/collections/{collection.id}?site_id={SITE_ID}&external_user_id={USER_ID}",
+        headers=_signed_headers(),
+    )
+    collections = client.get(
+        f"/v1/collections?site_id={SITE_ID}&external_user_id={USER_ID}",
+        headers=_signed_headers(),
+    )
+
+    db_session.refresh(collection)
+
+    assert other.status_code == 404
+    assert owner.status_code == 200
+    assert owner.json() == {
+        "collection_id": collection.id,
+        "status": "archived",
+    }
+    assert collection.status == "archived"
+    assert collections.status_code == 200
+    assert collections.json()["items"] == []
+    assert "secret-cookie" not in owner.text
+    assert "secret-token" not in owner.text

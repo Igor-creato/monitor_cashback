@@ -7,6 +7,7 @@ from app.core.incoming_hmac import verify_incoming_hmac_request
 from app.db import get_db
 from app.schemas.price_assistant import (
     CollectionsResponse,
+    ImportedCollectionDeleteResponse,
     ProductCompareResponse,
     SyncItemsRequest,
     SyncItemsResponse,
@@ -22,6 +23,7 @@ from app.services.idempotency import (
 )
 from app.services.price_assistant import (
     PriceAssistantError,
+    archive_imported_collection,
     compare_product,
     create_sync_session,
     finish_sync_session,
@@ -131,6 +133,26 @@ def get_collections(
         site_id=site_id,
         external_user_id=external_user_id,
     )
+
+
+@router.delete("/v1/collections/{collection_id}")
+def delete_collection(
+    collection_id: int,
+    request: Request,
+    session: DbSession,
+    site_id: Annotated[str, Query(min_length=1, max_length=191)],
+    external_user_id: Annotated[str, Query(min_length=1, max_length=191)],
+) -> ImportedCollectionDeleteResponse:
+    _verify_site_matches_request(request, site_id)
+    result = archive_imported_collection(
+        session,
+        collection_id=collection_id,
+        site_id=site_id,
+        external_user_id=external_user_id,
+    )
+    if result is None:
+        raise HTTPException(status_code=404, detail="Imported collection not found.")
+    return result
 
 
 @router.get("/v1/products/{tracked_product_id}/compare")

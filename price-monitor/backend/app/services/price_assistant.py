@@ -38,6 +38,7 @@ from app.schemas.price_assistant import (
     AdminStoreSourceResponse,
     AdminStoresResponse,
     CollectionsResponse,
+    ImportedCollectionDeleteResponse,
     ImportedCollectionResponse,
     ImportedItemResponse,
     ProductCompareResponse,
@@ -208,11 +209,39 @@ def list_collections(
         .where(
             ImportedCollection.site_id == site_id,
             ImportedCollection.external_user_id == external_user_id,
+            ImportedCollection.status == "active",
         )
         .order_by(ImportedCollection.id.asc())
     ).all()
     return CollectionsResponse(
         items=[_serialize_collection(collection) for collection in collections]
+    )
+
+
+def archive_imported_collection(
+    session: Session,
+    *,
+    collection_id: int,
+    site_id: str,
+    external_user_id: str,
+) -> ImportedCollectionDeleteResponse | None:
+    collection = session.scalar(
+        select(ImportedCollection).where(
+            ImportedCollection.id == collection_id,
+            ImportedCollection.site_id == site_id,
+            ImportedCollection.external_user_id == external_user_id,
+            ImportedCollection.status == "active",
+        )
+    )
+    if collection is None:
+        return None
+
+    collection.status = "archived"
+    session.commit()
+    session.refresh(collection)
+    return ImportedCollectionDeleteResponse(
+        collection_id=collection.id,
+        status=collection.status,
     )
 
 

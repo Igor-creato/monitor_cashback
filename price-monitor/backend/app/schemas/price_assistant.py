@@ -116,6 +116,11 @@ class CollectionsResponse(BaseModel):
     items: list[ImportedCollectionResponse]
 
 
+class ImportedCollectionDeleteResponse(BaseModel):
+    collection_id: int
+    status: str
+
+
 class ProductOfferResponse(BaseModel):
     offer_id: int
     store_code: str
