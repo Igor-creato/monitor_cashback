@@ -323,6 +323,7 @@ def list_admin_imports(session: Session) -> AdminImportsResponse:
                 site_id=collection.site_id,
                 external_user_id=collection.external_user_id,
                 source=collection.source,
+                region_code=collection.region_code,
                 collection_type=collection.collection_type,
                 status=collection.status,
                 item_count=len(collection.items),
@@ -357,6 +358,7 @@ def _get_or_create_collection(
             ImportedCollection.external_user_id == external_user_id,
             ImportedCollection.source == connection.marketplace,
             ImportedCollection.collection_type == collection_type,
+            ImportedCollection.region_code == connection.region_code,
         )
     )
     if collection is None:
@@ -366,6 +368,7 @@ def _get_or_create_collection(
             connection=connection,
             collection_type=collection_type,
             source=connection.marketplace,
+            region_code=connection.region_code,
             status="active",
         )
         session.add(collection)
@@ -416,6 +419,7 @@ def _serialize_collection(
         collection_id=collection.id,
         collection_type=collection.collection_type,
         source=collection.source,
+        region_code=collection.region_code,
         status=collection.status,
         items=[
             ImportedItemResponse(
@@ -437,6 +441,7 @@ def _serialize_offer(offer: ProductOffer) -> ProductOfferResponse:
         store_code=offer.store.store_code,
         store_display_name=offer.store.display_name,
         source_code=offer.source_code,
+        region_code=offer.region_code,
         product_url=offer.product_url,
         title=offer.title,
         price=_format_money(offer.price),

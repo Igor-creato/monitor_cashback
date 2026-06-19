@@ -238,7 +238,7 @@ def _serialize_subscription(
         product_url=tracked_product.canonical_url,
         source=tracked_product.source,
         external_product_id=tracked_product.external_product_id,
-        region_code=tracked_product.region_code,
+        region_code=subscription.region_code or tracked_product.region_code,
         target_price=_format_money(subscription.target_price),
         target_effective_price=_format_money(subscription.target_effective_price),
         is_active=subscription.is_active,

@@ -191,6 +191,7 @@ def test_connect_stores_encrypted_bundle_and_returns_no_secrets(
     assert response.json() == {
         "connection_id": 1,
         "marketplace": "ozon",
+        "region_code": "msk",
         "status": "connected",
         "last_validated_at": None,
         "last_synced_at": None,
@@ -301,6 +302,7 @@ def test_list_connections_is_scoped_and_contains_no_secret_material(
         {
             "connection_id": 1,
             "marketplace": "ozon",
+            "region_code": "msk",
             "status": "connected",
             "last_validated_at": None,
             "last_synced_at": None,

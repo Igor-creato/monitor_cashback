@@ -13,6 +13,7 @@ from app.schemas.watchlist_ui import (
 )
 from app.services.price_chart import current_utc_datetime, summarize_price_history
 from app.services.product_cards import build_product_card
+from app.services.user_regions import get_default_user_region
 
 CHART_SUMMARY_DAYS = 30
 
@@ -58,6 +59,11 @@ def build_watchlist_ui_response(
             total=total,
             has_more=offset + len(subscriptions) < total,
         ),
+        user_region=get_default_user_region(
+            session,
+            site_id=site_id,
+            external_user_id=external_user_id,
+        ).model_dump(),
     )
 
 
@@ -140,9 +146,12 @@ def _build_item(
     chart_summary = (
         _build_chart_summary(chart_history) if chart_history is not None else None
     )
+    region_code = subscription.region_code or subscription.tracked_product.region_code
     return WatchlistUiItemResponse(
         subscription_id=subscription.id,
         tracked_product_id=subscription.tracked_product_id,
+        region_code=region_code,
+        price_region_text=f"Цена для региона {region_code}",
         title=card.title,
         source_display_name=card.source_display_name or card.source,
         image_url=card.image_url,

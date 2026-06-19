@@ -629,6 +629,7 @@ class MarketplaceConnection(Base):
             "site_id",
             "external_user_id",
             "marketplace",
+            "region_code",
             name="uq_marketplace_connections_identity",
         ),
     )
@@ -637,6 +638,12 @@ class MarketplaceConnection(Base):
     site_id: Mapped[str] = mapped_column(String(191), nullable=False)
     external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
     marketplace: Mapped[str] = mapped_column(String(64), nullable=False)
+    region_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="default",
+        server_default="default",
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -841,6 +848,7 @@ class ImportedCollection(Base):
             "external_user_id",
             "source",
             "collection_type",
+            "region_code",
             name="uq_imported_collections_owner_source_type",
         ),
     )
@@ -855,6 +863,12 @@ class ImportedCollection(Base):
     )
     collection_type: Mapped[str] = mapped_column(String(32), nullable=False)
     source: Mapped[str] = mapped_column(String(64), nullable=False)
+    region_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="default",
+        server_default="default",
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -1162,6 +1176,7 @@ class ProductOffer(Base):
             "match_group_id",
             "store_id",
             "external_product_id",
+            "region_code",
             name="uq_product_offers_identity",
         ),
     )
@@ -1179,6 +1194,12 @@ class ProductOffer(Base):
     )
     source_code: Mapped[str] = mapped_column(String(64), nullable=False)
     external_product_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    region_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="default",
+        server_default="default",
+    )
     product_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     title: Mapped[str | None] = mapped_column(String(512), nullable=True)
     price: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
@@ -1533,6 +1554,12 @@ class UserProductSubscription(Base):
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
         nullable=False,
     )
+    region_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="default",
+        server_default="default",
+    )
     target_price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)
     target_effective_price: Mapped[Decimal | None] = mapped_column(
         Numeric(12, 2),
@@ -1629,6 +1656,12 @@ class PriceHistory(Base):
         BigInteger,
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
         nullable=False,
+    )
+    region_code: Mapped[str] = mapped_column(
+        String(64),
+        nullable=False,
+        default="default",
+        server_default="default",
     )
     price_current: Mapped[Decimal] = mapped_column(Numeric(12, 2), nullable=False)
     price_old: Mapped[Decimal | None] = mapped_column(Numeric(12, 2), nullable=True)

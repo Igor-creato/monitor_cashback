@@ -150,6 +150,9 @@ def _sync_collection(
     adapter: MarketplaceSyncAdapter,
     now: datetime,
 ) -> MarketplaceSyncWorkerReport:
+    region_code = str(bundle.get("region_hint") or connection.region_code or "default")
+    connection.region_code = region_code
+    session.flush()
     sync_session = create_sync_session(
         session,
         SyncSessionCreate(
@@ -183,7 +186,7 @@ def _sync_collection(
             session,
             connection,
             items=sanitized_items,
-            region_code=str(bundle.get("region_hint") or "default"),
+            region_code=region_code,
             now=now,
         )
 
@@ -391,6 +394,7 @@ def _upsert_tracked_products(
                 UserProductSubscription.site_id == connection.site_id,
                 UserProductSubscription.external_user_id == connection.external_user_id,
                 UserProductSubscription.tracked_product_id == product.id,
+                UserProductSubscription.region_code == region_code,
             )
         )
         if subscription is None:
@@ -399,6 +403,7 @@ def _upsert_tracked_products(
                     site_id=connection.site_id,
                     external_user_id=connection.external_user_id,
                     tracked_product=product,
+                    region_code=region_code,
                     is_active=True,
                 )
             )

@@ -1,6 +1,7 @@
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
+from urllib.parse import parse_qsl, urlsplit
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
@@ -16,6 +17,7 @@ from app.services.user_limits import (
     UserPriceMonitorLimits,
     get_price_monitor_limits,
 )
+from app.services.user_regions import get_default_user_region
 
 WatchlistAddStatus = Literal["created", "already_exists"]
 
@@ -47,12 +49,13 @@ def add_watchlist_item(
         normalized = normalize_product_url(item.product_url)
     except UnsupportedSourceError as exc:
         raise UnsupportedWatchlistSourceError(str(exc)) from exc
+    region_code = _region_code_for_watchlist_item(session, item, normalized.region_code)
 
     tracked_product = session.scalar(
         select(TrackedProduct).where(
             TrackedProduct.source == normalized.source,
             TrackedProduct.external_product_id == normalized.external_product_id,
-            TrackedProduct.region_code == normalized.region_code,
+            TrackedProduct.region_code == region_code,
             TrackedProduct.variant_hash == normalized.variant_hash,
         )
     )
@@ -75,7 +78,7 @@ def add_watchlist_item(
             source=normalized.source,
             external_product_id=normalized.external_product_id,
             canonical_url=normalized.canonical_url,
-            region_code=normalized.region_code,
+            region_code=region_code,
             variant_hash=normalized.variant_hash,
         )
         session.add(tracked_product)
@@ -85,6 +88,7 @@ def add_watchlist_item(
         site_id=item.site_id,
         external_user_id=item.external_user_id,
         tracked_product=tracked_product,
+        region_code=region_code,
         target_price=item.target_price,
         target_effective_price=item.target_effective_price,
     )
@@ -213,3 +217,29 @@ def _ensure_new_subscription_within_limit(
     )
     if int(active_count or 0) >= user_limits.limits.max_tracked_products:
         raise WatchlistLimitExceededError("max_tracked_products_exceeded")
+
+
+def _region_code_for_watchlist_item(
+    session: Session,
+    item: WatchlistItemCreate,
+    normalized_region_code: str,
+) -> str:
+    explicit_url_region = _explicit_region_from_url(item.product_url)
+    if explicit_url_region is not None:
+        return explicit_url_region
+    if "region_code" in item.model_fields_set:
+        return item.region_code
+    default_region = get_default_user_region(
+        session,
+        site_id=item.site_id,
+        external_user_id=item.external_user_id,
+    )
+    return default_region.region_code or normalized_region_code or "default"
+
+
+def _explicit_region_from_url(url: str) -> str | None:
+    query_pairs = parse_qsl(urlsplit(url).query, keep_blank_values=True)
+    for key, value in query_pairs:
+        if key == "region" and value:
+            return value
+    return None

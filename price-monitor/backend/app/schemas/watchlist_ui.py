@@ -13,6 +13,8 @@ class WatchlistUiChartSummaryResponse(BaseModel):
 class WatchlistUiItemResponse(BaseModel):
     subscription_id: int
     tracked_product_id: int
+    region_code: str
+    price_region_text: str
     title: str
     source_display_name: str
     image_url: str | None = None
@@ -30,6 +32,12 @@ class WatchlistUiPaginationResponse(BaseModel):
     has_more: bool
 
 
+class WatchlistUiUserRegionResponse(BaseModel):
+    region_code: str
+    country_code: str | None = None
+    is_default: bool
+
 class WatchlistUiResponse(BaseModel):
     items: list[WatchlistUiItemResponse]
     pagination: WatchlistUiPaginationResponse
+    user_region: WatchlistUiUserRegionResponse

@@ -107,6 +107,7 @@ class ImportedCollectionResponse(BaseModel):
     collection_id: int
     collection_type: str
     source: str
+    region_code: str
     status: str
     items: list[ImportedItemResponse]
 
@@ -120,6 +121,7 @@ class ProductOfferResponse(BaseModel):
     store_code: str
     store_display_name: str
     source_code: str
+    region_code: str
     product_url: str
     title: str | None
     price: str
@@ -188,6 +190,7 @@ class AdminImportResponse(BaseModel):
     site_id: str
     external_user_id: str
     source: str
+    region_code: str
     collection_type: str
     status: str
     item_count: int

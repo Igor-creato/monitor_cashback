@@ -115,17 +115,20 @@ def connect_marketplace_session(
         raise MarketplaceDisabledError("marketplace_disabled")
 
     encrypted_payload = _build_allowlisted_encrypted_payload(session, request)
+    region_code = _region_code_for_connection(request)
     connection = _get_connection(
         session,
         site_id=request.site_id,
         external_user_id=request.external_user_id,
         marketplace=request.marketplace,
+        region_code=region_code,
     )
     if connection is None:
         connection = MarketplaceConnection(
             site_id=request.site_id,
             external_user_id=request.external_user_id,
             marketplace=request.marketplace,
+            region_code=region_code,
             status="connected",
             scope_json=request.scope,
             consent_version=request.consent_version,
@@ -137,6 +140,7 @@ def connect_marketplace_session(
         session.flush()
     else:
         connection.status = "connected"
+        connection.region_code = region_code
         connection.scope_json = request.scope
         connection.consent_version = request.consent_version
         connection.consented_at = _as_utc_naive(request.captured_at)
@@ -190,12 +194,14 @@ def create_marketplace_connection(
         site_id=request.site_id,
         external_user_id=request.external_user_id,
         marketplace=request.marketplace,
+        region_code=request.region_code or "default",
     )
     if connection is None:
         connection = MarketplaceConnection(
             site_id=request.site_id,
             external_user_id=request.external_user_id,
             marketplace=request.marketplace,
+            region_code=request.region_code or "default",
             status="connecting",
             scope_json=request.scope,
             consent_version=request.consent_version,
@@ -205,6 +211,7 @@ def create_marketplace_connection(
         )
         session.add(connection)
     else:
+        connection.region_code = request.region_code or connection.region_code
         connection.scope_json = request.scope
         connection.consent_version = request.consent_version
         connection.consented_at = _as_utc_naive(request.captured_at)
@@ -266,6 +273,10 @@ def attach_session_bundle_to_connection(
         raise MarketplaceDisabledError("marketplace_disabled")
 
     encrypted_payload = _build_allowlisted_encrypted_payload(session, request)
+    connection.region_code = _region_code_for_connection(
+        request,
+        fallback=connection.region_code,
+    )
     connection.status = "connected"
     connection.scope_json = request.scope
     connection.consent_version = request.consent_version
@@ -576,6 +587,7 @@ def _serialize_connection(
     return MarketplaceConnectionStatusResponse(
         connection_id=connection.id,
         marketplace=connection.marketplace,
+        region_code=connection.region_code,
         status=connection.status,
         last_validated_at=connection.last_validated_at,
         last_synced_at=connection.last_synced_at,
@@ -758,8 +770,9 @@ def _build_allowlisted_encrypted_payload(
     }
     if bundle.user_agent_hint is not None:
         payload["user_agent_hint"] = bundle.user_agent_hint
-    if bundle.region_hint is not None:
-        payload["region_hint"] = bundle.region_hint
+    region_hint = _session_bundle_region_hint(bundle)
+    if region_hint is not None:
+        payload["region_hint"] = region_hint
     return payload
 
 
@@ -780,12 +793,14 @@ def _get_connection(
     site_id: str,
     external_user_id: str,
     marketplace: str,
+    region_code: str,
 ) -> MarketplaceConnection | None:
     return session.scalar(
         select(MarketplaceConnection).where(
             MarketplaceConnection.site_id == site_id,
             MarketplaceConnection.external_user_id == external_user_id,
             MarketplaceConnection.marketplace == marketplace,
+            MarketplaceConnection.region_code == region_code,
         )
     )
 
@@ -862,9 +877,32 @@ def _bundle_to_plain_dict(bundle: MarketplaceSessionBundle) -> dict[str, Any]:
         payload["captured_at"] = _datetime_to_json(bundle.captured_at)
     if bundle.user_agent_hint is not None:
         payload["user_agent_hint"] = bundle.user_agent_hint
-    if bundle.region_hint is not None:
-        payload["region_hint"] = bundle.region_hint
+    region_hint = _session_bundle_region_hint(bundle)
+    if region_hint is not None:
+        payload["region_hint"] = region_hint
     return payload
+
+def _region_code_for_connection(
+    request: MarketplaceConnectionCreate,
+    *,
+    fallback: str = "default",
+) -> str:
+    if request.session_bundle is not None:
+        region_hint = _session_bundle_region_hint(request.session_bundle)
+        if region_hint:
+            return region_hint
+    if request.region_code:
+        return request.region_code
+    return fallback
+
+def _session_bundle_region_hint(bundle: MarketplaceSessionBundle) -> str | None:
+    if bundle.region_hint:
+        return bundle.region_hint
+    metadata_region = bundle.metadata.get("region") if bundle.metadata else None
+    if metadata_region is None:
+        return None
+    value = str(metadata_region).strip()
+    return value or None
 
 
 def _secret_to_plain(value: Any) -> str:

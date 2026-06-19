@@ -77,6 +77,7 @@ def run_http_fetch_job(
         repository = get_price_history_repository(session)
         repository.write_price_point(
             tracked_product_id=job.tracked_product_id,
+            region_code=tracked_product.region_code,
             price_current=result.price_current,
             price_old=result.price_old,
             currency=result.currency,

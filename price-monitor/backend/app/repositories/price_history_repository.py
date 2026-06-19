@@ -25,6 +25,7 @@ class PriceHistoryPoint:
     availability: bool
     seller_name: str | None
     fetched_at: datetime
+    region_code: str = "default"
 
 
 @dataclass(frozen=True)
@@ -43,6 +44,7 @@ class PriceHistoryRepository(Protocol):
         self,
         *,
         tracked_product_id: int,
+        region_code: str = "default",
         price_current: Decimal,
         price_old: Decimal | None,
         currency: str,
@@ -76,6 +78,7 @@ class MariaDBPriceHistoryRepository:
         self,
         *,
         tracked_product_id: int,
+        region_code: str = "default",
         price_current: Decimal,
         price_old: Decimal | None,
         currency: str,
@@ -85,6 +88,7 @@ class MariaDBPriceHistoryRepository:
     ) -> PriceHistoryPoint:
         row = PriceHistory(
             tracked_product_id=tracked_product_id,
+            region_code=region_code,
             price_current=price_current,
             price_old=price_old,
             currency=currency,
@@ -138,6 +142,7 @@ def _to_point(row: PriceHistory) -> PriceHistoryPoint:
     return PriceHistoryPoint(
         id=row.id,
         tracked_product_id=row.tracked_product_id,
+        region_code=row.region_code,
         price_current=row.price_current,
         price_old=row.price_old,
         currency=row.currency,
