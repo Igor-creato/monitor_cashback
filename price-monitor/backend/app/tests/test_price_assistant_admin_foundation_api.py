@@ -102,10 +102,24 @@ def test_admin_can_manage_stores_and_sources(client: TestClient) -> None:
             "display_name": "DNS Feed",
             "enabled": True,
             "source_type": "feed",
+            "metadata_json": {
+                "matching": {
+                    "min_match_score": 70,
+                    "likely_threshold": 84,
+                    "exact_threshold": 96,
+                }
+            },
         },
     )
     assert create_source.status_code == 200
     assert create_source.json()["source_id"] == 1
+    assert create_source.json()["metadata_json"] == {
+        "matching": {
+            "min_match_score": 70,
+            "likely_threshold": 84,
+            "exact_threshold": 96,
+        }
+    }
 
     patch_store = client.patch(
         "/admin/stores/1",
@@ -119,6 +133,13 @@ def test_admin_can_manage_stores_and_sources(client: TestClient) -> None:
     assert patch_store.json()["display_name"] == "Changed DNS"
     assert stores.status_code == 200
     assert stores.json()["items"][0]["sources"][0]["source_code"] == "dns-feed"
+    assert stores.json()["items"][0]["sources"][0]["metadata_json"] == {
+        "matching": {
+            "min_match_score": 70,
+            "likely_threshold": 84,
+            "exact_threshold": 96,
+        }
+    }
 
 
 def test_admin_imports_and_diagnostics_are_read_only_and_redacted(

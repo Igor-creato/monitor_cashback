@@ -22,6 +22,7 @@ from sqlalchemy.orm import Session
 from app.feeds.parsers import parse_feed
 from app.models.monitoring import ProductFeedItem, ProductFeedSource
 from app.services.product_feeds import upsert_feed_items
+from app.services.product_matching import materialize_feed_matches
 
 __all__ = [
     "FeedItemError",
@@ -134,6 +135,8 @@ def import_feed_content(
     persisted: list[ProductFeedItem] = []
     if valid_items:
         persisted = upsert_feed_items(feed_source.id, valid_items, session=session)
+        materialize_feed_matches(session, feed_source, persisted)
+        session.commit()
 
     return FeedImportResult(persisted=persisted, errors=errors)
 

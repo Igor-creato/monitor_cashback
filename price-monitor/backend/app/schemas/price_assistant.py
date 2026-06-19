@@ -129,6 +129,9 @@ class ProductOfferResponse(BaseModel):
     availability: str
     match_confidence: str
     match_label: str
+    match_score: int | None = None
+    match_status: str | None = None
+    match_explanation: dict[str, Any] | None = None
     effective_price: str | None
 
 
@@ -170,6 +173,7 @@ class AdminStoreSourceResponse(BaseModel):
     display_name: str
     source_type: str
     enabled: bool
+    metadata_json: dict[str, Any] | None = None
 
 
 class AdminStoreResponse(BaseModel):

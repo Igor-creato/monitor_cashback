@@ -436,6 +436,7 @@ def _serialize_collection(
 
 
 def _serialize_offer(offer: ProductOffer) -> ProductOfferResponse:
+    match_metadata = offer.raw_json or {}
     return ProductOfferResponse(
         offer_id=offer.id,
         store_code=offer.store.store_code,
@@ -449,6 +450,9 @@ def _serialize_offer(offer: ProductOffer) -> ProductOfferResponse:
         availability=offer.availability,
         match_confidence=offer.match_confidence,
         match_label=offer.match_label,
+        match_score=match_metadata.get("match_score"),
+        match_status=match_metadata.get("match_status"),
+        match_explanation=match_metadata.get("match_explanation"),
         effective_price=_format_money_or_none(offer.effective_price),
     )
 
@@ -471,6 +475,7 @@ def _serialize_store_source(source: StoreSource) -> AdminStoreSourceResponse:
         display_name=source.display_name,
         source_type=source.source_type,
         enabled=source.enabled,
+        metadata_json=source.metadata_json,
     )
 
 

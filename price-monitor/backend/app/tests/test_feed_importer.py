@@ -14,7 +14,14 @@ from app.feeds.importer import (
     import_feed_content,
     import_feed_file,
 )
-from app.models.monitoring import ProductFeedItem, ProductFeedSource
+from app.models.monitoring import (
+    ProductFeedItem,
+    ProductFeedSource,
+    ProductOffer,
+    Store,
+    StoreSource,
+    TrackedProduct,
+)
 
 
 @pytest.fixture
@@ -55,6 +62,10 @@ def _source(session: Session, **overrides: object) -> ProductFeedSource:
 
 def _item_count(session: Session) -> int:
     return session.scalar(select(func.count(ProductFeedItem.id))) or 0
+
+
+def _offer_count(session: Session) -> int:
+    return session.scalar(select(func.count(ProductOffer.id))) or 0
 
 
 CSV_CONTENT = (
@@ -241,3 +252,85 @@ def test_import_file_reads_local_path(db_session: Session, tmp_path) -> None:
 
     assert result.imported_count == 1
     assert _item_count(db_session) == 1
+
+
+def test_import_materializes_matching_product_offer(db_session: Session) -> None:
+    source = _source(db_session, format="csv")
+    store = Store(store_code="testshop", display_name="Test Shop", enabled=True)
+    tracked = TrackedProduct(
+        source="ozon",
+        external_product_id="ozon-s24-ultra",
+        canonical_url="https://ozon.ru/product/s24-ultra",
+        region_code="default",
+        product_name="Samsung Galaxy S24 Ultra 12/512GB Black",
+        last_price=Decimal("120000.00"),
+        currency="RUB",
+    )
+    db_session.add_all([store, tracked])
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code=source.source_code,
+            display_name="Test Shop Feed",
+            source_type="feed",
+            enabled=True,
+            metadata_json={"matching": {"min_match_score": 65}},
+        )
+    )
+    db_session.commit()
+    content = (
+        "product_id,title,url,price,currency,availability\n"
+        "feed-s24,Samsung Galaxy S24 Ultra 512GB Black,"
+        "https://testshop.example/s24,99990.00,RUB,in stock\n"
+    )
+
+    result = import_feed_content(db_session, source, content)
+
+    assert result.imported_count == 1
+    assert _offer_count(db_session) == 1
+    offer = db_session.scalar(select(ProductOffer))
+    assert offer is not None
+    assert offer.external_product_id == "feed-s24"
+    assert offer.match_confidence == "exact"
+    assert offer.match_label == "same_product"
+    assert offer.raw_json["match_status"] == "exact"
+    assert offer.raw_json["match_score"] >= 95
+    assert offer.raw_json["match_explanation"]["ai_rerank"] == "disabled"
+
+
+def test_import_respects_admin_matching_threshold(db_session: Session) -> None:
+    source = _source(db_session, format="csv")
+    store = Store(store_code="testshop", display_name="Test Shop", enabled=True)
+    tracked = TrackedProduct(
+        source="ozon",
+        external_product_id="ozon-iphone-15-pro",
+        canonical_url="https://ozon.ru/product/iphone-15-pro",
+        region_code="default",
+        product_name="Apple iPhone 15 Pro 256GB Black",
+        last_price=Decimal("100000.00"),
+        currency="RUB",
+    )
+    db_session.add_all([store, tracked])
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code=source.source_code,
+            display_name="Test Shop Feed",
+            source_type="feed",
+            enabled=True,
+            metadata_json={"matching": {"min_match_score": 96}},
+        )
+    )
+    db_session.commit()
+    content = (
+        "product_id,title,url,price,currency,availability\n"
+        "feed-iphone,Apple iPhone 15 Pro Max 256GB Black,"
+        "https://testshop.example/iphone,89990.00,RUB,in stock\n"
+    )
+
+    result = import_feed_content(db_session, source, content)
+
+    assert result.imported_count == 1
+    assert _offer_count(db_session) == 0

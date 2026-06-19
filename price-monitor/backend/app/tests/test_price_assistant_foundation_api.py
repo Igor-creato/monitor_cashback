@@ -527,6 +527,9 @@ def test_product_compare_is_owner_scoped_and_local_only(
             "availability": "in_stock",
             "match_confidence": "exact",
             "match_label": "same_product",
+            "match_score": None,
+            "match_status": None,
+            "match_explanation": None,
             "effective_price": None,
         }
     ]
