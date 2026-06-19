@@ -882,6 +882,7 @@ def _bundle_to_plain_dict(bundle: MarketplaceSessionBundle) -> dict[str, Any]:
         payload["region_hint"] = region_hint
     return payload
 
+
 def _region_code_for_connection(
     request: MarketplaceConnectionCreate,
     *,
@@ -894,6 +895,7 @@ def _region_code_for_connection(
     if request.region_code:
         return request.region_code
     return fallback
+
 
 def _session_bundle_region_hint(bundle: MarketplaceSessionBundle) -> str | None:
     if bundle.region_hint:

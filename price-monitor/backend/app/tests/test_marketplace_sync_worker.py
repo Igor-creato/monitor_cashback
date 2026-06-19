@@ -241,7 +241,9 @@ def test_marketplace_sync_worker_uses_region_hint_without_mixing_imports(
         select(TrackedProduct).order_by(TrackedProduct.region_code.asc())
     ).all()
     subscriptions = db_session.scalars(
-        select(UserProductSubscription).order_by(UserProductSubscription.region_code.asc())
+        select(UserProductSubscription).order_by(
+            UserProductSubscription.region_code.asc()
+        )
     ).all()
 
     assert first_report.tracked_products_updated == 1

@@ -37,6 +37,7 @@ class WatchlistUiUserRegionResponse(BaseModel):
     country_code: str | None = None
     is_default: bool
 
+
 class WatchlistUiResponse(BaseModel):
     items: list[WatchlistUiItemResponse]
     pagination: WatchlistUiPaginationResponse
