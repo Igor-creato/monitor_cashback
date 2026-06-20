@@ -39,6 +39,13 @@ def test_backend_image_build_uses_configurable_pip_index() -> None:
     assert "PIP_INDEX_URL" in compose
 
 
+def test_backend_image_contains_alembic_migration_assets() -> None:
+    dockerfile = DOCKERFILE_PATH.read_text(encoding="utf-8")
+
+    assert "COPY alembic.ini ./" in dockerfile
+    assert "COPY alembic ./alembic" in dockerfile
+
+
 def test_backend_package_discovery_only_includes_application_package() -> None:
     pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
 
