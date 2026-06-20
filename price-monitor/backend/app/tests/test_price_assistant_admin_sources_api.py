@@ -206,3 +206,100 @@ def test_secret_like_policy_values_are_rejected_without_echoing_secret(
 
     assert response.status_code == 422
     assert "secret-token-value" not in response.text
+
+
+@pytest.mark.parametrize(
+    "homepage_url",
+    [
+        "http://127.0.0.1/admin",
+        "https://localhost/admin",
+        "http://169.254.169.254/latest/meta-data",
+        "ftp://www.dns-shop.ru/catalog",
+        "https://user:password@www.dns-shop.ru",
+    ],
+)
+def test_store_homepage_url_rejects_ssrf_targets(
+    client: TestClient,
+    homepage_url: str,
+) -> None:
+    response = _json_request(
+        client,
+        "post",
+        "/v1/price-assistant/admin/stores",
+        {
+            "store_code": "bad-store",
+            "display_name": "Bad Store",
+            "enabled": True,
+            "homepage_url": homepage_url,
+        },
+    )
+
+    assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "search_template",
+    [
+        "http://127.0.0.1/search?q={query}",
+        "https://localhost/search?q={query}",
+        "http://169.254.169.254/search?q={query}",
+        "ftp://www.dns-shop.ru/search?q={query}",
+        "https://user:password@www.dns-shop.ru/search?q={query}",
+        "https://evil.example/search?q={query}",
+    ],
+)
+def test_source_search_template_rejects_ssrf_and_domain_mismatch(
+    client: TestClient,
+    search_template: str,
+) -> None:
+    store_id = _create_store(client)
+
+    response = _json_request(
+        client,
+        "post",
+        f"/v1/price-assistant/admin/stores/{store_id}/sources",
+        {
+            "source_code": "bad-template",
+            "display_name": "Bad Template",
+            "source_type": "api",
+            "domains": ["dns-shop.ru"],
+            "search_template": search_template,
+            "region_support": ["default"],
+            "priority": 10,
+            "extraction_mode": "json",
+            "proxy_tier_policy": "none",
+            "min_fetch_interval_minutes": 60,
+            "matching_threshold": 65,
+            "cashback_merchant_mapping": {"merchant_id": "bad"},
+        },
+    )
+
+    assert response.status_code == 422
+
+
+def test_source_search_template_allows_admin_configured_subdomain(
+    client: TestClient,
+) -> None:
+    store_id = _create_store(client)
+
+    response = _json_request(
+        client,
+        "post",
+        f"/v1/price-assistant/admin/stores/{store_id}/sources",
+        {
+            "source_code": "dns-subdomain",
+            "display_name": "DNS Subdomain",
+            "source_type": "api",
+            "domains": ["dns-shop.ru"],
+            "search_template": "https://www.dns-shop.ru/search?q={query}",
+            "region_support": ["default"],
+            "priority": 10,
+            "extraction_mode": "json",
+            "proxy_tier_policy": "none",
+            "min_fetch_interval_minutes": 60,
+            "matching_threshold": 65,
+            "cashback_merchant_mapping": {"merchant_id": "dns"},
+        },
+    )
+
+    assert response.status_code == 200

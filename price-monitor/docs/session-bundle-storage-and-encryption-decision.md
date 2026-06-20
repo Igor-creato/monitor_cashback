@@ -52,6 +52,14 @@ unwraps the DEK with the row's current key version, rewraps it with the active
 primary key, updates `key_version`/`rotated_at`, and audits `rotation`. It does
 not return plaintext and does not add public API behavior.
 
+## Disconnect and Deletion
+
+Disconnect renders the stored bundle cryptographically unavailable. The service
+sets `deleted_at`, clears the stored ciphertext, wrapped DEK, nonce, and tag,
+replaces AAD with `{"deleted": true}`, and stores only a non-secret deletion
+fingerprint. Responses and admin diagnostics continue to expose only status,
+key version, and `has_secret`; they never return ciphertext or wrapped DEKs.
+
 ## Explicit Non-Goals
 
 This decision does not add real Ozon/Wildberries/Yandex Market allowlist names,

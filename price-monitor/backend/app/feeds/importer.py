@@ -19,6 +19,8 @@ from typing import Any
 
 from sqlalchemy.orm import Session
 
+from app.core.secret_redaction import strip_secret_like_keys
+from app.core.url_policy import UrlPolicyError, validate_fetchable_http_url
 from app.feeds.parsers import parse_feed
 from app.models.monitoring import ProductFeedItem, ProductFeedSource
 from app.services.product_feeds import upsert_feed_items
@@ -96,20 +98,31 @@ def _build_item(
     canonical_url = _clean(record.get("url"))
     if canonical_url is None:
         raise ValueError("url is required")
+    _validate_item_url(canonical_url, "url")
+    image_url = _clean(record.get("image_url"))
+    if image_url is not None:
+        _validate_item_url(image_url, "image_url")
 
     item: dict[str, Any] = {
         "canonical_url": canonical_url,
         "external_product_id": _clean(record.get("product_id")),
         "title": _clean(record.get("title")),
-        "image_url": _clean(record.get("image_url")),
+        "image_url": image_url,
         "price": _to_price(record.get("price")),
         "old_price": _to_optional_price(record.get("old_price")),
         "currency": _clean(record.get("currency")) or feed_source.currency,
         "availability": _clean(record.get("availability")) or _DEFAULT_AVAILABILITY,
         "category_id": _clean(record.get("category_id")),
-        "raw_json": dict(record),
+        "raw_json": strip_secret_like_keys(dict(record)),
     }
     return item
+
+
+def _validate_item_url(value: str, field_name: str) -> None:
+    try:
+        validate_fetchable_http_url(value)
+    except UrlPolicyError as exc:
+        raise ValueError(f"invalid {field_name}") from exc
 
 
 def import_feed_content(

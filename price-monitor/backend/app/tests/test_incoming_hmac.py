@@ -3,7 +3,11 @@ import hmac
 
 from fastapi.testclient import TestClient
 from pydantic import SecretStr
+from sqlalchemy import create_engine
+from sqlalchemy.orm import Session
+from sqlalchemy.pool import StaticPool
 
+import app.db as db
 from app.core import config, incoming_hmac
 from app.main import app
 
@@ -33,6 +37,13 @@ def _headers(
 
 
 def _client(monkeypatch) -> TestClient:
+    engine = create_engine(
+        "sqlite:///:memory:",
+        connect_args={"check_same_thread": False},
+        poolclass=StaticPool,
+    )
+    db.Base.metadata.create_all(engine)
+    session = Session(engine)
     monkeypatch.setattr(config.settings, "price_monitor_incoming_site_id", SITE_ID)
     monkeypatch.setattr(
         config.settings,
@@ -40,6 +51,7 @@ def _client(monkeypatch) -> TestClient:
         SecretStr(SECRET),
     )
     monkeypatch.setattr(incoming_hmac, "current_unix_time", lambda: NOW)
+    app.dependency_overrides[db.get_db] = lambda: session
     return TestClient(app)
 
 
@@ -106,3 +118,24 @@ def test_signature_uses_raw_body_not_reencoded_json(monkeypatch) -> None:
     )
 
     assert response.status_code == 200
+
+
+def test_replayed_signed_mutating_request_is_rejected(monkeypatch) -> None:
+    body = b'{"product_id":"sku-1"}'
+    timestamp = str(NOW)
+    headers = _headers(timestamp, body)
+    client = _client(monkeypatch)
+
+    first = client.post(
+        "/internal/wordpress/ping",
+        content=body,
+        headers=headers,
+    )
+    replay = client.post(
+        "/internal/wordpress/ping",
+        content=body,
+        headers=headers,
+    )
+
+    assert first.status_code == 200
+    assert replay.status_code == 403

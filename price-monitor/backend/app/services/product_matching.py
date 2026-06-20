@@ -11,6 +11,7 @@ from rapidfuzz import fuzz
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.secret_redaction import strip_secret_like_keys
 from app.models.monitoring import (
     ProductFeedItem,
     ProductFeedSource,
@@ -648,10 +649,4 @@ def _hash_key(value: str) -> str:
 def _safe_raw_json(value: dict[str, Any] | None) -> dict[str, Any] | None:
     if value is None:
         return None
-    safe: dict[str, Any] = {}
-    for key, raw_value in value.items():
-        lowered = str(key).lower()
-        if any(secret in lowered for secret in ("password", "cookie", "token")):
-            continue
-        safe[str(key)] = raw_value
-    return safe
+    return strip_secret_like_keys(value)

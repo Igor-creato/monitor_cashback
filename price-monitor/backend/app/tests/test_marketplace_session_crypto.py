@@ -24,6 +24,7 @@ from app.services.marketplace_sessions import (
     EncryptionConfigurationError,
     connect_marketplace_session,
     decrypt_session_bundle_for_sync,
+    disconnect_marketplace_connection,
     encrypt_session_bundle_for_connection,
     record_marketplace_sync_auth_failure,
 )
@@ -305,6 +306,40 @@ def test_deleted_secret_cannot_be_decrypted(
     secret.deleted_at = datetime(2026, 6, 15, 12, 0)
     db_session.commit()
 
+    with pytest.raises(ValueError, match="session_bundle_unavailable"):
+        decrypt_session_bundle_for_sync(db_session, connection.id, worker_name="worker")
+
+
+def test_disconnect_shreds_stored_secret_material(
+    monkeypatch: pytest.MonkeyPatch,
+    db_session: Session,
+) -> None:
+    monkeypatch.setattr(config.settings, "marketplace_session_keyring", _keyring())
+    monkeypatch.setattr(config.settings, "marketplace_session_active_key_version", "v1")
+    connection = _connection(db_session)
+    secret = encrypt_session_bundle_for_connection(
+        db_session,
+        connection,
+        {"cookies": [{"name": "session-id", "value": "secret-cookie"}]},
+    )
+
+    disconnected = disconnect_marketplace_connection(
+        db_session,
+        connection_id=connection.id,
+        site_id=connection.site_id,
+        external_user_id=connection.external_user_id,
+        now=datetime(2026, 6, 15, 12, 0, tzinfo=UTC),
+    )
+
+    assert disconnected is not None
+    assert disconnected.status == "disconnected"
+    assert secret.deleted_at == datetime(2026, 6, 15, 12, 0)
+    assert secret.encrypted_cookie_bundle == ""
+    assert secret.dek_ciphertext == ""
+    assert secret.nonce == ""
+    assert secret.tag == ""
+    assert secret.aad_json == {"deleted": True}
+    assert secret.bundle_fingerprint.startswith("deleted:")
     with pytest.raises(ValueError, match="session_bundle_unavailable"):
         decrypt_session_bundle_for_sync(db_session, connection.id, worker_name="worker")
 

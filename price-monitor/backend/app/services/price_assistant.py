@@ -8,6 +8,8 @@ from urllib.parse import parse_qsl, urlparse
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
 
+from app.core.secret_redaction import is_secret_like_key, strip_secret_like_keys
+from app.core.url_policy import UrlPolicyError, validate_fetchable_http_url
 from app.models.monitoring import (
     SOURCE_EXTRACTION_MODE_VALUES,
     SOURCE_PROXY_TIER_POLICY_VALUES,
@@ -52,17 +54,6 @@ from app.schemas.price_assistant import (
 from app.services.marketplace_sessions import record_marketplace_sync_auth_failure
 
 AUTH_FAILURE_REASONS = frozenset({"401", "403", "login_required", "expired"})
-SECRET_KEY_PARTS = (
-    "password",
-    "secret",
-    "token",
-    "cookie",
-    "authorization",
-    "api_key",
-    "apikey",
-    "access_key",
-    "private_key",
-)
 
 
 class PriceAssistantError(ValueError):
@@ -130,6 +121,7 @@ def upsert_sync_items(
 
     now = _as_utc_naive(datetime.now(UTC))
     for item in request.items:
+        _validate_product_url(item.product_url)
         imported_item = session.scalar(
             select(ImportedItem).where(
                 ImportedItem.collection_id == sync_session.collection_id,
@@ -148,7 +140,7 @@ def upsert_sync_items(
         imported_item.product_url = item.product_url
         imported_item.title = item.title
         imported_item.quantity = item.quantity
-        imported_item.raw_json = item.raw_json
+        imported_item.raw_json = strip_secret_like_keys(item.raw_json)
         imported_item.last_seen_at = now
 
     session.flush()
@@ -282,6 +274,7 @@ def create_admin_store(
     *,
     site_id: str | None = None,
 ) -> AdminStoreResponse:
+    _validate_homepage_url(request.homepage_url)
     store = session.scalar(select(Store).where(Store.store_code == request.store_code))
     event_type = "price_assistant_store_updated"
     if store is None:
@@ -326,6 +319,7 @@ def patch_admin_store(
     if patch.enabled is not None:
         store.enabled = patch.enabled
     if patch.homepage_url is not None:
+        _validate_homepage_url(patch.homepage_url)
         store.homepage_url = patch.homepage_url
     _add_admin_audit_event(
         session,
@@ -767,9 +761,9 @@ def _validate_admin_source_policy(request: AdminStoreSourceCreate) -> None:
         raise PriceAssistantError("invalid_extraction_mode")
     if request.proxy_tier_policy not in SOURCE_PROXY_TIER_POLICY_VALUES:
         raise PriceAssistantError("invalid_proxy_tier_policy")
-    _normalize_domains(request.domains)
+    domains = _normalize_domains(request.domains)
     _normalize_region_support(request.region_support)
-    _validate_search_template(request.search_template)
+    _validate_search_template(request.search_template, domains)
     _reject_secret_like_mapping(request.cashback_merchant_mapping)
     _reject_secret_like_mapping(request.metadata_json)
 
@@ -829,14 +823,35 @@ def _normalize_region_support(regions: list[str]) -> list[str]:
     return [region.strip() for region in regions if region.strip()]
 
 
-def _validate_search_template(search_template: str | None) -> None:
+def _validate_homepage_url(homepage_url: str | None) -> None:
+    if homepage_url is None:
+        return
+    try:
+        validate_fetchable_http_url(homepage_url)
+    except UrlPolicyError as exc:
+        raise PriceAssistantError("invalid_url") from exc
+
+
+def _validate_product_url(product_url: str) -> None:
+    try:
+        validate_fetchable_http_url(product_url)
+    except UrlPolicyError as exc:
+        raise PriceAssistantError("invalid_product_url") from exc
+
+
+def _validate_search_template(
+    search_template: str | None,
+    domains: list[str],
+) -> None:
     if search_template is None:
         return
-    parsed = urlparse(search_template)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+    if not domains:
         raise PriceAssistantError("invalid_search_template")
-    if parsed.username is not None or parsed.password is not None:
-        raise PriceAssistantError("secret_like_policy_value")
+    try:
+        validate_fetchable_http_url(search_template, allowed_domains=domains)
+    except UrlPolicyError as exc:
+        raise PriceAssistantError("invalid_search_template") from exc
+    parsed = urlparse(search_template)
     for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
         if _is_secret_like_key(key):
             raise PriceAssistantError("secret_like_policy_value")
@@ -854,8 +869,7 @@ def _reject_secret_like_mapping(value: Any) -> None:
 
 
 def _is_secret_like_key(key: str) -> bool:
-    lowered = key.lower().replace("-", "_")
-    return any(part in lowered for part in SECRET_KEY_PARTS)
+    return is_secret_like_key(key)
 
 
 def _count_collection_items(session: Session, collection_id: int | None) -> int:

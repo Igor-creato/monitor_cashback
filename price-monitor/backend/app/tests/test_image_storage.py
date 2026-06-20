@@ -296,6 +296,20 @@ def test_normalize_image_url_rejects_empty() -> None:
         normalize_image_url("   ")
 
 
+@pytest.mark.parametrize(
+    "url",
+    [
+        "http://127.0.0.1/image.jpg",
+        "http://169.254.169.254/latest/meta-data",
+        "https://localhost/image.jpg",
+        "javascript:alert(1)",
+    ],
+)
+def test_normalize_image_url_rejects_ssrf_and_dangerous_urls(url: str) -> None:
+    with pytest.raises(ImageValidationError):
+        normalize_image_url(url)
+
+
 def test_download_image_returns_bytes_and_content_type() -> None:
     transport = _FakeTransport(
         response=_FakeImageResponse(content=b"abc", content_type="image/png")

@@ -256,8 +256,7 @@ def _evaluate_connection_alerts_in_session(
             _Candidate(
                 event_type="reconnect_required",
                 dedup_key=(
-                    f"connection:{connection.id}:reconnect_required:"
-                    f"{reconnect_reason}"
+                    f"connection:{connection.id}:reconnect_required:{reconnect_reason}"
                 ),
                 connection=connection,
                 payload={

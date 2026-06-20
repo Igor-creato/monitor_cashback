@@ -1388,6 +1388,34 @@ class IdempotencyRecord(Base):
     )
 
 
+class IncomingHmacReplayRecord(Base):
+    __tablename__ = "incoming_hmac_replay_records"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "method",
+            "path",
+            "timestamp",
+            "signature_hash",
+            "body_hash",
+            name="uq_incoming_hmac_replay_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
+    site_id: Mapped[str] = mapped_column(String(191), nullable=False)
+    method: Mapped[str] = mapped_column(String(16), nullable=False)
+    path: Mapped[str] = mapped_column(String(2048), nullable=False)
+    timestamp: Mapped[int] = mapped_column(Integer, nullable=False)
+    signature_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    body_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    seen_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True),
+        nullable=False,
+        server_default=func.now(),
+    )
+
+
 class ProxyPool(Base):
     __tablename__ = "proxy_pools"
     __table_args__ = (

@@ -6,6 +6,7 @@ import hmac
 import json
 from collections.abc import Iterator
 from decimal import Decimal
+from itertools import count
 
 import pytest
 from fastapi.testclient import TestClient
@@ -36,6 +37,7 @@ USER_ID = "wp:savelloclub.ru:123"
 OTHER_USER_ID = "wp:savelloclub.ru:456"
 INCOMING_SECRET = "incoming-secret"
 NOW = 1_781_516_800
+_TIMESTAMP_OFFSETS = count()
 
 
 @pytest.fixture
@@ -84,8 +86,9 @@ def _signed_headers(
     raw_body: bytes = b"",
     *,
     idempotency_key: str | None = None,
+    timestamp: str | None = None,
 ) -> dict[str, str]:
-    timestamp = str(NOW)
+    timestamp = timestamp or str(NOW + next(_TIMESTAMP_OFFSETS))
     signature = hmac.new(
         INCOMING_SECRET.encode(),
         timestamp.encode() + b"." + raw_body,
@@ -358,6 +361,160 @@ def test_sync_session_items_are_idempotent_and_collections_are_owner_scoped(
     assert "secret-cookie" not in own_collections.text
     assert other_collections.status_code == 200
     assert other_collections.json()["items"] == []
+
+
+def test_sync_session_items_strip_nested_secret_like_raw_json(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    connection_id = _create_connected_marketplace(client, db_session)
+    sync_response = _post_json(
+        client,
+        "/v1/sync-sessions",
+        {
+            "site_id": SITE_ID,
+            "external_user_id": USER_ID,
+            "connection_id": connection_id,
+            "collection_type": "cart",
+            "started_at": "2026-06-15T11:00:00Z",
+        },
+        idempotency_key="sync-raw-json",
+    )
+    sync_session_id = sync_response.json()["sync_session_id"]
+    item_payload = {
+        "site_id": SITE_ID,
+        "external_user_id": USER_ID,
+        "items": [
+            {
+                "external_item_id": "cart-line-raw-json",
+                "source_product_id": "ozon-sku-raw-json",
+                "product_url": "https://ozon.ru/product/raw-json",
+                "title": "Raw JSON product",
+                "quantity": 1,
+                "raw_json": {
+                    "safe": "metadata",
+                    "nested": {
+                        "token": "secret-token",
+                        "headers": {"Authorization": "Bearer secret"},
+                        "safe_child": "keep",
+                    },
+                    "items": [
+                        {"cookie": "secret-cookie", "safe_list_child": "keep-list"},
+                        {"password": "secret-password"},
+                    ],
+                    "api_key": "secret-api-key",
+                },
+            }
+        ],
+    }
+
+    response = _post_json(
+        client,
+        f"/v1/sync-sessions/{sync_session_id}/items",
+        item_payload,
+        idempotency_key="sync-raw-json-items",
+    )
+
+    assert response.status_code == 200
+    imported = db_session.scalar(select(ImportedItem))
+    assert imported is not None
+    assert imported.raw_json == {
+        "safe": "metadata",
+        "nested": {"safe_child": "keep"},
+        "items": [{"safe_list_child": "keep-list"}, {}],
+    }
+    assert "secret-token" not in response.text
+    assert "secret-cookie" not in response.text
+
+
+def test_sync_session_items_reject_dangerous_product_url(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    connection_id = _create_connected_marketplace(client, db_session)
+    sync_response = _post_json(
+        client,
+        "/v1/sync-sessions",
+        {
+            "site_id": SITE_ID,
+            "external_user_id": USER_ID,
+            "connection_id": connection_id,
+            "collection_type": "cart",
+            "started_at": "2026-06-15T11:00:00Z",
+        },
+        idempotency_key="sync-dangerous-url",
+    )
+    sync_session_id = sync_response.json()["sync_session_id"]
+
+    response = _post_json(
+        client,
+        f"/v1/sync-sessions/{sync_session_id}/items",
+        {
+            "site_id": SITE_ID,
+            "external_user_id": USER_ID,
+            "items": [
+                {
+                    "external_item_id": "cart-line-dangerous-url",
+                    "source_product_id": "ozon-sku-dangerous-url",
+                    "product_url": "javascript:alert(1)",
+                    "title": "Dangerous URL product",
+                    "quantity": 1,
+                }
+            ],
+        },
+        idempotency_key="sync-dangerous-url-items",
+    )
+
+    assert response.status_code == 422
+    assert db_session.scalars(select(ImportedItem)).all() == []
+
+
+def test_sync_session_items_preserve_malicious_title_as_json_string(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    connection_id = _create_connected_marketplace(client, db_session)
+    sync_response = _post_json(
+        client,
+        "/v1/sync-sessions",
+        {
+            "site_id": SITE_ID,
+            "external_user_id": USER_ID,
+            "connection_id": connection_id,
+            "collection_type": "cart",
+            "started_at": "2026-06-15T11:00:00Z",
+        },
+        idempotency_key="sync-malicious-title",
+    )
+    sync_session_id = sync_response.json()["sync_session_id"]
+    title = '<img src=x onerror="alert(1)">'
+
+    response = _post_json(
+        client,
+        f"/v1/sync-sessions/{sync_session_id}/items",
+        {
+            "site_id": SITE_ID,
+            "external_user_id": USER_ID,
+            "items": [
+                {
+                    "external_item_id": "cart-line-malicious-title",
+                    "source_product_id": "ozon-sku-malicious-title",
+                    "product_url": "https://ozon.ru/product/malicious-title",
+                    "title": title,
+                    "quantity": 1,
+                }
+            ],
+        },
+        idempotency_key="sync-malicious-title-items",
+    )
+    collections = client.get(
+        f"/v1/collections?site_id={SITE_ID}&external_user_id={USER_ID}",
+        headers=_signed_headers(),
+    )
+
+    assert response.status_code == 200
+    assert collections.status_code == 200
+    assert collections.json()["items"][0]["items"][0]["title"] == title
 
 
 def test_sync_finish_auth_failure_sets_reconnect_required(

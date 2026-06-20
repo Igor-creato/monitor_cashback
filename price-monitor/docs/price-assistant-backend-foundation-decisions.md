@@ -30,6 +30,17 @@ decision.
 No marketplace HTTP requests, WebView/extension behavior, captcha bypass,
 notification delivery, or worker fetch logic is introduced by this decision.
 
+Imported item titles and offer titles are backend JSON fields, not HTML. The
+backend does not HTML-sanitize titles; frontend renderers must escape them when
+placing values into HTML. Backend validation rejects dangerous or non-fetchable
+URL values such as `javascript:`, credential-bearing URLs, localhost, private
+literal IPs, and link-local literal IPs for sync/import product URLs, image URLs,
+store homepages, and admin search templates.
+
+Admin search templates must target the exact host or a subdomain of the
+admin-configured source domains. Validation is static and does not perform DNS
+lookups.
+
 ## Idempotency
 
 New mutating Price Assistant POST endpoints require an `Idempotency-Key` header.

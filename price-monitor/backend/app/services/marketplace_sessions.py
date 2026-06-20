@@ -820,6 +820,12 @@ def _delete_active_secrets(
     deleted = False
     for secret in active_secrets:
         secret.deleted_at = now
+        secret.encrypted_cookie_bundle = ""
+        secret.dek_ciphertext = ""
+        secret.nonce = ""
+        secret.tag = ""
+        secret.aad_json = {"deleted": True}
+        secret.bundle_fingerprint = _deleted_secret_fingerprint(secret.id, now)
         deleted = True
     if deleted:
         _audit_event(
@@ -839,6 +845,13 @@ def _active_secret(
     if not active:
         return None
     return sorted(active, key=lambda item: item.id, reverse=True)[0]
+
+
+def _deleted_secret_fingerprint(secret_id: int, deleted_at: datetime) -> str:
+    digest = hashlib.sha256(
+        f"{secret_id}:{deleted_at.isoformat()}".encode()
+    ).hexdigest()
+    return f"deleted:{digest}"
 
 
 def _audit_event(

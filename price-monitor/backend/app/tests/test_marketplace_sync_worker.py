@@ -357,9 +357,7 @@ def test_repeated_sync_failures_create_single_notification(
 
     for offset in range(3):
         connection.status = "connected"
-        connection.next_sync_at = (NOW + timedelta(minutes=offset)).replace(
-            tzinfo=None
-        )
+        connection.next_sync_at = (NOW + timedelta(minutes=offset)).replace(tzinfo=None)
         db_session.commit()
         sync_due_marketplace_connections(
             db_session,
@@ -391,6 +389,51 @@ def test_no_plaintext_logs_for_successful_sync(
     assert "secret-cookie" not in caplog.text
     assert "secret-token" not in caplog.text
     assert "safe" not in caplog.text
+
+
+def test_worker_strips_nested_secret_like_item_metadata(
+    db_session: Session,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    _connect_marketplace(db_session, scope=["cart_read"])
+    adapter = FakeAdapter(
+        MarketplaceSyncAdapterResult.success(
+            items=[
+                SanitizedMarketplaceItem(
+                    external_item_id="cart-line-secret-metadata",
+                    source_product_id="ozon-sku-secret-metadata",
+                    product_url="https://ozon.ru/product/secret-metadata",
+                    title="Secret metadata product",
+                    quantity=1,
+                    raw_json={
+                        "safe": "metadata",
+                        "nested": {
+                            "headers": {"Authorization": "Bearer secret-token"},
+                            "token": "secret-token",
+                            "safe_child": "keep",
+                        },
+                    },
+                )
+            ]
+        )
+    )
+
+    with caplog.at_level(logging.INFO):
+        report = sync_due_marketplace_connections(
+            db_session,
+            adapter_registry={("ozon", "cart"): adapter},
+            now=NOW,
+            worker_name="unit-test-worker",
+        )
+
+    imported_item = db_session.scalar(select(ImportedItem))
+    assert report.imported_items == 1
+    assert imported_item is not None
+    assert imported_item.raw_json == {
+        "safe": "metadata",
+        "nested": {"safe_child": "keep"},
+    }
+    assert "secret-token" not in caplog.text
 
 
 def test_kill_switch_and_quarantine_prevent_adapter_calls(

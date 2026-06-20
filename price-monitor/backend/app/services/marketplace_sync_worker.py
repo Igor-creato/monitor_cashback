@@ -10,6 +10,7 @@ from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, selectinload
 
 from app.core.config import settings
+from app.core.url_policy import UrlPolicyError, validate_fetchable_http_url
 from app.models.monitoring import (
     MarketplaceConnection,
     MarketplaceSessionSource,
@@ -452,7 +453,9 @@ def _to_imported_item(item: SanitizedMarketplaceItem) -> ImportedItemInput:
 def _is_safe_item(item: SanitizedMarketplaceItem) -> bool:
     if item.external_item_id.strip() == "":
         return False
-    if item.product_url.strip() == "":
+    try:
+        validate_fetchable_http_url(item.product_url)
+    except UrlPolicyError:
         return False
     if item.quantity < 1:
         return False

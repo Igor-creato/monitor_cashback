@@ -143,6 +143,77 @@ def test_import_json_creates_items(db_session: Session) -> None:
     assert stored.price == Decimal("500.00")
 
 
+def test_import_strips_nested_secret_like_raw_json(db_session: Session) -> None:
+    source = _source(db_session, format="json")
+    content = """
+[
+  {
+    "product_id": "ext-secret",
+    "title": "Secret Metadata Product",
+    "url": "https://testshop.example/product/secret",
+    "price": "500.00",
+    "currency": "RUB",
+    "availability": "in stock",
+    "metadata": {
+      "token": "secret-token",
+      "safe_child": "keep"
+    },
+    "headers": {
+      "Authorization": "Bearer secret-token"
+    },
+    "api_key": "secret-api-key"
+  }
+]
+"""
+
+    result = import_feed_content(db_session, source, content)
+
+    assert result.error_count == 0
+    assert result.persisted[0].raw_json == {
+        "product_id": "ext-secret",
+        "title": "Secret Metadata Product",
+        "url": "https://testshop.example/product/secret",
+        "price": "500.00",
+        "currency": "RUB",
+        "availability": "in stock",
+        "metadata": {"safe_child": "keep"},
+    }
+
+
+@pytest.mark.parametrize(
+    ("url", "image_url"),
+    [
+        ("http://127.0.0.1/product/secret", "https://testshop.example/img/1.jpg"),
+        ("https://testshop.example/product/secret", "javascript:alert(1)"),
+    ],
+)
+def test_import_rejects_ssrf_and_dangerous_item_urls(
+    db_session: Session,
+    url: str,
+    image_url: str,
+) -> None:
+    source = _source(db_session, format="json")
+    content = f"""
+[
+  {{
+    "product_id": "ext-dangerous-url",
+    "title": "Dangerous URL Product",
+    "url": "{url}",
+    "image_url": "{image_url}",
+    "price": "500.00",
+    "currency": "RUB",
+    "availability": "in stock"
+  }}
+]
+"""
+
+    result = import_feed_content(db_session, source, content)
+
+    assert result.imported_count == 0
+    assert result.error_count == 1
+    assert _item_count(db_session) == 0
+
+
 def test_import_yaml_creates_items(db_session: Session) -> None:
     source = _source(db_session, format="yml")
 

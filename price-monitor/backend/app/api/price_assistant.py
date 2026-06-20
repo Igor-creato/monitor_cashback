@@ -77,7 +77,10 @@ async def post_sync_session_items(
     raw_body = await request.body()
 
     def operation():
-        result = upsert_sync_items(session, sync_session_id, payload)
+        try:
+            result = upsert_sync_items(session, sync_session_id, payload)
+        except PriceAssistantError as exc:
+            raise HTTPException(status_code=422, detail=exc.detail) from exc
         if result is None:
             raise HTTPException(status_code=404, detail="Sync session not found.")
         return result

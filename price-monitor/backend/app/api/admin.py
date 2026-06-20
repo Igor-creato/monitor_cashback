@@ -47,6 +47,7 @@ from app.services.admin import (
     patch_admin_source,
 )
 from app.services.price_assistant import (
+    PriceAssistantError,
     create_admin_store,
     create_admin_store_source,
     get_admin_diagnostics,
@@ -176,7 +177,10 @@ def admin_create_store(
     payload: AdminStoreCreate,
     session: DbSession,
 ) -> AdminStoreResponse:
-    return create_admin_store(session, payload)
+    try:
+        return create_admin_store(session, payload)
+    except PriceAssistantError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
 
 
 @router.patch("/stores/{store_id}", response_model=AdminStoreResponse)
@@ -185,7 +189,10 @@ def admin_patch_store(
     payload: AdminStorePatch,
     session: DbSession,
 ) -> AdminStoreResponse:
-    store = patch_admin_store(session, store_id, payload)
+    try:
+        store = patch_admin_store(session, store_id, payload)
+    except PriceAssistantError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
     if store is None:
         raise HTTPException(status_code=404, detail="Store not found.")
     return store
@@ -200,7 +207,10 @@ def admin_create_store_source(
     payload: AdminStoreSourceCreate,
     session: DbSession,
 ) -> AdminStoreSourceResponse:
-    source = create_admin_store_source(session, store_id, payload)
+    try:
+        source = create_admin_store_source(session, store_id, payload)
+    except PriceAssistantError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
     if source is None:
         raise HTTPException(status_code=404, detail="Store not found.")
     return source

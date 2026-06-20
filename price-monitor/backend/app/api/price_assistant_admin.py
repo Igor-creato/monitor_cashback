@@ -39,11 +39,14 @@ def get_stores(session: DbSession):
 
 @router.post("/stores")
 def post_store(payload: AdminStoreCreate, request: Request, session: DbSession):
-    return create_admin_store(
-        session,
-        payload,
-        site_id=_request_site_id(request),
-    )
+    try:
+        return create_admin_store(
+            session,
+            payload,
+            site_id=_request_site_id(request),
+        )
+    except PriceAssistantError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
 
 
 @router.patch("/stores/{store_id}")
@@ -53,12 +56,15 @@ def patch_store(
     request: Request,
     session: DbSession,
 ):
-    result = patch_admin_store(
-        session,
-        store_id,
-        payload,
-        site_id=_request_site_id(request),
-    )
+    try:
+        result = patch_admin_store(
+            session,
+            store_id,
+            payload,
+            site_id=_request_site_id(request),
+        )
+    except PriceAssistantError as exc:
+        raise HTTPException(status_code=422, detail=exc.detail) from exc
     if result is None:
         raise HTTPException(status_code=404, detail="store_not_found")
     return result

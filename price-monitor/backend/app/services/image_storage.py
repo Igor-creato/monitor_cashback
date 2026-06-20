@@ -4,9 +4,10 @@ import hashlib
 import logging
 from dataclasses import dataclass
 from typing import Any, Protocol
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote
 
 from app.core.config import Settings, settings
+from app.core.url_policy import UrlPolicyError, validate_fetchable_http_url
 
 logger = logging.getLogger(__name__)
 
@@ -72,9 +73,10 @@ def normalize_image_url(url: str) -> str:
     if candidate.startswith("//"):
         candidate = f"https:{candidate}"
 
-    parsed = urlsplit(candidate)
-    if parsed.scheme not in {"http", "https"}:
-        raise ImageValidationError("unsupported_scheme")
+    try:
+        validate_fetchable_http_url(candidate)
+    except UrlPolicyError as exc:
+        raise ImageValidationError("unsupported_scheme") from exc
 
     return candidate
 

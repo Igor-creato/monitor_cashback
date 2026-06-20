@@ -73,8 +73,9 @@ def client(
     app.dependency_overrides.clear()
 
 
-def _signed_headers(raw_body: bytes = b"") -> dict[str, str]:
-    timestamp = "1781516800"
+def _signed_headers(
+    raw_body: bytes = b"", timestamp: str = "1781516800"
+) -> dict[str, str]:
     signature = hmac.new(
         INCOMING_SECRET.encode(),
         timestamp.encode() + b"." + raw_body,
@@ -329,7 +330,7 @@ def test_disconnect_is_owner_scoped_deletes_secret_access_and_audits(
     owner = client.delete(
         "/v1/marketplace-connections/1",
         params={"site_id": SITE_ID, "external_user_id": "wp:savelloclub.ru:123"},
-        headers=_signed_headers(),
+        headers=_signed_headers(timestamp="1781516801"),
     )
 
     assert wrong_owner.status_code == 404
@@ -341,6 +342,12 @@ def test_disconnect_is_owner_scoped_deletes_secret_access_and_audits(
     assert connection.status == "disconnected"
     assert secret is not None
     assert secret.deleted_at is not None
+    assert secret.encrypted_cookie_bundle == ""
+    assert secret.dek_ciphertext == ""
+    assert secret.nonce == ""
+    assert secret.tag == ""
+    assert secret.aad_json == {"deleted": True}
+    assert secret.bundle_fingerprint.startswith("deleted:")
     audit_events = [
         event.event_type
         for event in db_session.scalars(
