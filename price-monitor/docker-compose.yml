@@ -23,6 +23,9 @@ services:
       OBJECT_STORAGE_PUBLIC_BASE_URL: ${OBJECT_STORAGE_PUBLIC_BASE_URL:-http://localhost:9000/product-images}
     ports:
       - "8000:8000"
+    networks:
+      - default
+      - cashback-site
     depends_on:
       mariadb:
         condition: service_started
@@ -89,3 +92,8 @@ services:
 volumes:
   mariadb-data:
   minio-data:
+
+networks:
+  cashback-site:
+    external: true
+    name: service_internal
