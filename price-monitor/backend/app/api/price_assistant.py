@@ -9,6 +9,7 @@ from app.schemas.price_assistant import (
     CollectionsResponse,
     ImportedCollectionDeleteResponse,
     ProductCompareResponse,
+    ProductSearchResponse,
     SyncItemsRequest,
     SyncItemsResponse,
     SyncSessionCreate,
@@ -28,6 +29,7 @@ from app.services.price_assistant import (
     create_sync_session,
     finish_sync_session,
     list_collections,
+    search_products,
     upsert_sync_items,
 )
 
@@ -176,6 +178,21 @@ def get_product_compare(
     if result is None:
         raise HTTPException(status_code=404, detail="Product comparison not found.")
     return result
+
+
+@router.get("/v1/price-assistant/search", response_model=ProductSearchResponse)
+def get_price_assistant_search(
+    request: Request,
+    session: DbSession,
+    site_id: Annotated[str, Query(min_length=1, max_length=191)],
+    external_user_id: Annotated[str, Query(min_length=1, max_length=191)],
+    q: Annotated[str, Query(min_length=1, max_length=191)],
+    region_code: Annotated[str, Query(min_length=1, max_length=64)] = "default",
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> ProductSearchResponse:
+    del external_user_id
+    _verify_site_matches_request(request, site_id)
+    return search_products(session, query=q, region_code=region_code, limit=limit)
 
 
 def _verify_site_matches_request(request: Request, site_id: str) -> None:

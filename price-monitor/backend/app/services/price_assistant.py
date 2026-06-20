@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
-from urllib.parse import parse_qsl, urlparse
+from urllib.parse import parse_qsl, quote, urlparse
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session, selectinload
@@ -21,6 +21,8 @@ from app.models.monitoring import (
     MarketplaceConnection,
     MarketplaceSessionSecret,
     MarketplaceSyncSession,
+    ProductFeedItem,
+    ProductFeedSource,
     ProductMatchGroup,
     ProductOffer,
     SourceHealthEvent,
@@ -45,6 +47,8 @@ from app.schemas.price_assistant import (
     ImportedItemResponse,
     ProductCompareResponse,
     ProductOfferResponse,
+    ProductSearchItemResponse,
+    ProductSearchResponse,
     SyncItemsRequest,
     SyncItemsResponse,
     SyncSessionCreate,
@@ -265,6 +269,62 @@ def compare_product(
     return ProductCompareResponse(
         tracked_product_id=tracked_product_id,
         offers=[_serialize_offer(offer) for offer in offers],
+    )
+
+
+def search_products(
+    session: Session,
+    *,
+    query: str,
+    region_code: str,
+    limit: int,
+) -> ProductSearchResponse:
+    normalized_query = " ".join(query.split())
+    enabled_sources = _enabled_store_sources(session)
+    items: list[ProductSearchItemResponse] = []
+
+    for source in enabled_sources:
+        feed_items = session.scalars(
+            select(ProductFeedItem)
+            .join(ProductFeedSource)
+            .where(
+                ProductFeedSource.enabled.is_(True),
+                ProductFeedSource.source_code == source.source_code,
+                ProductFeedSource.region_code.in_([region_code, "default"]),
+            )
+            .order_by(ProductFeedItem.updated_at.desc(), ProductFeedItem.id.asc())
+        ).all()
+        for feed_item in feed_items:
+            score = _search_match_score(normalized_query, feed_item)
+            if score <= 0:
+                continue
+            items.append(
+                _serialize_search_item(
+                    source,
+                    feed_item,
+                    score=score,
+                    query=normalized_query,
+                    region_code=region_code,
+                )
+            )
+
+    items.sort(
+        key=lambda item: (
+            -(item.match_score or 0),
+            item.store_display_name.lower(),
+            item.source_code,
+            item.title or "",
+        )
+    )
+    return ProductSearchResponse(
+        query=normalized_query,
+        region_code=region_code,
+        items=items[:limit],
+        fallbacks=[
+            _serialize_search_fallback(source, normalized_query, region_code)
+            for source in enabled_sources
+            if source.search_template
+        ],
     )
 
 
@@ -702,6 +762,57 @@ def _serialize_offer(offer: ProductOffer) -> ProductOfferResponse:
     )
 
 
+def _serialize_search_item(
+    source: StoreSource,
+    feed_item: ProductFeedItem,
+    *,
+    score: int,
+    query: str,
+    region_code: str,
+) -> ProductSearchItemResponse:
+    return ProductSearchItemResponse(
+        store_code=source.store.store_code,
+        store_display_name=source.store.display_name,
+        source_code=source.source_code,
+        source_display_name=source.display_name,
+        title=feed_item.title,
+        product_url=feed_item.canonical_url,
+        image_url=feed_item.image_url,
+        price=_format_money(feed_item.price),
+        old_price=_format_money_or_none(feed_item.old_price),
+        currency=feed_item.currency,
+        availability=feed_item.availability,
+        match_label="same_product" if score >= 80 else "analog",
+        match_score=score,
+        search_url=_build_search_url(source.search_template, query, region_code),
+        is_fallback=False,
+    )
+
+
+def _serialize_search_fallback(
+    source: StoreSource,
+    query: str,
+    region_code: str,
+) -> ProductSearchItemResponse:
+    return ProductSearchItemResponse(
+        store_code=source.store.store_code,
+        store_display_name=source.store.display_name,
+        source_code=source.source_code,
+        source_display_name=source.display_name,
+        title=None,
+        product_url=None,
+        image_url=None,
+        price=None,
+        old_price=None,
+        currency=None,
+        availability=None,
+        match_label="search",
+        match_score=None,
+        search_url=_build_search_url(source.search_template, query, region_code),
+        is_fallback=True,
+    )
+
+
 def _serialize_store(store: Store) -> AdminStoreResponse:
     return AdminStoreResponse(
         store_id=store.id,
@@ -730,6 +841,56 @@ def _serialize_store_source(source: StoreSource) -> AdminStoreSourceResponse:
         matching_threshold=source.matching_threshold,
         cashback_merchant_mapping=source.cashback_merchant_mapping_json,
         metadata_json=source.metadata_json,
+    )
+
+
+def _enabled_store_sources(session: Session) -> list[StoreSource]:
+    return list(
+        session.scalars(
+            select(StoreSource)
+            .join(Store)
+            .options(selectinload(StoreSource.store))
+            .where(
+                Store.enabled.is_(True),
+                StoreSource.enabled.is_(True),
+            )
+            .order_by(StoreSource.priority.asc(), StoreSource.id.asc())
+        ).all()
+    )
+
+
+def _search_match_score(query: str, feed_item: ProductFeedItem) -> int:
+    searchable = " ".join(
+        part
+        for part in (
+            feed_item.title,
+            feed_item.external_product_id,
+            feed_item.category_id,
+        )
+        if part
+    ).lower()
+    tokens = [token.lower() for token in query.split() if token.strip()]
+    if not tokens:
+        return 0
+    if all(token in searchable for token in tokens):
+        return 100
+    matched = sum(1 for token in tokens if token in searchable)
+    if matched == 0:
+        return 0
+    return round(matched / len(tokens) * 100)
+
+
+def _build_search_url(
+    search_template: str | None,
+    query: str,
+    region_code: str,
+) -> str | None:
+    if search_template is None:
+        return None
+    return (
+        search_template.replace("{query}", quote(query, safe=""))
+        .replace("{region}", quote(region_code, safe=""))
+        .replace("{region_code}", quote(region_code, safe=""))
     )
 
 

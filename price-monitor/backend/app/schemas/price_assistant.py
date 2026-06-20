@@ -145,6 +145,31 @@ class ProductCompareResponse(BaseModel):
     offers: list[ProductOfferResponse]
 
 
+class ProductSearchItemResponse(BaseModel):
+    store_code: str
+    store_display_name: str
+    source_code: str
+    source_display_name: str
+    title: str | None
+    product_url: str | None
+    image_url: str | None
+    price: str | None
+    old_price: str | None
+    currency: str | None
+    availability: str | None
+    match_label: str
+    match_score: int | None
+    search_url: str | None
+    is_fallback: bool
+
+
+class ProductSearchResponse(BaseModel):
+    query: str
+    region_code: str
+    items: list[ProductSearchItemResponse]
+    fallbacks: list[ProductSearchItemResponse]
+
+
 class AdminStoreCreate(BaseModel):
     store_code: str = Field(min_length=1, max_length=64)
     display_name: str = Field(min_length=1, max_length=255)
