@@ -25,6 +25,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.periodic.sync_due_marketplace_connections_task",
         "schedule": settings.celery_marketplace_sync_interval_seconds,
     },
+    "dispatch-pending-notifications": {
+        "task": "app.tasks.periodic.dispatch_pending_notifications_task",
+        "schedule": settings.celery_marketplace_sync_interval_seconds,
+    },
 }
 
 import_module("app.tasks.http_fetch")

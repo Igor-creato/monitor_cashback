@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import uuid
 from datetime import datetime
 from decimal import Decimal
 
@@ -48,7 +49,13 @@ NOTIFICATION_EVENT_TYPE_VALUES = frozenset(
         "target_price_reached",
         "target_effective_price_reached",
         "price_drop",
+        "new_minimum_7d",
+        "new_minimum_30d",
+        "new_minimum_90d",
+        "cheaper_offer_found",
         "back_in_stock",
+        "reconnect_required",
+        "sync_failed_repeated",
     }
 )
 NOTIFICATION_STATUS_VALUES = frozenset({"pending", "sent", "skipped", "failed"})
@@ -1303,12 +1310,29 @@ class NotificationPreference(Base):
     site_id: Mapped[str] = mapped_column(String(191), nullable=False)
     external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
-    channel: Mapped[str] = mapped_column(String(32), nullable=False)
+    channel: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="email",
+        server_default="email",
+    )
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,
         default=True,
         server_default="1",
+    )
+    cooldown_minutes: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1440,
+        server_default="1440",
+    )
+    drop_threshold_percent: Mapped[Decimal] = mapped_column(
+        Numeric(5, 2),
+        nullable=False,
+        default=Decimal("5.00"),
+        server_default="5.00",
     )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
@@ -1646,21 +1670,48 @@ class UserProductSubscription(Base):
 
 class NotificationEvent(Base):
     __tablename__ = "notification_events"
+    __table_args__ = (
+        UniqueConstraint(
+            "site_id",
+            "external_user_id",
+            "event_type",
+            "channel",
+            "dedup_key",
+            name="uq_notification_events_delivery_identity",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     site_id: Mapped[str] = mapped_column(String(191), nullable=False)
     external_user_id: Mapped[str] = mapped_column(String(191), nullable=False)
-    subscription_id: Mapped[int] = mapped_column(
+    subscription_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("user_product_subscriptions.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
     )
-    tracked_product_id: Mapped[int] = mapped_column(
+    tracked_product_id: Mapped[int | None] = mapped_column(
         BigInteger,
         ForeignKey("tracked_products.id", ondelete="CASCADE"),
-        nullable=False,
+        nullable=True,
+    )
+    connection_id: Mapped[int | None] = mapped_column(
+        BigInteger,
+        ForeignKey("marketplace_connections.id", ondelete="CASCADE"),
+        nullable=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
+    channel: Mapped[str] = mapped_column(
+        String(32),
+        nullable=False,
+        default="email",
+        server_default="email",
+    )
+    dedup_key: Mapped[str] = mapped_column(
+        String(191),
+        nullable=False,
+        default=lambda: f"legacy:{uuid.uuid4().hex}",
+        server_default="",
+    )
     status: Mapped[str] = mapped_column(
         String(32),
         nullable=False,
@@ -1677,14 +1728,26 @@ class NotificationEvent(Base):
         DateTime(timezone=True),
         nullable=True,
     )
+    delivery_attempts: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+        server_default="0",
+    )
+    next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+    last_error_type: Mapped[str | None] = mapped_column(String(64), nullable=True)
     error_text: Mapped[str | None] = mapped_column(Text, nullable=True)
 
-    subscription: Mapped[UserProductSubscription] = relationship(
+    subscription: Mapped[UserProductSubscription | None] = relationship(
         back_populates="notification_events",
     )
-    tracked_product: Mapped[TrackedProduct] = relationship(
+    tracked_product: Mapped[TrackedProduct | None] = relationship(
         back_populates="notification_events",
     )
+    connection: Mapped[MarketplaceConnection | None] = relationship()
 
     @validates("event_type")
     def validate_event_type(self, _: str, value: str) -> str:

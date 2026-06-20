@@ -32,6 +32,7 @@ from app.services.marketplace_sync_adapters import (
     MarketplaceSyncAdapterResult,
     SanitizedMarketplaceItem,
 )
+from app.services.notifications import evaluate_connection_alerts
 from app.services.price_assistant import (
     create_sync_session,
     finish_sync_session,
@@ -223,6 +224,12 @@ def _sync_collection(
         ),
     )
     _apply_failure_policy(session, connection, reason, result, now)
+    evaluate_connection_alerts(
+        connection.id,
+        now=now,
+        reason=reason,
+        session=session,
+    )
     return MarketplaceSyncWorkerReport(
         failed_collections=1,
         imported_items=imported_count,

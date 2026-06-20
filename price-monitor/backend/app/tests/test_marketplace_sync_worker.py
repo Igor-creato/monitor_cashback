@@ -20,6 +20,7 @@ from app.models.monitoring import (
     MarketplaceSessionAllowlist,
     MarketplaceSessionSource,
     MarketplaceSyncSession,
+    NotificationEvent,
     SourceQuarantineState,
     TrackedProduct,
     UserProductSubscription,
@@ -282,6 +283,10 @@ def test_expired_token_marks_reconnect_required_and_does_not_log_plaintext(
     assert connection.reconnect_reason == "login_required"
     assert "secret-cookie" not in caplog.text
     assert "secret-token" not in caplog.text
+    notification = db_session.scalar(select(NotificationEvent))
+    assert notification is not None
+    assert notification.event_type == "reconnect_required"
+    assert notification.connection_id == connection.id
 
 
 def test_partial_parse_imports_valid_items_and_records_safe_failure(
@@ -342,6 +347,30 @@ def test_rate_limit_sets_retry_backoff_and_source_cooldown(
     assert quarantine is not None
     assert quarantine.status in {"active", "cooldown"}
     assert quarantine.error_type in {None, "http_429"}
+
+
+def test_repeated_sync_failures_create_single_notification(
+    db_session: Session,
+) -> None:
+    connection = _connect_marketplace(db_session, scope=["cart_read"])
+    adapter = FakeAdapter(MarketplaceSyncAdapterResult.failure(reason="timeout"))
+
+    for offset in range(3):
+        connection.status = "connected"
+        connection.next_sync_at = (NOW + timedelta(minutes=offset)).replace(
+            tzinfo=None
+        )
+        db_session.commit()
+        sync_due_marketplace_connections(
+            db_session,
+            adapter_registry={("ozon", "cart"): adapter},
+            now=NOW + timedelta(minutes=offset),
+            worker_name="unit-test-worker",
+        )
+
+    notifications = db_session.scalars(select(NotificationEvent)).all()
+    assert [item.event_type for item in notifications] == ["sync_failed_repeated"]
+    assert notifications[0].connection_id == connection.id
 
 
 def test_no_plaintext_logs_for_successful_sync(

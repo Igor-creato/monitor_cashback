@@ -11,6 +11,7 @@ from app.services.cleanup import (
     cleanup_price_history,
 )
 from app.services.marketplace_sync_worker import sync_due_marketplace_connections
+from app.services.notifications import dispatch_pending_notifications
 from app.services.scheduler import schedule_due_fetch_jobs
 from app.services.source_quarantine import refresh_source_quarantine_states
 
@@ -80,3 +81,12 @@ def sync_due_marketplace_connections_task() -> dict[str, int]:
         "imported_items": report.imported_items,
         "tracked_products_updated": report.tracked_products_updated,
     }
+
+
+@celery_app.task(name="app.tasks.periodic.dispatch_pending_notifications_task")
+def dispatch_pending_notifications_task() -> dict[str, int]:
+    try:
+        return dispatch_pending_notifications(limit=100)
+    except Exception:
+        logger.exception("dispatch_pending_notifications_task_failed")
+        raise

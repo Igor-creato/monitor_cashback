@@ -36,6 +36,10 @@ def test_periodic_tasks_are_registered(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.tasks.periodic.sync_due_marketplace_connections_task"
         in celery_module.celery_app.tasks
     )
+    assert (
+        "app.tasks.periodic.dispatch_pending_notifications_task"
+        in celery_module.celery_app.tasks
+    )
 
 
 def test_beat_schedule_contains_scheduler_task(
@@ -53,6 +57,10 @@ def test_beat_schedule_contains_scheduler_task(
         "app.tasks.periodic.sync_due_marketplace_connections_task"
     )
     assert schedule["sync-due-marketplace-connections"]["schedule"] == 300
+    assert schedule["dispatch-pending-notifications"]["task"] == (
+        "app.tasks.periodic.dispatch_pending_notifications_task"
+    )
+    assert schedule["dispatch-pending-notifications"]["schedule"] == 300
 
 
 def test_scheduler_task_calls_service_with_configured_limit(

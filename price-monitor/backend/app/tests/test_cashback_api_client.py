@@ -134,6 +134,42 @@ def test_create_deeplink_posts_expected_payload() -> None:
     }
 
 
+def test_send_price_monitor_notification_posts_expected_payload() -> None:
+    payload = {
+        "notification_id": 123,
+        "event_type": "target_price_reached",
+        "channel": "email",
+        "site_id": SITE_ID,
+        "external_user_id": "wp:savelloclub.ru:123",
+        "dedup_key": "subscription:1:target_price_reached:900.00",
+        "template": "price_monitor_target_price_reached",
+        "subject_data": {},
+        "body_data": {"price": "900.00"},
+        "created_at": "2026-06-20T12:00:00Z",
+    }
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.path
+        seen["payload"] = _json_body(request)
+        seen["signature"] = request.headers["X-Savello-Signature"]
+        return httpx.Response(200, json={"status": "queued"})
+
+    client = _client_for(handler)
+
+    response = client.send_price_monitor_notification(payload)
+
+    expected_body = json.dumps(payload, separators=(",", ":"))
+    assert response == {"status": "queued"}
+    assert seen == {
+        "method": "POST",
+        "path": "/wp-json/savello-internal/v1/price-monitor/notifications",
+        "payload": payload,
+        "signature": _signature(str(NOW), expected_body.encode()),
+    }
+
+
 def test_404_maps_to_not_found_error() -> None:
     client = _client_for(lambda request: httpx.Response(404, json={"error": "missing"}))
 

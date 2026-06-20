@@ -83,6 +83,21 @@ class CashbackAPIClient:
     def create_deeplink(self, payload: dict[str, Any]) -> Any:
         return self._request("POST", "/deeplink", payload=payload)
 
+    def send_price_monitor_notification(self, payload: dict[str, Any]) -> Any:
+        response = self._request(
+            "POST",
+            "/price-monitor/notifications",
+            payload=payload,
+        )
+        if not isinstance(response, dict) or response.get("status") not in {
+            "queued",
+            "sent",
+        }:
+            raise CashbackAPIBadResponseError(
+                "Cashback API returned invalid notification response."
+            )
+        return response
+
     def get_user_price_monitor_limits(self, external_user_id: str) -> Any:
         escaped_user_id = quote(str(external_user_id), safe="")
         return self._request(
