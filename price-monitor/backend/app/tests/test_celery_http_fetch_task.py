@@ -27,6 +27,14 @@ def test_celery_app_reads_broker_url_from_settings(
     assert celery_module.celery_app.conf.broker_url == "amqp://unit-test-broker//"
 
 
+def test_celery_remote_control_is_disabled_for_rabbitmq_43(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    celery_module = _reload_celery_modules(monkeypatch)
+
+    assert celery_module.celery_app.conf.worker_enable_remote_control is False
+
+
 def test_http_fetch_task_is_registered(monkeypatch: pytest.MonkeyPatch) -> None:
     celery_module = _reload_celery_modules(monkeypatch)
 

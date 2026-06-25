@@ -8,6 +8,7 @@ from app.core.config import settings
 
 celery_app = Celery("price_monitor", broker=settings.rabbitmq_url)
 
+celery_app.conf.worker_enable_remote_control = False
 celery_app.conf.beat_schedule = {
     "schedule-due-fetch-jobs": {
         "task": "app.tasks.periodic.schedule_due_fetch_jobs_task",
