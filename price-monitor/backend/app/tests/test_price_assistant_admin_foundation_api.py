@@ -112,7 +112,7 @@ def test_admin_can_manage_stores_and_sources(client: TestClient) -> None:
         },
     )
     assert create_source.status_code == 200
-    assert create_source.json()["source_id"] == 1
+    assert create_source.json()["source_id"] > 0
     assert create_source.json()["metadata_json"] == {
         "matching": {
             "min_match_score": 70,
@@ -132,8 +132,12 @@ def test_admin_can_manage_stores_and_sources(client: TestClient) -> None:
     assert patch_store.json()["enabled"] is False
     assert patch_store.json()["display_name"] == "Changed DNS"
     assert stores.status_code == 200
-    assert stores.json()["items"][0]["sources"][0]["source_code"] == "dns-feed"
-    assert stores.json()["items"][0]["sources"][0]["metadata_json"] == {
+    dns_feed_source = next(
+        source
+        for source in stores.json()["items"][0]["sources"]
+        if source["source_code"] == "dns-feed"
+    )
+    assert dns_feed_source["metadata_json"] == {
         "matching": {
             "min_match_score": 70,
             "likely_threshold": 84,

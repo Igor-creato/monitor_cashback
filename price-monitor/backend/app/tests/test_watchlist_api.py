@@ -19,6 +19,8 @@ from app.core import config, incoming_hmac
 from app.main import app
 from app.models.monitoring import (
     FetchJob,
+    Store,
+    StoreSource,
     TrackedProduct,
     TrackedProductCashback,
     UserProductSubscription,
@@ -977,3 +979,76 @@ def test_unsupported_source_returns_400(client: TestClient) -> None:
     )
 
     assert response.status_code == 400
+    assert response.json() == {"detail": "unsupported_monitoring_store"}
+
+
+def test_admin_enabled_store_domain_can_be_added_to_watchlist(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    store = Store(
+        store_code="example_shop_ru",
+        display_name="Example Shop",
+        enabled=True,
+        homepage_url="https://www.example-shop.ru/",
+    )
+    db_session.add(store)
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code="example_shop_ru-default",
+            display_name="Example Shop",
+            enabled=True,
+            source_type="api",
+            domains_json=["example-shop.ru", "www.example-shop.ru"],
+        )
+    )
+    db_session.commit()
+
+    response = _post_watchlist_item(
+        client,
+        _post_payload(
+            product_url="https://www.example-shop.ru/product/sku-123?utm_source=ad"
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "example_shop_ru-default"
+    assert response.json()["external_product_id"] == "sku-123"
+    assert (
+        response.json()["product_url"] == "https://www.example-shop.ru/product/sku-123"
+    )
+
+
+def test_disabled_store_domain_is_not_supported_for_watchlist(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    store = Store(
+        store_code="disabled_shop",
+        display_name="Disabled Shop",
+        enabled=False,
+        homepage_url="https://disabled-shop.example/",
+    )
+    db_session.add(store)
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code="disabled_shop-default",
+            display_name="Disabled Shop",
+            enabled=True,
+            source_type="api",
+            domains_json=["disabled-shop.example"],
+        )
+    )
+    db_session.commit()
+
+    response = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://disabled-shop.example/product/sku-123"),
+    )
+
+    assert response.status_code == 400
+    assert response.json() == {"detail": "unsupported_monitoring_store"}

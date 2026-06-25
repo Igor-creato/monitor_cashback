@@ -1,16 +1,23 @@
+import hashlib
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Literal
-from urllib.parse import parse_qsl, urlsplit
+from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.product_url_normalizer import (
+    NormalizedProductUrl,
     UnsupportedSourceError,
     normalize_product_url,
 )
-from app.models.monitoring import TrackedProduct, UserProductSubscription
+from app.models.monitoring import (
+    Store,
+    StoreSource,
+    TrackedProduct,
+    UserProductSubscription,
+)
 from app.schemas.watchlist import WatchlistItemCreate, WatchlistItemPatch
 from app.services.user_limits import (
     UserLimitsNotFound,
@@ -46,7 +53,7 @@ def add_watchlist_item(
     ] = get_price_monitor_limits,
 ) -> WatchlistAddResult:
     try:
-        normalized = normalize_product_url(item.product_url)
+        normalized = _normalize_watchlist_product_url(session, item.product_url)
     except UnsupportedSourceError as exc:
         raise UnsupportedWatchlistSourceError(str(exc)) from exc
     region_code = _region_code_for_watchlist_item(session, item, normalized.region_code)
@@ -104,6 +111,110 @@ def add_watchlist_item(
 
     session.commit()
     return WatchlistAddResult(subscription, "created")
+
+
+def _normalize_watchlist_product_url(
+    session: Session, url: str
+) -> NormalizedProductUrl:
+    try:
+        return normalize_product_url(url)
+    except UnsupportedSourceError as original_error:
+        configured = _normalize_configured_store_product_url(session, url)
+        if configured is not None:
+            return configured
+        raise UnsupportedSourceError("unsupported_monitoring_store") from original_error
+
+
+def _normalize_configured_store_product_url(
+    session: Session,
+    url: str,
+) -> NormalizedProductUrl | None:
+    parsed = urlsplit(url)
+    hostname = parsed.hostname.lower().strip(".") if parsed.hostname else ""
+    if parsed.scheme != "https" or not hostname:
+        return None
+
+    source = _enabled_source_for_hostname(session, hostname)
+    if source is None:
+        return None
+
+    external_product_id = _generic_external_product_id(parsed.path)
+    if external_product_id is None:
+        raise UnsupportedSourceError("unsupported_monitoring_store")
+
+    query_pairs = parse_qsl(parsed.query, keep_blank_values=True)
+    canonical_query = urlencode(
+        [
+            (key, value)
+            for key, value in query_pairs
+            if _is_safe_canonical_query_key(key)
+        ]
+    )
+    canonical_url = urlunsplit(("https", hostname, parsed.path, canonical_query, ""))
+    region_code = _first_non_empty_query_value(query_pairs, "region") or "default"
+    variant = _first_non_empty_query_value(query_pairs, "variant")
+    variant_hash = (
+        hashlib.sha256(variant.encode("utf-8")).hexdigest() if variant else None
+    )
+    return NormalizedProductUrl(
+        source=source.source_code,
+        external_product_id=external_product_id,
+        canonical_url=canonical_url,
+        region_code=region_code,
+        variant_hash=variant_hash,
+    )
+
+
+def _enabled_source_for_hostname(session: Session, hostname: str) -> StoreSource | None:
+    sources = session.scalars(
+        select(StoreSource)
+        .join(Store)
+        .where(
+            Store.enabled.is_(True),
+            StoreSource.enabled.is_(True),
+        )
+        .order_by(StoreSource.priority.asc(), StoreSource.id.asc())
+    ).all()
+    for source in sources:
+        for domain in source.domains_json or []:
+            normalized_domain = domain.lower().strip(".")
+            if hostname == normalized_domain or hostname.endswith(
+                f".{normalized_domain}"
+            ):
+                return source
+    return None
+
+
+def _generic_external_product_id(path: str) -> str | None:
+    parts = [part for part in path.split("/") if part]
+    if not parts:
+        return None
+    for part in reversed(parts):
+        if part.lower() not in {"product", "products", "catalog", "item", "goods"}:
+            return part[:191]
+    return parts[-1][:191]
+
+
+def _is_safe_canonical_query_key(key: str) -> bool:
+    lowered_key = key.lower()
+    if lowered_key.startswith("utm_") or lowered_key in {
+        "ref",
+        "from",
+        "gclid",
+        "yclid",
+    }:
+        return False
+    return key in {"region", "variant", "targetUrl"}
+
+
+def _first_non_empty_query_value(
+    query_pairs: list[tuple[str, str]],
+    key: str,
+) -> str | None:
+    for query_key, query_value in query_pairs:
+        if query_key == key and query_value:
+            return query_value
+    return None
 
 
 def list_watchlist_items(

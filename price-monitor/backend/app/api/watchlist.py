@@ -63,7 +63,7 @@ def create_watchlist_item(
     except UnsupportedWatchlistSourceError as exc:
         raise HTTPException(
             status_code=400,
-            detail="Unsupported product URL source.",
+            detail="unsupported_monitoring_store",
         ) from exc
     except WatchlistLimitExceededError as exc:
         raise HTTPException(

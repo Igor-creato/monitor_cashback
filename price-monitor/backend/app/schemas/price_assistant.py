@@ -171,8 +171,8 @@ class ProductSearchResponse(BaseModel):
 
 
 class AdminStoreCreate(BaseModel):
-    store_code: str = Field(min_length=1, max_length=64)
-    display_name: str = Field(min_length=1, max_length=255)
+    store_code: str | None = Field(default=None, min_length=1, max_length=64)
+    display_name: str | None = Field(default=None, min_length=1, max_length=255)
     enabled: bool = True
     homepage_url: str | None = Field(default=None, max_length=2048)
 

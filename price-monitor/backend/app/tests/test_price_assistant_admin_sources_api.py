@@ -15,7 +15,8 @@ from sqlalchemy.pool import StaticPool
 import app.db as db
 from app.core import config, incoming_hmac
 from app.main import app
-from app.models.monitoring import AuditEvent, StoreSource
+from app.models.monitoring import AuditEvent, Store, StoreSource
+from app.services.price_assistant import seed_default_admin_stores
 
 SITE_ID = "savelloclub.test"
 SECRET = "price-monitor-secret"
@@ -101,6 +102,71 @@ def _create_store(client: TestClient) -> int:
     return int(response.json()["store_id"])
 
 
+def test_admin_can_create_store_from_homepage_url_only(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    response = _json_request(
+        client,
+        "post",
+        "/v1/price-assistant/admin/stores",
+        {
+            "enabled": True,
+            "homepage_url": "https://www.example-shop.ru/",
+        },
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["store_code"] == "example_shop_ru"
+    assert data["display_name"] == "Example Shop Ru"
+    assert data["homepage_url"] == "https://www.example-shop.ru/"
+    assert data["enabled"] is True
+    assert len(data["sources"]) == 1
+    assert data["sources"][0]["source_code"] == "example_shop_ru-default"
+    assert data["sources"][0]["display_name"] == "Example Shop Ru"
+    assert data["sources"][0]["domains"] == ["example-shop.ru", "www.example-shop.ru"]
+    assert data["sources"][0]["search_template"] is None
+    assert data["sources"][0]["enabled"] is True
+
+    stored_store = db_session.scalar(
+        select(Store).where(Store.store_code == "example_shop_ru")
+    )
+    stored_source = db_session.scalar(
+        select(StoreSource).where(StoreSource.source_code == "example_shop_ru-default")
+    )
+    assert stored_store is not None
+    assert stored_source is not None
+    assert stored_source.store_id == stored_store.id
+
+
+def test_default_marketplace_seed_is_idempotent(db_session: Session) -> None:
+    seed_default_admin_stores(db_session)
+    seed_default_admin_stores(db_session)
+
+    stores = db_session.scalars(select(Store).order_by(Store.store_code.asc())).all()
+    sources = db_session.scalars(
+        select(StoreSource).order_by(StoreSource.source_code.asc())
+    ).all()
+
+    assert [store.store_code for store in stores] == [
+        "ozon",
+        "wildberries",
+        "yandex_market",
+    ]
+    assert {store.homepage_url for store in stores} == {
+        "https://www.ozon.ru/",
+        "https://www.wildberries.ru/",
+        "https://market.yandex.ru/",
+    }
+    assert [source.source_code for source in sources] == [
+        "ozon-default",
+        "wildberries-default",
+        "yandex_market-default",
+    ]
+    assert all(source.enabled for source in sources)
+
+
 def test_price_assistant_admin_routes_require_hmac(client: TestClient) -> None:
     response = client.get("/v1/price-assistant/admin/stores")
 
@@ -163,7 +229,9 @@ def test_admin_store_source_policy_fields_round_trip_and_audit(
     }
     assert source["metadata_json"]["matching"]["min_match_score"] == 76
 
-    stored_source = db_session.scalar(select(StoreSource))
+    stored_source = db_session.scalar(
+        select(StoreSource).where(StoreSource.source_code == "dns-api")
+    )
     assert stored_source is not None
     assert stored_source.matching_threshold == 76
     assert stored_source.metadata_json["matching"]["min_match_score"] == 76

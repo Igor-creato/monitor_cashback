@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 from decimal import Decimal
 from typing import Any
@@ -58,6 +59,27 @@ from app.schemas.price_assistant import (
 from app.services.marketplace_sessions import record_marketplace_sync_auth_failure
 
 AUTH_FAILURE_REASONS = frozenset({"401", "403", "login_required", "expired"})
+
+DEFAULT_ADMIN_STORES: tuple[dict[str, str], ...] = (
+    {
+        "store_code": "ozon",
+        "display_name": "Ozon",
+        "homepage_url": "https://www.ozon.ru/",
+        "search_template": "https://www.ozon.ru/search/?text={query}",
+    },
+    {
+        "store_code": "wildberries",
+        "display_name": "Wildberries",
+        "homepage_url": "https://www.wildberries.ru/",
+        "search_template": "https://www.wildberries.ru/catalog/0/search.aspx?search={query}",
+    },
+    {
+        "store_code": "yandex_market",
+        "display_name": "Яндекс Маркет",
+        "homepage_url": "https://market.yandex.ru/",
+        "search_template": "https://market.yandex.ru/search?text={query}",
+    },
+)
 
 
 class PriceAssistantError(ValueError):
@@ -335,22 +357,26 @@ def create_admin_store(
     site_id: str | None = None,
 ) -> AdminStoreResponse:
     _validate_homepage_url(request.homepage_url)
-    store = session.scalar(select(Store).where(Store.store_code == request.store_code))
+    store_code, display_name, homepage_url, domains = _store_identity_from_request(
+        request
+    )
+    store = session.scalar(select(Store).where(Store.store_code == store_code))
     event_type = "price_assistant_store_updated"
     if store is None:
         event_type = "price_assistant_store_created"
         store = Store(
-            store_code=request.store_code,
-            display_name=request.display_name,
+            store_code=store_code,
+            display_name=display_name,
             enabled=request.enabled,
-            homepage_url=request.homepage_url,
+            homepage_url=homepage_url,
         )
         session.add(store)
     else:
-        store.display_name = request.display_name
+        store.display_name = display_name
         store.enabled = request.enabled
-        store.homepage_url = request.homepage_url
+        store.homepage_url = homepage_url
     session.flush()
+    _ensure_default_store_source(session, store, domains)
     _add_admin_audit_event(
         session,
         event_type=event_type,
@@ -362,6 +388,41 @@ def create_admin_store(
     session.commit()
     session.refresh(store)
     return _serialize_store(store)
+
+
+def seed_default_admin_stores(session: Session) -> None:
+    for item in DEFAULT_ADMIN_STORES:
+        request = AdminStoreCreate(
+            store_code=item["store_code"],
+            display_name=item["display_name"],
+            enabled=True,
+            homepage_url=item["homepage_url"],
+        )
+        _validate_homepage_url(request.homepage_url)
+        store_code, display_name, homepage_url, domains = _store_identity_from_request(
+            request
+        )
+        store = session.scalar(select(Store).where(Store.store_code == store_code))
+        if store is None:
+            store = Store(
+                store_code=store_code,
+                display_name=display_name,
+                enabled=True,
+                homepage_url=homepage_url,
+            )
+            session.add(store)
+            session.flush()
+        else:
+            store.display_name = display_name
+            store.enabled = True
+            store.homepage_url = homepage_url
+        _ensure_default_store_source(
+            session,
+            store,
+            domains,
+            search_template=item["search_template"],
+        )
+    session.commit()
 
 
 def patch_admin_store(
@@ -844,6 +905,59 @@ def _serialize_store_source(source: StoreSource) -> AdminStoreSourceResponse:
     )
 
 
+def _store_identity_from_request(
+    request: AdminStoreCreate,
+) -> tuple[str, str, str, list[str]]:
+    if request.homepage_url is None:
+        raise PriceAssistantError("homepage_url_required")
+    parsed = urlparse(request.homepage_url)
+    hostname = (parsed.hostname or "").lower().strip(".")
+    if not hostname:
+        raise PriceAssistantError("invalid_url")
+    domains = _domains_for_homepage_hostname(hostname)
+    store_code = request.store_code or _store_code_from_hostname(hostname)
+    display_name = request.display_name or _display_name_from_store_code(store_code)
+    return store_code, display_name, request.homepage_url, domains
+
+
+def _ensure_default_store_source(
+    session: Session,
+    store: Store,
+    domains: list[str],
+    *,
+    search_template: str | None = None,
+) -> StoreSource:
+    source_code = f"{store.store_code}-default"
+    source = session.scalar(
+        select(StoreSource).where(
+            StoreSource.store_id == store.id,
+            StoreSource.source_code == source_code,
+        )
+    )
+    if source is None:
+        source = StoreSource(
+            store=store,
+            source_code=source_code,
+            display_name=store.display_name,
+            enabled=store.enabled,
+            source_type="api",
+        )
+        session.add(source)
+    source.display_name = store.display_name
+    source.enabled = store.enabled
+    source.source_type = "api"
+    source.domains_json = domains
+    source.search_template = search_template
+    source.region_support_json = ["default"]
+    source.priority = 100
+    source.extraction_mode = "hybrid"
+    source.proxy_tier_policy = "none"
+    source.min_fetch_interval_minutes = 60
+    source.matching_threshold = 65
+    source.metadata_json = _with_matching_threshold(None, source.matching_threshold)
+    return source
+
+
 def _enabled_store_sources(session: Session) -> list[StoreSource]:
     return list(
         session.scalars(
@@ -978,6 +1092,25 @@ def _normalize_domains(domains: list[str]) -> list[str]:
             raise PriceAssistantError("invalid_domain")
         normalized.append(value)
     return normalized
+
+
+def _domains_for_homepage_hostname(hostname: str) -> list[str]:
+    if hostname.startswith("www."):
+        base_hostname = hostname.removeprefix("www.")
+        return [base_hostname, hostname]
+    return [hostname]
+
+
+def _store_code_from_hostname(hostname: str) -> str:
+    value = hostname.removeprefix("www.")
+    code = re.sub(r"[^a-z0-9]+", "_", value.lower()).strip("_")
+    if not code:
+        raise PriceAssistantError("invalid_store_code")
+    return code[:64]
+
+
+def _display_name_from_store_code(store_code: str) -> str:
+    return " ".join(part.capitalize() for part in store_code.split("_") if part)
 
 
 def _normalize_region_support(regions: list[str]) -> list[str]:
