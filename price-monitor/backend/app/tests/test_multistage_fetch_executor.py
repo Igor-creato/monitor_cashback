@@ -297,6 +297,74 @@ def test_direct_http_strategy_uses_http_fetcher_without_proxy(
     assert _attempts(db_session)[0].proxy_endpoint_id is None
 
 
+def test_wildberries_curl_strategy_uses_cards_api_product_data(
+    db_session: Session,
+) -> None:
+    from app.services.multistage_fetch_executor import (
+        ProductFetchExecutionContext,
+        execute_product_fetch,
+    )
+
+    product = _product(db_session, source="wildberries")
+    product.external_product_id = "465676229"
+    product.canonical_url = (
+        "https://www.wildberries.ru/catalog/465676229/detail.aspx?targetUrl=EX"
+    )
+    db_session.commit()
+    transport = _FakeCurlTransport(
+        [
+            _TransportResponse(
+                text=(
+                    '{"products":[{"id":465676229,'
+                    '"brand":"AlaskaBurn",'
+                    '"name":"Сумка рюкзак спортивная для фитнеса",'
+                    '"totalQuantity":49,'
+                    '"sizes":[{"price":{"basic":700000,"product":140600}}]}]}'
+                ),
+                content_type="application/json",
+            )
+        ]
+    )
+
+    result = execute_product_fetch(
+        product.id,
+        ProductFetchExecutionContext(
+            session=db_session,
+            strategy_selector=_selector(_decision("curl_cffi_http")),
+            find_feed_item=lambda tracked_product, *, session: None,
+            curl_transport=transport,
+            now=NOW,
+        ),
+    )
+
+    assert result.product_name == "Сумка рюкзак спортивная для фитнеса"
+    assert result.price_current == Decimal("1406.00")
+    assert result.price_old == Decimal("7000.00")
+    assert result.currency == "RUB"
+    assert result.availability is True
+    assert (
+        result.image_url
+        == "https://basket-26.wbbasket.ru/vol4656/part465676/465676229/images/big/1.webp"
+    )
+    assert transport.calls == [
+        {
+            "url": (
+                "https://card.wb.ru/cards/v4/detail?"
+                "appType=1&curr=rub&dest=-1257786&spp=30&nm=465676229"
+            ),
+            "headers": None,
+            "proxy_url": None,
+            "timeout": 7,
+        }
+    ]
+    attempt = _attempts(db_session)[0]
+    assert attempt.strategy == "curl_cffi_http"
+    assert attempt.http_status == 200
+    assert attempt.product_data_found is True
+    assert attempt.price_found is True
+    assert attempt.image_found is True
+
+
 def test_cheap_proxy_strategy_leases_proxy_and_reports_success(
     db_session: Session,
 ) -> None:

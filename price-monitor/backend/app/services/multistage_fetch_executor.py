@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
+from decimal import Decimal, InvalidOperation
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -250,13 +252,11 @@ def _execute_strategy(
         return result, _metadata_from_result(result)
 
     if strategy == "curl_cffi_http":
-        response = _fetch_with_curl(
+        result, response = _execute_curl_cffi_strategy(
+            tracked_product,
             context,
-            tracked_product.canonical_url,
-            proxy_url=None,
             timeout=decision.timeout_seconds,
         )
-        result = _result_from_raw_response(response, tracked_product, context)
         return result, _metadata_from_transport(response, result)
 
     if strategy in PROXY_HTTP_STRATEGIES:
@@ -287,6 +287,36 @@ def _execute_strategy(
         return result, _metadata_from_browser(page, result)
 
     raise FetchError("source_unavailable", f"unsupported strategy: {strategy}")
+
+
+def _execute_curl_cffi_strategy(
+    tracked_product: TrackedProduct,
+    context: ProductFetchExecutionContext,
+    *,
+    timeout: float | None,
+) -> tuple[PriceFetchResult, TransportResponse]:
+    if tracked_product.source == "wildberries":
+        response = _fetch_with_curl(
+            context,
+            _wildberries_cards_api_url(tracked_product.external_product_id),
+            proxy_url=None,
+            timeout=timeout,
+        )
+        result = _wildberries_result_from_cards_response(
+            response,
+            tracked_product,
+            context,
+        )
+        return result, response
+
+    response = _fetch_with_curl(
+        context,
+        tracked_product.canonical_url,
+        proxy_url=None,
+        timeout=timeout,
+    )
+    result = _result_from_raw_response(response, tracked_product, context)
+    return result, response
 
 
 def _execute_proxy_http_strategy(
@@ -431,6 +461,181 @@ def _result_from_browser_page(
         context.now or datetime.now(),
         default_currency=tracked_product.currency,
     )
+
+
+def _wildberries_cards_api_url(external_product_id: str) -> str:
+    product_id = _wildberries_product_id(external_product_id)
+    return (
+        "https://card.wb.ru/cards/v4/detail?"
+        f"appType=1&curr=rub&dest=-1257786&spp=30&nm={product_id}"
+    )
+
+
+def _wildberries_result_from_cards_response(
+    response: TransportResponse,
+    tracked_product: TrackedProduct,
+    context: ProductFetchExecutionContext,
+) -> PriceFetchResult:
+    try:
+        payload = json.loads(response.text)
+    except json.JSONDecodeError as exc:
+        raise FetchError("parser_error") from exc
+
+    products = payload.get("products") if isinstance(payload, dict) else None
+    if not isinstance(products, list) or not products:
+        raise FetchError("price_not_found")
+
+    expected_product_id = _wildberries_product_id(tracked_product.external_product_id)
+    product = _wildberries_find_product(products, expected_product_id)
+    if product is None:
+        raise FetchError("price_not_found")
+
+    current_price = _wildberries_price(product, "product")
+    if current_price is None:
+        raise FetchError("price_not_found")
+
+    old_price = _wildberries_price(product, "basic")
+    if old_price == current_price:
+        old_price = None
+
+    return PriceFetchResult(
+        product_name=_optional_text(product.get("name")),
+        price_current=current_price,
+        price_old=old_price,
+        currency="RUB",
+        availability=_wildberries_available(product),
+        seller_name=_optional_text(product.get("supplier")),
+        image_url=_wildberries_image_url(expected_product_id),
+        fetched_at=context.now or datetime.now(),
+    )
+
+
+def _wildberries_find_product(
+    products: list[Any],
+    expected_product_id: int,
+) -> dict[str, Any] | None:
+    first_mapping: dict[str, Any] | None = None
+    for product in products:
+        if not isinstance(product, dict):
+            continue
+        if first_mapping is None:
+            first_mapping = product
+        if product.get("id") == expected_product_id:
+            return product
+    return first_mapping
+
+
+def _wildberries_product_id(value: str) -> int:
+    try:
+        product_id = int(value)
+    except (TypeError, ValueError) as exc:
+        raise FetchError("parser_error", "invalid wildberries product id") from exc
+    if product_id <= 0:
+        raise FetchError("parser_error", "invalid wildberries product id")
+    return product_id
+
+
+def _wildberries_price(product: dict[str, Any], key: str) -> Decimal | None:
+    for size in product.get("sizes") or []:
+        if not isinstance(size, dict):
+            continue
+        price = size.get("price")
+        if not isinstance(price, dict):
+            continue
+        amount = price.get(key)
+        if amount not in {None, ""}:
+            return _wildberries_money(amount)
+
+    amount = product.get(key)
+    if amount in {None, ""}:
+        return None
+    return _wildberries_money(amount)
+
+
+def _wildberries_money(value: Any) -> Decimal:
+    try:
+        return (Decimal(str(value)) / Decimal("100")).quantize(Decimal("0.01"))
+    except (InvalidOperation, ValueError) as exc:
+        raise FetchError("price_not_found") from exc
+
+
+def _wildberries_available(product: dict[str, Any]) -> bool:
+    quantity = product.get("totalQuantity")
+    if quantity is not None:
+        try:
+            return int(quantity) > 0
+        except (TypeError, ValueError):
+            return True
+
+    for size in product.get("sizes") or []:
+        if not isinstance(size, dict):
+            continue
+        stocks = size.get("stocks")
+        if isinstance(stocks, list) and stocks:
+            return True
+    return True
+
+
+def _wildberries_image_url(product_id: int) -> str:
+    volume = product_id // 100000
+    part = product_id // 1000
+    basket = _wildberries_basket(volume)
+    return (
+        f"https://basket-{basket:02d}.wbbasket.ru/"
+        f"vol{volume}/part{part}/{product_id}/images/big/1.webp"
+    )
+
+
+def _wildberries_basket(volume: int) -> int:
+    ranges = (
+        (143, 1),
+        (287, 2),
+        (431, 3),
+        (719, 4),
+        (1007, 5),
+        (1061, 6),
+        (1115, 7),
+        (1169, 8),
+        (1313, 9),
+        (1601, 10),
+        (1655, 11),
+        (1919, 12),
+        (2045, 13),
+        (2189, 14),
+        (2405, 15),
+        (2621, 16),
+        (2837, 17),
+        (3053, 18),
+        (3269, 19),
+        (3485, 20),
+        (3701, 21),
+        (3917, 22),
+        (4133, 23),
+        (4349, 24),
+        (4565, 25),
+        (4877, 26),
+        (5189, 27),
+        (5501, 28),
+        (5813, 29),
+        (6125, 30),
+        (6437, 31),
+        (6749, 32),
+        (7061, 33),
+        (7373, 34),
+        (7685, 35),
+        (7997, 36),
+    )
+    for upper_bound, basket in ranges:
+        if volume <= upper_bound:
+            return basket
+    return 37
+
+
+def _optional_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
 
 
 def _resolve_schema(
