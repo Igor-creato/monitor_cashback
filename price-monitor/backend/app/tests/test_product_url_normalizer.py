@@ -93,3 +93,20 @@ def test_normalization_does_not_make_network_requests(monkeypatch) -> None:
         normalize_product_url("https://unknown.local/product/123")
 
     assert network_calls == 0
+
+
+def test_normalizer_accepts_supported_registry_source() -> None:
+    result = normalize_product_url(
+        "https://www.wildberries.ru/catalog/123456/detail.aspx"
+    )
+
+    assert result.source == "wildberries"
+    assert result.external_product_id == "123456"
+    assert (
+        result.canonical_url == "https://www.wildberries.ru/catalog/123456/detail.aspx"
+    )
+
+
+def test_normalizer_fails_closed_for_requires_access_registry_source() -> None:
+    with pytest.raises(UnsupportedSourceError, match="source_requires_access"):
+        normalize_product_url("https://www.ozon.ru/product/test-123/")

@@ -4,6 +4,11 @@ import hashlib
 from dataclasses import dataclass
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from app.product_monitoring.registry import (
+    StoreUrlNormalizationError,
+    normalize_store_product_url,
+)
+
 
 @dataclass(frozen=True)
 class NormalizedProductUrl:
@@ -26,6 +31,20 @@ _SOURCE_CONFIG = {
 
 
 def normalize_product_url(url: str) -> NormalizedProductUrl:
+    try:
+        normalized = normalize_store_product_url(url)
+    except StoreUrlNormalizationError as exc:
+        if _is_known_store_url(url):
+            raise UnsupportedSourceError(str(exc)) from exc
+    else:
+        return NormalizedProductUrl(
+            source=normalized.source,
+            external_product_id=normalized.external_product_id,
+            canonical_url=normalized.canonical_url,
+            region_code=normalized.region_code,
+            variant_hash=normalized.variant_hash,
+        )
+
     parsed = urlsplit(url)
     hostname = parsed.hostname.lower() if parsed.hostname else ""
 
@@ -72,6 +91,16 @@ def normalize_product_url(url: str) -> NormalizedProductUrl:
 def _is_tracking_query_key(key: str) -> bool:
     normalized_key = key.lower()
     return normalized_key == "ref" or normalized_key.startswith("utm_")
+
+
+def _is_known_store_url(url: str) -> bool:
+    parsed = urlsplit(url)
+    hostname = parsed.hostname.lower() if parsed.hostname else ""
+    if not hostname:
+        return False
+    from app.product_monitoring.registry import get_store_entry_by_host
+
+    return get_store_entry_by_host(hostname) is not None
 
 
 def _first_non_empty_query_value(

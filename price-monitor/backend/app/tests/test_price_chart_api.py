@@ -12,6 +12,7 @@ from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
 import app.db as db
+import app.services.price_chart as price_chart
 from app.core import config, incoming_hmac
 from app.main import app
 from app.models.monitoring import (
@@ -70,6 +71,11 @@ def client(
         SecretStr(SECRET),
     )
     monkeypatch.setattr(incoming_hmac, "current_unix_time", lambda: NOW)
+    monkeypatch.setattr(
+        price_chart,
+        "current_utc_datetime",
+        lambda: datetime(2026, 6, 8, 12, 0, 0),
+    )
 
     app.dependency_overrides[db.get_db] = lambda: db_session
 
