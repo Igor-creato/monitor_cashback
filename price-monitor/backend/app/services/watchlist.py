@@ -69,6 +69,13 @@ def add_watchlist_item(
             )
         )
         if subscription is not None:
+            if not subscription.is_active:
+                _ensure_new_subscription_within_limit(session, item, limits_provider)
+                subscription.is_active = True
+                subscription.region_code = region_code
+                subscription.target_price = item.target_price
+                subscription.target_effective_price = item.target_effective_price
+                session.commit()
             return WatchlistAddResult(subscription, "already_exists")
 
     _ensure_new_subscription_within_limit(session, item, limits_provider)

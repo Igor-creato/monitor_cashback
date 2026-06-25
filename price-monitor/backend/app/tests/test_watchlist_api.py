@@ -922,6 +922,32 @@ def test_delete_soft_deletes_subscription(client: TestClient) -> None:
     assert get_response.json()["items"] == []
 
 
+def test_post_reactivates_soft_deleted_subscription(client: TestClient) -> None:
+    post_response = _post_watchlist_item(client, _post_payload())
+    subscription_id = post_response.json()["subscription_id"]
+    delete_response = client.delete(
+        f"/v1/watchlist/items/{subscription_id}?site_id={SITE_ID}"
+        "&external_user_id=wp:savelloclub.ru:123",
+        headers=_headers(),
+    )
+
+    repeat_response = _post_watchlist_item(
+        client,
+        _post_payload() | {"target_price": 4500},
+    )
+    get_response = _get_watchlist_items(client)
+
+    assert post_response.status_code == 200
+    assert delete_response.status_code == 200
+    assert repeat_response.status_code == 200
+    assert repeat_response.json()["subscription_id"] == subscription_id
+    assert repeat_response.json()["is_active"] is True
+    assert repeat_response.json()["target_price"] == "4500.00"
+    assert get_response.status_code == 200
+    assert len(get_response.json()["items"]) == 1
+    assert get_response.json()["items"][0]["subscription_id"] == subscription_id
+
+
 def test_unsupported_source_returns_400(client: TestClient) -> None:
     response = _post_watchlist_item(
         client,
