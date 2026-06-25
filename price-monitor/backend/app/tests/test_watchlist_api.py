@@ -238,7 +238,11 @@ def test_post_creates_product_and_subscription(
     }
     assert db_session.scalar(select(func.count(TrackedProduct.id))) == 1
     assert db_session.scalar(select(func.count(UserProductSubscription.id))) == 1
-    assert db_session.scalar(select(func.count(FetchJob.id))) == 0
+    job = db_session.scalar(select(FetchJob))
+    assert job is not None
+    assert job.tracked_product_id == 1
+    assert job.reason == "manual_watchlist_add"
+    assert job.status == "queued"
 
 
 def test_watchlist_create_uses_request_region_when_url_has_no_region(
