@@ -14,6 +14,7 @@ from app.schemas.product_cards import (
     ProductCardCashbackResponse,
     ProductCardResponse,
 )
+from app.services.wildberries_media import wildberries_image_url
 
 
 def build_product_card(
@@ -59,7 +60,23 @@ def _image_url(tracked_product: TrackedProduct) -> str | None:
     base_url = settings.product_image_public_base_url.strip().rstrip("/")
     if object_key and base_url:
         return f"{base_url}/{quote(object_key, safe='/')}"
+    if tracked_product.source == "wildberries":
+        external_image_url = _wildberries_external_image_url(tracked_product)
+        if external_image_url is not None:
+            return external_image_url
     return tracked_product.image_url
+
+
+def _wildberries_external_image_url(
+    tracked_product: TrackedProduct,
+) -> str | None:
+    try:
+        product_id = int(tracked_product.external_product_id)
+    except (TypeError, ValueError):
+        return None
+    if product_id <= 0:
+        return None
+    return wildberries_image_url(product_id)
 
 
 def _cashback(

@@ -365,6 +365,14 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
     assert attempt.image_found is True
 
 
+def test_wildberries_image_url_uses_extended_basket_range_for_new_articles() -> None:
+    from app.services.multistage_fetch_executor import _wildberries_image_url
+
+    assert _wildberries_image_url(853333396) == (
+        "https://basket-38.wbbasket.ru/vol8533/part853333/853333396/images/big/1.webp"
+    )
+
+
 def test_wildberries_proxy_strategy_uses_cards_api_without_proxy_lease(
     db_session: Session,
 ) -> None:
