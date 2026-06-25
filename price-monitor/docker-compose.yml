@@ -43,7 +43,7 @@ services:
       context: ./backend
       args:
         PIP_INDEX_URL: ${PIP_INDEX_URL:-https://pypi.tuna.tsinghua.edu.cn/simple}
-    command: celery -A app.celery_app.celery_app worker --loglevel=INFO
+    command: celery -A app.celery_app.celery_app worker --loglevel=INFO --without-mingle --without-gossip
     env_file:
       - path: .env
         required: false

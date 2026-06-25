@@ -77,7 +77,8 @@ def test_compose_runs_fetch_worker_and_scheduler() -> None:
     beat = services["celery-beat"]
 
     assert worker["command"] == (
-        "celery -A app.celery_app.celery_app worker --loglevel=INFO"
+        "celery -A app.celery_app.celery_app worker "
+        "--loglevel=INFO --without-mingle --without-gossip"
     )
     assert beat["command"] == (
         "celery -A app.celery_app.celery_app beat --loglevel=INFO"
