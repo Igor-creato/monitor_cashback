@@ -365,6 +365,70 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
     assert attempt.image_found is True
 
 
+def test_wildberries_proxy_strategy_uses_cards_api_without_proxy_lease(
+    db_session: Session,
+) -> None:
+    from app.services.multistage_fetch_executor import (
+        ProductFetchExecutionContext,
+        execute_product_fetch,
+    )
+
+    product = _product(db_session, source="wildberries")
+    product.external_product_id = "465676229"
+    product.canonical_url = (
+        "https://www.wildberries.ru/catalog/465676229/detail.aspx?targetUrl=EX"
+    )
+    db_session.commit()
+    cards_calls: list[dict[str, Any]] = []
+    cards_response = _TransportResponse(
+        text=(
+            '{"products":[{"id":465676229,'
+            '"name":"Сумка рюкзак спортивная для фитнеса",'
+            '"totalQuantity":49,'
+            '"sizes":[{"price":{"product":140600}}]}]}'
+        ),
+        content_type="application/json",
+    )
+
+    result = execute_product_fetch(
+        product.id,
+        ProductFetchExecutionContext(
+            session=db_session,
+            strategy_selector=_selector(
+                _decision(
+                    "cheap_proxy_http",
+                    proxy_required=True,
+                    proxy_tier="cheap",
+                )
+            ),
+            find_feed_item=lambda tracked_product, *, session: None,
+            wildberries_cards_fetcher=lambda url, timeout: (
+                cards_calls.append({"url": url, "timeout": timeout}) or cards_response
+            ),
+            proxy_leaser=lambda *args, **kwargs: pytest.fail(
+                "wildberries cards API should not lease a proxy"
+            ),
+            now=NOW,
+        ),
+    )
+
+    assert result.price_current == Decimal("1406.00")
+    assert cards_calls == [
+        {
+            "url": (
+                "https://card.wb.ru/cards/v4/detail?"
+                "appType=1&curr=rub&dest=-1257786&spp=30&nm=465676229"
+            ),
+            "timeout": 7,
+        }
+    ]
+    attempt = _attempts(db_session)[0]
+    assert attempt.strategy == "cheap_proxy_http"
+    assert attempt.proxy_pool_id is None
+    assert attempt.proxy_endpoint_id is None
+    assert attempt.status == "success"
+
+
 def test_cheap_proxy_strategy_leases_proxy_and_reports_success(
     db_session: Session,
 ) -> None:

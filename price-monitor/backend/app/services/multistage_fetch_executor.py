@@ -51,6 +51,9 @@ PROXY_HTTP_STRATEGIES = frozenset(
         "premium_proxy_http",
     }
 )
+WILDBERRIES_CARDS_STRATEGIES = PROXY_HTTP_STRATEGIES | frozenset(
+    {"direct_http", "curl_cffi_http"}
+)
 BROWSER_STRATEGIES = frozenset({"crawl4ai", "playwright"})
 FALLBACK_ERROR_TYPES = frozenset({"http_403", "http_429"})
 SOURCE_HEALTH_EVENT_TYPES = frozenset(
@@ -250,6 +253,17 @@ def _execute_strategy(
         result = context.build_feed_result(feed_item)
         return result, _metadata_from_result(result)
 
+    if (
+        tracked_product.source == "wildberries"
+        and strategy in WILDBERRIES_CARDS_STRATEGIES
+    ):
+        result, response = _execute_wildberries_cards_strategy(
+            tracked_product,
+            context,
+            timeout=decision.timeout_seconds,
+        )
+        return result, _metadata_from_transport(response, result)
+
     if strategy == "direct_http":
         fetcher = context.http_fetcher or HTTPPriceFetcher(
             timeout=decision.timeout_seconds
@@ -301,17 +315,6 @@ def _execute_curl_cffi_strategy(
     *,
     timeout: float | None,
 ) -> tuple[PriceFetchResult, TransportResponse]:
-    if tracked_product.source == "wildberries":
-        url = _wildberries_cards_api_url(tracked_product.external_product_id)
-        fetcher = context.wildberries_cards_fetcher or _fetch_wildberries_cards_response
-        response = fetcher(url, timeout)
-        result = _wildberries_result_from_cards_response(
-            response,
-            tracked_product,
-            context,
-        )
-        return result, response
-
     response = _fetch_with_curl(
         context,
         tracked_product.canonical_url,
@@ -319,6 +322,23 @@ def _execute_curl_cffi_strategy(
         timeout=timeout,
     )
     result = _result_from_raw_response(response, tracked_product, context)
+    return result, response
+
+
+def _execute_wildberries_cards_strategy(
+    tracked_product: TrackedProduct,
+    context: ProductFetchExecutionContext,
+    *,
+    timeout: float | None,
+) -> tuple[PriceFetchResult, TransportResponse]:
+    url = _wildberries_cards_api_url(tracked_product.external_product_id)
+    fetcher = context.wildberries_cards_fetcher or _fetch_wildberries_cards_response
+    response = fetcher(url, timeout)
+    result = _wildberries_result_from_cards_response(
+        response,
+        tracked_product,
+        context,
+    )
     return result, response
 
 
