@@ -52,3 +52,11 @@ def test_backend_package_discovery_only_includes_application_package() -> None:
     package_finder = pyproject["tool"]["setuptools"]["packages"]["find"]
 
     assert package_finder["include"] == ["app*"]
+
+
+def test_backend_runtime_installs_curl_cffi_transport_dependency() -> None:
+    pyproject = tomllib.loads(PYPROJECT_PATH.read_text(encoding="utf-8"))
+
+    dependencies = pyproject["project"]["dependencies"]
+
+    assert any(dependency.startswith("curl-cffi>=") for dependency in dependencies)

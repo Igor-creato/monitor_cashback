@@ -12,6 +12,7 @@ dependencies = [
     "beautifulsoup4>=4.15",
     "celery>=5.6",
     "cryptography>=46",
+    "curl-cffi>=0.15.0,<0.16",
     "fastapi>=0.136.3",
     "httpx>=0.28.1",
     "playwright>=1.57",
