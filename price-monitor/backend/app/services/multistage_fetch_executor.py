@@ -35,7 +35,7 @@ from app.services.proxy_manager import lease_proxy, report_proxy_result
 from app.services.source_health import record_source_event
 from app.services.source_quarantine import apply_source_quarantine_policy
 from app.services.user_limits import UserPriceMonitorLimits
-from app.services.wildberries_media import wildberries_basket, wildberries_image_url
+from app.services.wildberries_media import wildberries_image_url
 from app.transports.base import (
     TransportNetworkError,
     TransportResponse,
@@ -652,10 +652,6 @@ def _wildberries_available(product: dict[str, Any]) -> bool:
 
 def _wildberries_image_url(product_id: int) -> str:
     return wildberries_image_url(product_id)
-
-
-def _wildberries_basket(volume: int) -> int:
-    return wildberries_basket(volume)
 
 
 def _optional_text(value: Any) -> str | None:

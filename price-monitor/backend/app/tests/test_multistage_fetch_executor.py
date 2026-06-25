@@ -344,8 +344,8 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
     assert result.currency == "RUB"
     assert result.availability is True
     assert (
-        result.image_url
-        == "https://basket-26.wbbasket.ru/vol4656/part465676/465676229/images/big/1.webp"
+        result.image_url == "https://sam-basket-cdn-04.geobasket.ru/"
+        "vol4656/part465676/465676229/images/big/1.webp"
     )
     assert transport.calls == []
     assert cards_calls == [
@@ -365,11 +365,12 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
     assert attempt.image_found is True
 
 
-def test_wildberries_image_url_uses_extended_basket_range_for_new_articles() -> None:
+def test_wildberries_image_url_uses_geobasket_cdn_for_product_page_images() -> None:
     from app.services.multistage_fetch_executor import _wildberries_image_url
 
-    assert _wildberries_image_url(853333396) == (
-        "https://basket-38.wbbasket.ru/vol8533/part853333/853333396/images/big/1.webp"
+    assert _wildberries_image_url(904781586) == (
+        "https://sam-basket-cdn-04.geobasket.ru/"
+        "vol9047/part904781/904781586/images/big/1.webp"
     )
 
 

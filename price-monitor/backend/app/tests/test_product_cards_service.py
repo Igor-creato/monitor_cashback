@@ -94,22 +94,23 @@ def test_missing_image_object_key_uses_saved_image_url(
     assert card.image_url == "https://saved.example/products/123.jpg"
 
 
-def test_wildberries_card_recomputes_stale_saved_basket_image_url() -> None:
+def test_wildberries_card_recomputes_stale_saved_geobasket_image_url() -> None:
     product = _product(
         source="wildberries",
         source_display_name="Wildberries",
-        external_product_id="853333396",
-        canonical_url="https://www.wildberries.ru/catalog/853333396/detail.aspx",
+        external_product_id="904781586",
+        canonical_url="https://www.wildberries.ru/catalog/904781586/detail.aspx",
         image_url=(
             "https://basket-37.wbbasket.ru/"
-            "vol8533/part853333/853333396/images/big/1.webp"
+            "vol9047/part904781/904781586/images/big/1.webp"
         ),
     )
 
     card = build_product_card(product)
 
     assert card.image_url == (
-        "https://basket-38.wbbasket.ru/vol8533/part853333/853333396/images/big/1.webp"
+        "https://sam-basket-cdn-04.geobasket.ru/"
+        "vol9047/part904781/904781586/images/big/1.webp"
     )
 
 
