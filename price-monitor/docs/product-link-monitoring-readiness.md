@@ -61,6 +61,35 @@ Completed on 2026-06-25:
   by freezing `app.services.price_chart.current_utc_datetime` in
   `test_price_chart_api.py`; runtime chart logic was not changed.
 
+## 2026-06-25 Test Server Fix
+
+The Wildberries add-item flow still returned `upstream_unavailable` after the
+backend image was rebuilt because the test server did not have the FastAPI to
+WordPress internal API configured. After enabling that channel, the remaining
+root cause was the backend client encoding the WordPress external user id as
+`wp%3A...%3A1`; WordPress treated the encoded value as invalid and returned
+limits lookup errors, which caused watchlist creation to fall back to a zero
+free limit.
+
+Fix:
+
+- `CashbackAPIClient.get_user_price_monitor_limits()` now keeps the safe
+  `wp:host:user_id` path characters unescaped while still escaping unsafe path
+  characters.
+- The test server now has `savello_internal_api_enabled=1`,
+  `CASHBACK_API_BASE_URL=http://nginx`, `CASHBACK_API_SITE_ID=savelloclub.ru`,
+  and matching internal HMAC secrets configured without exposing secret values.
+
+Verification:
+
+- RED confirmed for the encoded `external_user_id` path.
+- `rtk python -m pytest app/tests/test_cashback_api_client.py app/tests/test_user_limits_service.py app/tests/test_watchlist_api.py -q`:
+  41 passed, 1 existing Starlette/httpx deprecation warning.
+- Full backend `rtk python -m pytest -q`: 508 passed, 1 existing
+  Starlette/httpx deprecation warning.
+- `rtk python -m ruff check .`: passed.
+- `rtk python -m ruff format --check .`: 174 files already formatted.
+
 ## Intentional Non-Goals
 
 - No cart/favorites sync changes.

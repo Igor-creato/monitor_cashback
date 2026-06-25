@@ -99,7 +99,7 @@ class CashbackAPIClient:
         return response
 
     def get_user_price_monitor_limits(self, external_user_id: str) -> Any:
-        escaped_user_id = quote(str(external_user_id), safe="")
+        escaped_user_id = quote(str(external_user_id), safe=":._-")
         return self._request(
             "GET",
             f"/users/{escaped_user_id}/price-monitor-limits",

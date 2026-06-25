@@ -170,6 +170,36 @@ def test_send_price_monitor_notification_posts_expected_payload() -> None:
     }
 
 
+def test_user_price_monitor_limits_keeps_wordpress_external_id_path_safe() -> None:
+    external_user_id = "wp:mybestestsite.autmatization-bot.ru:1"
+    seen: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        seen["method"] = request.method
+        seen["path"] = request.url.raw_path.decode()
+        return httpx.Response(
+            200,
+            json={
+                "external_user_id": external_user_id,
+                "tariff": "basic",
+                "limits": {},
+                "cashback": {},
+            },
+        )
+
+    client = _client_for(handler)
+
+    client.get_user_price_monitor_limits(external_user_id)
+
+    assert seen == {
+        "method": "GET",
+        "path": (
+            "/wp-json/savello-internal/v1/users/"
+            "wp:mybestestsite.autmatization-bot.ru:1/price-monitor-limits"
+        ),
+    }
+
+
 def test_404_maps_to_not_found_error() -> None:
     client = _client_for(lambda request: httpx.Response(404, json={"error": "missing"}))
 
