@@ -25,6 +25,7 @@ from app.services.deeplink import (
     DeeplinkUnavailable,
     create_cashback_deeplink,
 )
+from app.services.fetch_job_dispatcher import dispatch_fetch_job
 from app.services.fetch_jobs import enqueue_fetch_job
 from app.services.product_cards import build_product_card
 from app.services.user_limits import get_price_monitor_limits
@@ -75,6 +76,7 @@ def create_watchlist_item(
         result.subscription.tracked_product_id,
         "manual_watchlist_add",
         priority=2,
+        job_dispatcher=dispatch_fetch_job,
     )
 
     return _serialize_create_result(result)

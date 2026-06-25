@@ -14,6 +14,10 @@ celery_app.conf.beat_schedule = {
         "task": "app.tasks.periodic.schedule_due_fetch_jobs_task",
         "schedule": settings.celery_scheduler_interval_seconds,
     },
+    "dispatch-queued-fetch-jobs": {
+        "task": "app.tasks.periodic.dispatch_queued_fetch_jobs_task",
+        "schedule": settings.celery_scheduler_interval_seconds,
+    },
     "cleanup-old-data": {
         "task": "app.tasks.periodic.cleanup_old_data_task",
         "schedule": settings.celery_cleanup_interval_seconds,

@@ -10,6 +10,7 @@ from app.services.cleanup import (
     cleanup_old_fetch_jobs,
     cleanup_price_history,
 )
+from app.services.fetch_job_dispatcher import dispatch_queued_fetch_jobs
 from app.services.marketplace_sync_worker import sync_due_marketplace_connections
 from app.services.notifications import dispatch_pending_notifications
 from app.services.scheduler import schedule_due_fetch_jobs
@@ -25,6 +26,20 @@ def schedule_due_fetch_jobs_task():
     except Exception:
         logger.exception("schedule_due_fetch_jobs_task_failed")
         raise
+
+
+@celery_app.task(name="app.tasks.periodic.dispatch_queued_fetch_jobs_task")
+def dispatch_queued_fetch_jobs_task() -> dict[str, object]:
+    try:
+        report = dispatch_queued_fetch_jobs(settings.scheduler_due_fetch_limit)
+    except Exception:
+        logger.exception("dispatch_queued_fetch_jobs_task_failed")
+        raise
+
+    return {
+        "dispatched": report.dispatched_count,
+        "job_ids": report.dispatched_job_ids,
+    }
 
 
 @celery_app.task(name="app.tasks.periodic.cleanup_old_data_task")

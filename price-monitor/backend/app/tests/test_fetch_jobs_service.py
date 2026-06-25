@@ -74,6 +74,28 @@ def test_first_enqueue_creates_queued_job(db_session: Session) -> None:
     assert _fetch_job_count(db_session) == 1
 
 
+def test_first_enqueue_dispatches_created_job_when_dispatcher_is_provided(
+    db_session: Session,
+) -> None:
+    now = datetime(2026, 6, 7, 12, 0, tzinfo=UTC)
+    dispatched: list[int] = []
+    _tracked_product(db_session)
+
+    result = enqueue_fetch_job(
+        db_session,
+        1,
+        "watchlist_created",
+        priority=3,
+        now=now,
+        job_dispatcher=dispatched.append,
+    )
+
+    job = db_session.scalar(select(FetchJob))
+    assert result == "created"
+    assert job is not None
+    assert dispatched == [job.id]
+
+
 def test_repeated_enqueue_does_not_create_duplicate_queued_job(
     db_session: Session,
 ) -> None:
@@ -93,6 +115,32 @@ def test_repeated_enqueue_does_not_create_duplicate_queued_job(
 
     assert result == "existing"
     assert _fetch_job_count(db_session) == 1
+
+
+def test_existing_job_is_not_dispatched_again(db_session: Session) -> None:
+    now = datetime(2026, 6, 7, 12, 0, tzinfo=UTC)
+    dispatched: list[int] = []
+    _tracked_product(db_session)
+    db_session.add(
+        FetchJob(
+            tracked_product_id=1,
+            status="queued",
+            reason="existing",
+            next_run_at=now,
+        )
+    )
+    db_session.commit()
+
+    result = enqueue_fetch_job(
+        db_session,
+        1,
+        "manual_retry",
+        now=now,
+        job_dispatcher=dispatched.append,
+    )
+
+    assert result == "existing"
+    assert dispatched == []
 
 
 def test_running_job_blocks_new_enqueue(db_session: Session) -> None:

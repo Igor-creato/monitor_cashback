@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.models.monitoring import FetchJob, TrackedProduct
+
+logger = logging.getLogger(__name__)
 
 FETCH_JOB_ACTIVE_STATUSES = ("queued", "running")
 FETCH_JOB_FRESHNESS_WINDOW = timedelta(minutes=60)
@@ -18,6 +22,7 @@ def enqueue_fetch_job(
     priority=5,
     *,
     now: datetime | None = None,
+    job_dispatcher: Callable[[int], None] | None = None,
 ) -> str:
     now_utc = _as_utc(now or datetime.now(UTC))
     tracked_product = session.get(TrackedProduct, tracked_product_id)
@@ -39,16 +44,25 @@ def enqueue_fetch_job(
     if _is_fresh(tracked_product.last_checked_at, now_utc):
         return "skipped_fresh"
 
-    session.add(
-        FetchJob(
-            tracked_product_id=tracked_product_id,
-            reason=reason,
-            priority=priority,
-            status="queued",
-            next_run_at=now_utc.replace(tzinfo=None),
-        )
+    job = FetchJob(
+        tracked_product_id=tracked_product_id,
+        reason=reason,
+        priority=priority,
+        status="queued",
+        next_run_at=now_utc.replace(tzinfo=None),
     )
+    session.add(job)
+    session.flush()
+    job_id = int(job.id)
     session.commit()
+    if job_dispatcher is not None:
+        try:
+            job_dispatcher(job_id)
+        except Exception:
+            logger.exception(
+                "fetch_job_dispatch_failed",
+                extra={"fetch_job_id": job_id},
+            )
     return "created"
 
 

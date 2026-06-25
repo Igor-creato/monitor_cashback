@@ -12,6 +12,7 @@ from sqlalchemy import create_engine, func, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
 
+import app.api.watchlist as watchlist_api
 import app.db as db
 from app.clients import cashback_api
 from app.core import config, incoming_hmac
@@ -33,6 +34,11 @@ from app.services.user_limits import (
 SECRET = "incoming-test-secret"
 SITE_ID = "savelloclub.ru"
 NOW = 1_800_000_000
+
+
+@pytest.fixture(autouse=True)
+def disable_fetch_job_dispatch(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(watchlist_api, "dispatch_fetch_job", lambda job_id: None)
 
 
 def _signature(timestamp: str, raw_body: bytes, secret: str = SECRET) -> str:
@@ -243,6 +249,22 @@ def test_post_creates_product_and_subscription(
     assert job.tracked_product_id == 1
     assert job.reason == "manual_watchlist_add"
     assert job.status == "queued"
+
+
+def test_watchlist_create_dispatches_created_fetch_job(
+    client: TestClient,
+    db_session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    dispatched: list[int] = []
+    monkeypatch.setattr(watchlist_api, "dispatch_fetch_job", dispatched.append)
+
+    response = _post_watchlist_item(client, _post_payload())
+
+    job = db_session.scalar(select(FetchJob))
+    assert response.status_code == 200
+    assert job is not None
+    assert dispatched == [job.id]
 
 
 def test_watchlist_create_uses_request_region_when_url_has_no_region(

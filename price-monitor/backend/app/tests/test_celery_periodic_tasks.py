@@ -40,6 +40,10 @@ def test_periodic_tasks_are_registered(monkeypatch: pytest.MonkeyPatch) -> None:
         "app.tasks.periodic.dispatch_pending_notifications_task"
         in celery_module.celery_app.tasks
     )
+    assert (
+        "app.tasks.periodic.dispatch_queued_fetch_jobs_task"
+        in celery_module.celery_app.tasks
+    )
 
 
 def test_beat_schedule_contains_scheduler_task(
@@ -53,6 +57,10 @@ def test_beat_schedule_contains_scheduler_task(
         "app.tasks.periodic.schedule_due_fetch_jobs_task"
     )
     assert schedule["schedule-due-fetch-jobs"]["schedule"] == 300
+    assert schedule["dispatch-queued-fetch-jobs"]["task"] == (
+        "app.tasks.periodic.dispatch_queued_fetch_jobs_task"
+    )
+    assert schedule["dispatch-queued-fetch-jobs"]["schedule"] == 300
     assert schedule["sync-due-marketplace-connections"]["task"] == (
         "app.tasks.periodic.sync_due_marketplace_connections_task"
     )
@@ -83,6 +91,33 @@ def test_scheduler_task_calls_service_with_configured_limit(
     result = task_module.schedule_due_fetch_jobs_task.run()
 
     assert result == "scheduled"
+    assert calls == [100]
+
+
+def test_dispatch_queued_fetch_jobs_task_calls_service_with_configured_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    _reload_celery_modules(monkeypatch)
+    task_module = importlib.import_module("app.tasks.periodic")
+    calls: list[int] = []
+
+    class FakeReport:
+        dispatched_count = 2
+        dispatched_job_ids = [7, 8]
+
+    def fake_dispatch_queued_fetch_jobs(limit: int) -> FakeReport:
+        calls.append(limit)
+        return FakeReport()
+
+    monkeypatch.setattr(
+        task_module,
+        "dispatch_queued_fetch_jobs",
+        fake_dispatch_queued_fetch_jobs,
+    )
+
+    result = task_module.dispatch_queued_fetch_jobs_task.run()
+
+    assert result == {"dispatched": 2, "job_ids": [7, 8]}
     assert calls == [100]
 
 
