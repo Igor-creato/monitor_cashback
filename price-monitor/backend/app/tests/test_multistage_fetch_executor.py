@@ -311,19 +311,17 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
         "https://www.wildberries.ru/catalog/465676229/detail.aspx?targetUrl=EX"
     )
     db_session.commit()
-    transport = _FakeCurlTransport(
-        [
-            _TransportResponse(
-                text=(
-                    '{"products":[{"id":465676229,'
-                    '"brand":"AlaskaBurn",'
-                    '"name":"Сумка рюкзак спортивная для фитнеса",'
-                    '"totalQuantity":49,'
-                    '"sizes":[{"price":{"basic":700000,"product":140600}}]}]}'
-                ),
-                content_type="application/json",
-            )
-        ]
+    transport = _FakeCurlTransport([])
+    cards_calls: list[dict[str, Any]] = []
+    cards_response = _TransportResponse(
+        text=(
+            '{"products":[{"id":465676229,'
+            '"brand":"AlaskaBurn",'
+            '"name":"Сумка рюкзак спортивная для фитнеса",'
+            '"totalQuantity":49,'
+            '"sizes":[{"price":{"basic":700000,"product":140600}}]}]}'
+        ),
+        content_type="application/json",
     )
 
     result = execute_product_fetch(
@@ -333,6 +331,9 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
             strategy_selector=_selector(_decision("curl_cffi_http")),
             find_feed_item=lambda tracked_product, *, session: None,
             curl_transport=transport,
+            wildberries_cards_fetcher=lambda url, timeout: (
+                cards_calls.append({"url": url, "timeout": timeout}) or cards_response
+            ),
             now=NOW,
         ),
     )
@@ -346,14 +347,13 @@ def test_wildberries_curl_strategy_uses_cards_api_product_data(
         result.image_url
         == "https://basket-26.wbbasket.ru/vol4656/part465676/465676229/images/big/1.webp"
     )
-    assert transport.calls == [
+    assert transport.calls == []
+    assert cards_calls == [
         {
             "url": (
                 "https://card.wb.ru/cards/v4/detail?"
                 "appType=1&curr=rub&dest=-1257786&spp=30&nm=465676229"
             ),
-            "headers": None,
-            "proxy_url": None,
             "timeout": 7,
         }
     ]

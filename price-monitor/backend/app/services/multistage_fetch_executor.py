@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import json
+import time
+import urllib.error
+import urllib.request
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
@@ -95,6 +98,9 @@ class ProductFetchExecutionContext:
     health_recorder: Callable[..., Any] = record_source_event
     quarantine_policy: Callable[..., Any] = apply_source_quarantine_policy
     schema_resolver: Callable[[TrackedProduct], Any] | None = None
+    wildberries_cards_fetcher: (
+        Callable[[str, float | None], TransportResponse] | None
+    ) = None
 
 
 class FetchPipelineFailed(Exception):
@@ -296,12 +302,9 @@ def _execute_curl_cffi_strategy(
     timeout: float | None,
 ) -> tuple[PriceFetchResult, TransportResponse]:
     if tracked_product.source == "wildberries":
-        response = _fetch_with_curl(
-            context,
-            _wildberries_cards_api_url(tracked_product.external_product_id),
-            proxy_url=None,
-            timeout=timeout,
-        )
+        url = _wildberries_cards_api_url(tracked_product.external_product_id)
+        fetcher = context.wildberries_cards_fetcher or _fetch_wildberries_cards_response
+        response = fetcher(url, timeout)
         result = _wildberries_result_from_cards_response(
             response,
             tracked_product,
@@ -416,6 +419,56 @@ def _fetch_with_curl(
         error._fetch_metadata = _metadata_from_transport_response(response)  # type: ignore[attr-defined]
         raise error
     return response
+
+
+def _fetch_wildberries_cards_response(
+    url: str,
+    timeout: float | None,
+) -> TransportResponse:
+    started = time.monotonic()
+    request = urllib.request.Request(
+        url,
+        headers={
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout or 5.0) as response:
+            body = response.read()
+            elapsed_ms = int((time.monotonic() - started) * 1000)
+            return TransportResponse(
+                status_code=response.status,
+                headers=dict(response.headers.items()),
+                text=body.decode(response.headers.get_content_charset() or "utf-8"),
+                content_type=response.headers.get("Content-Type", ""),
+                elapsed_ms=elapsed_ms,
+                final_url=response.url,
+            )
+    except TimeoutError as exc:
+        raise FetchError("timeout") from exc
+    except urllib.error.HTTPError as exc:
+        body = exc.read()
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        error = FetchError(_http_error_type(exc.code))
+        error._fetch_metadata = _AttemptMetadata(  # type: ignore[attr-defined]
+            http_status=exc.code,
+            response_ms=elapsed_ms,
+            bytes_downloaded=len(body),
+        )
+        raise error from exc
+    except urllib.error.URLError as exc:
+        raise FetchError("source_unavailable") from exc
+
+
+def _http_error_type(status_code: int) -> str:
+    if status_code == 403:
+        return "http_403"
+    if status_code == 429:
+        return "http_429"
+    if status_code >= 500:
+        return "source_unavailable"
+    return "bad_content"
 
 
 def _result_from_raw_response(
