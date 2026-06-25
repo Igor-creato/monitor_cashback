@@ -70,6 +70,24 @@ def test_backend_compose_exposes_object_storage_environment() -> None:
     )
 
 
+def test_compose_runs_fetch_worker_and_scheduler() -> None:
+    services = _compose()["services"]
+
+    worker = services["celery-worker"]
+    beat = services["celery-beat"]
+
+    assert worker["command"] == (
+        "celery -A app.celery_app.celery_app worker --loglevel=INFO"
+    )
+    assert beat["command"] == (
+        "celery -A app.celery_app.celery_app beat --loglevel=INFO"
+    )
+    assert worker["environment"] == services["backend-api"]["environment"]
+    assert beat["environment"] == services["backend-api"]["environment"]
+    assert worker["depends_on"]["rabbitmq"]["condition"] == "service_started"
+    assert beat["depends_on"]["rabbitmq"]["condition"] == "service_started"
+
+
 def test_env_example_contains_local_minio_object_storage_defaults() -> None:
     values = _env_example()
 
