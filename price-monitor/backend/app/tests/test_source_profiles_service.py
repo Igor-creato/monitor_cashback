@@ -68,8 +68,8 @@ def test_ali_and_example_sources_use_medium_profile() -> None:
         assert profile.enabled is True
 
 
-def test_ozon_and_demo_sources_use_heavy_profile() -> None:
-    for source_code in ("demo_store", "ozon"):
+def test_demo_source_uses_heavy_profile() -> None:
+    for source_code in ("demo_store",):
         profile = select_default_profile_for_source(source_code)
 
         assert profile.source_code == source_code
@@ -81,6 +81,20 @@ def test_ozon_and_demo_sources_use_heavy_profile() -> None:
         assert profile.extraction_mode == "hybrid"
         assert profile.image_policy == "copy_to_object_storage"
         assert profile.enabled is True
+
+
+def test_ozon_uses_public_page_http_profile() -> None:
+    profile = select_default_profile_for_source("ozon")
+
+    assert profile.source_code == "ozon"
+    assert profile.difficulty_class == "light"
+    assert profile.preferred_transport == "curl_cffi"
+    assert profile.fallback_transports == ["direct_http"]
+    assert profile.proxy_tier_policy == "cheap_first"
+    assert profile.browser_required is False
+    assert profile.extraction_mode == "ozon_public_page"
+    assert profile.image_policy == "copy_to_object_storage"
+    assert profile.enabled is True
 
 
 def test_unknown_source_returns_safe_disabled_default() -> None:

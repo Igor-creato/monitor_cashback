@@ -124,7 +124,7 @@ def test_heavy_source_uses_residential_proxy_with_browser_fallback_when_allowed(
     db_session: Session,
 ) -> None:
     decision = select_fetch_strategy(
-        "ozon",
+        "demo_store",
         session=db_session,
         user_limits=_user_limits(tariff="pro", browser_fallback_allowed=True),
         now=NOW,
@@ -137,6 +137,19 @@ def test_heavy_source_uses_residential_proxy_with_browser_fallback_when_allowed(
     assert decision.cost_level == "expensive"
     assert decision.allow_fallback is True
     assert "camoufox_browser" in decision.reason
+
+
+def test_ozon_public_page_source_uses_free_curl_strategy(
+    db_session: Session,
+) -> None:
+    decision = select_fetch_strategy("ozon", session=db_session, now=NOW)
+
+    assert decision.strategy == "curl_cffi_http"
+    assert decision.proxy_required is False
+    assert decision.proxy_tier is None
+    assert decision.browser_required is False
+    assert decision.cost_level == "free"
+    assert decision.allow_fallback is False
 
 
 def test_quarantined_source_returns_quarantine(db_session: Session) -> None:

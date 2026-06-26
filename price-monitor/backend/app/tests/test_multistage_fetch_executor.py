@@ -438,6 +438,64 @@ def test_wildberries_proxy_strategy_uses_cards_api_without_proxy_lease(
     assert attempt.status == "success"
 
 
+def test_ozon_curl_strategy_uses_public_page_parser_without_proxy_or_wb_api(
+    db_session: Session,
+) -> None:
+    from app.services.multistage_fetch_executor import (
+        ProductFetchExecutionContext,
+        execute_product_fetch,
+    )
+
+    product = _product(db_session, source="ozon")
+    product.external_product_id = "123456789"
+    product.canonical_url = "https://www.ozon.ru/product/smartfon-test-123456789/"
+    db_session.commit()
+    transport = _FakeCurlTransport([])
+    ozon_calls: list[dict[str, Any]] = []
+
+    result = execute_product_fetch(
+        product.id,
+        ProductFetchExecutionContext(
+            session=db_session,
+            strategy_selector=_selector(_decision("curl_cffi_http")),
+            find_feed_item=lambda tracked_product, *, session: None,
+            curl_transport=transport,
+            ozon_public_fetcher=lambda tracked_product, timeout: (
+                ozon_calls.append(
+                    {
+                        "source": tracked_product.source,
+                        "url": tracked_product.canonical_url,
+                        "timeout": timeout,
+                    }
+                )
+                or _price_result(product_name="Ozon Public Product")
+            ),
+            wildberries_cards_fetcher=lambda url, timeout: pytest.fail(
+                "ozon must not call wildberries cards API"
+            ),
+            proxy_leaser=lambda *args, **kwargs: pytest.fail(
+                "ozon public page path should not lease a proxy"
+            ),
+            now=NOW,
+        ),
+    )
+
+    assert result.product_name == "Ozon Public Product"
+    assert transport.calls == []
+    assert ozon_calls == [
+        {
+            "source": "ozon",
+            "url": "https://www.ozon.ru/product/smartfon-test-123456789/",
+            "timeout": 7,
+        }
+    ]
+    attempt = _attempts(db_session)[0]
+    assert attempt.strategy == "curl_cffi_http"
+    assert attempt.product_data_found is True
+    assert attempt.price_found is True
+    assert attempt.image_found is True
+
+
 def test_cheap_proxy_strategy_leases_proxy_and_reports_success(
     db_session: Session,
 ) -> None:

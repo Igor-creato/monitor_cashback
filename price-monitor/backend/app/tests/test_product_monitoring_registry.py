@@ -92,9 +92,25 @@ def test_supported_wildberries_url_normalizes_to_stable_identity() -> None:
     assert result.variant_hash is None
 
 
-def test_access_required_store_fails_closed_with_reason() -> None:
-    with pytest.raises(StoreUrlNormalizationError, match="source_requires_access"):
-        normalize_store_product_url("https://www.ozon.ru/product/test-123/")
+def test_supported_ozon_url_normalizes_to_numeric_sku_identity() -> None:
+    result = normalize_store_product_url(
+        "https://www.ozon.ru/product/smartfon-test-123456789/"
+        "?utm_source=ad&from=share&region=msk"
+    )
+
+    assert result.source == "ozon"
+    assert result.external_product_id == "123456789"
+    assert (
+        result.canonical_url
+        == "https://www.ozon.ru/product/smartfon-test-123456789/?region=msk"
+    )
+    assert result.region_code == "msk"
+    assert result.variant_hash is None
+
+
+def test_ozon_url_without_numeric_sku_fails_closed() -> None:
+    with pytest.raises(StoreUrlNormalizationError, match="unsupported_source"):
+        normalize_store_product_url("https://www.ozon.ru/product/test-product/")
 
 
 def test_unknown_store_fails_closed_with_safe_reason() -> None:

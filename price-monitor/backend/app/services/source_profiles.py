@@ -24,7 +24,8 @@ class SourceProfile:
 
 LIGHT_SOURCE_CODES = frozenset({"testshop", "wb", "wildberries"})
 MEDIUM_SOURCE_CODES = frozenset({"example_market", "ali", "aliexpress", "amazon"})
-HEAVY_SOURCE_CODES = frozenset({"demo_store", "ozon"})
+HEAVY_SOURCE_CODES = frozenset({"demo_store"})
+OZON_SOURCE_CODES = frozenset({"ozon"})
 
 
 def get_source_profile(
@@ -43,6 +44,19 @@ def get_source_profile(
 
 
 def select_default_profile_for_source(source_code: str) -> SourceProfile:
+    if source_code in OZON_SOURCE_CODES:
+        return SourceProfile(
+            source_code=source_code,
+            difficulty_class="light",
+            preferred_transport="curl_cffi",
+            fallback_transports=["direct_http"],
+            proxy_tier_policy="cheap_first",
+            browser_required=False,
+            extraction_mode="ozon_public_page",
+            image_policy="copy_to_object_storage",
+            enabled=True,
+        )
+
     if source_code in LIGHT_SOURCE_CODES:
         return SourceProfile(
             source_code=source_code,

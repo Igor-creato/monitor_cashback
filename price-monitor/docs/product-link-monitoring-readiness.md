@@ -1,6 +1,6 @@
 # Product Link Monitoring Readiness
 
-Date: 2026-06-25
+Date: 2026-06-26
 Scope: product monitoring by URL only
 
 This report tracks the production-readiness state for the requested product-link
@@ -15,13 +15,16 @@ cross-store comparison.
   notifications use the existing backend pipeline.
 - Unsupported or access-gated stores fail closed and are listed below with a
   reason.
+- Ozon manual product-link monitoring is enabled only for public product pages:
+  no marketplace login, password, cookie, token, private API, captcha bypass, or
+  fingerprint bypass is part of the implementation.
 
 ## Store Support Matrix
 
 | Store | Code | State | Strategy | Reason |
 | --- | --- | --- | --- | --- |
 | Wildberries | `wildberries` | supported | structured_data | First safe registry-backed URL normalization path; extraction remains fixture-gated before production enablement. |
-| Ozon | `ozon` | requires_access | none | Official consumer product-price API is not approved. |
+| Ozon | `ozon` | supported | public page structured data | Manual product-link monitoring only. Public page JSON-LD/HTML parser is fixture-backed; 403/429/captcha/login/price-missing states fail closed. |
 | Yandex Market | `yandex_market` | requires_access | none | Documented price/stock APIs require seller API-key scoped access. |
 | DNS | `dns` | requires_access | none | Stable public product data source is not approved. |
 | Samokat | `samokat` | requires_access | none | Grocery catalog depends on region/session data. |
@@ -89,6 +92,42 @@ Verification:
   Starlette/httpx deprecation warning.
 - `rtk python -m ruff check .`: passed.
 - `rtk python -m ruff format --check .`: 174 files already formatted.
+
+## 2026-06-26 Ozon Public Product-Link Monitoring
+
+Completed scope:
+
+- `https://www.ozon.ru/product/...-<numeric-sku>/` normalizes to `source=ozon`
+  with stable numeric `external_product_id`.
+- Ozon uses a public-page HTTP profile (`curl_cffi` first, no required browser
+  or proxy).
+- Fetch executor routes Ozon through a dedicated public-page parser hook instead
+  of Wildberries cards API, marketplace sessions, cookies, tokens, or private
+  API calls.
+- Parser extracts product name, current price, optional old price, currency,
+  availability, seller, and image from fixture-backed JSON-LD.
+- Captcha/login-required markers and missing prices fail closed through typed
+  fetch errors.
+- Existing watchlist, fetch job runner, price history, and chart services remain
+  the runtime path.
+
+Checks run before the final full-suite boundary:
+
+- Ozon URL normalization targeted tests: 4 passed.
+- Ozon source profile targeted test: 1 passed.
+- Ozon public-page parser tests: 5 passed.
+- Ozon executor/watchlist targeted tests: 3 passed.
+- Ozon product-link E2E service test: 1 passed.
+
+Final local verification:
+
+- Related product-link monitoring boundary:
+  `rtk python -m pytest app/tests/test_product_monitoring_registry.py app/tests/test_product_url_normalizer.py app/tests/test_watchlist_api.py app/tests/test_multistage_fetch_executor.py app/tests/test_fetch_job_runner.py app/tests/test_price_chart_api.py app/tests/test_watchlist_ui_api.py app/tests/test_product_monitoring_ozon.py app/tests/test_product_link_monitoring_e2e.py app/tests/test_source_profiles_service.py -q`:
+  115 passed, 1 existing Starlette/httpx deprecation warning.
+- Full backend `rtk python -m pytest -q`: 552 passed, 1 existing
+  Starlette/httpx deprecation warning.
+- `rtk python -m ruff check .`: passed.
+- `rtk python -m ruff format --check .`: 184 files already formatted.
 
 ## Intentional Non-Goals
 

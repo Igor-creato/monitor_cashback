@@ -107,6 +107,21 @@ def test_normalizer_accepts_supported_registry_source() -> None:
     )
 
 
-def test_normalizer_fails_closed_for_requires_access_registry_source() -> None:
-    with pytest.raises(UnsupportedSourceError, match="source_requires_access"):
-        normalize_product_url("https://www.ozon.ru/product/test-123/")
+def test_normalizer_accepts_supported_ozon_public_product_source() -> None:
+    result = normalize_product_url(
+        "https://www.ozon.ru/product/smartfon-test-123456789/"
+        "?utm_source=ad&from=share&region=msk"
+    )
+
+    assert result.source == "ozon"
+    assert result.external_product_id == "123456789"
+    assert (
+        result.canonical_url
+        == "https://www.ozon.ru/product/smartfon-test-123456789/?region=msk"
+    )
+    assert result.region_code == "msk"
+
+
+def test_normalizer_fails_closed_for_ozon_url_without_numeric_sku() -> None:
+    with pytest.raises(UnsupportedSourceError, match="unsupported_source"):
+        normalize_product_url("https://www.ozon.ru/product/test-product/")

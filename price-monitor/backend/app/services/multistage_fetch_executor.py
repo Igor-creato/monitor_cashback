@@ -24,6 +24,7 @@ from app.fetchers.browser_fetcher import BrowserFetchResult, BrowserPageFetcher
 from app.fetchers.camoufox_fetcher import CamoufoxUnavailableError, fetch_with_camoufox
 from app.fetchers.http_fetcher import HTTPPriceFetcher
 from app.models.monitoring import TrackedProduct
+from app.product_monitoring.ozon import parse_ozon_public_page
 from app.services.fetch_attempts import record_fetch_attempt
 from app.services.fetch_strategy import FetchStrategyDecision, select_fetch_strategy
 from app.services.product_feeds import (
@@ -104,6 +105,9 @@ class ProductFetchExecutionContext:
     schema_resolver: Callable[[TrackedProduct], Any] | None = None
     wildberries_cards_fetcher: (
         Callable[[str, float | None], TransportResponse] | None
+    ) = None
+    ozon_public_fetcher: (
+        Callable[[TrackedProduct, float | None], PriceFetchResult] | None
     ) = None
 
 
@@ -265,6 +269,14 @@ def _execute_strategy(
         )
         return result, _metadata_from_transport(response, result)
 
+    if tracked_product.source == "ozon" and strategy in WILDBERRIES_CARDS_STRATEGIES:
+        result = _execute_ozon_public_page_strategy(
+            tracked_product,
+            context,
+            timeout=decision.timeout_seconds,
+        )
+        return result, _metadata_from_result(result)
+
     if strategy == "direct_http":
         fetcher = context.http_fetcher or HTTPPriceFetcher(
             timeout=decision.timeout_seconds
@@ -341,6 +353,27 @@ def _execute_wildberries_cards_strategy(
         context,
     )
     return result, response
+
+
+def _execute_ozon_public_page_strategy(
+    tracked_product: TrackedProduct,
+    context: ProductFetchExecutionContext,
+    *,
+    timeout: float | None,
+) -> PriceFetchResult:
+    if context.ozon_public_fetcher is not None:
+        return context.ozon_public_fetcher(tracked_product, timeout)
+
+    response = _fetch_with_curl(
+        context,
+        tracked_product.canonical_url,
+        proxy_url=None,
+        timeout=timeout,
+    )
+    return parse_ozon_public_page(
+        response.text,
+        fetched_at=context.now or datetime.now(),
+    )
 
 
 def _execute_proxy_http_strategy(

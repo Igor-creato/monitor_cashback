@@ -56,10 +56,9 @@ _REGISTRY: tuple[StoreRegistryEntry, ...] = (
         code="ozon",
         display_name="Ozon",
         hostnames=("ozon.ru", "www.ozon.ru"),
-        support_state="requires_access",
-        fetch_strategy="none",
-        url_patterns=(ProductUrlPattern("/product/"),),
-        reason="source_requires_access: consumer price API is not approved",
+        support_state="supported",
+        fetch_strategy="structured_data",
+        url_patterns=(ProductUrlPattern("/product/", r"^/product/.+-(\d+)/?$"),),
     ),
     StoreRegistryEntry(
         code="yandex_market",
@@ -299,6 +298,7 @@ def _extract_external_product_id(path: str, entry: StoreRegistryEntry) -> str:
             match = re.search(pattern.id_pattern, path)
             if match is not None and match.group(1):
                 return match.group(1)
+            continue
         path_parts = [part for part in path.split("/") if part]
         if len(path_parts) >= 2 and path_parts[1]:
             return path_parts[1]

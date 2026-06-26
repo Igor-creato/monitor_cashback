@@ -400,7 +400,7 @@ def test_cost_budget_exhaustion_skips_expensive_candidate(
     product = _product(
         db_session,
         product_id=1,
-        source="ozon",
+        source="demo_store",
         last_checked_at=NOW - timedelta(hours=7),
     )
     _subscription(db_session, product, external_user_id="pro-1")
@@ -424,7 +424,7 @@ def test_free_only_expensive_source_is_skipped_without_consuming_budget(
     product = _product(
         db_session,
         product_id=1,
-        source="ozon",
+        source="demo_store",
         last_checked_at=NOW - timedelta(hours=7),
     )
     _subscription(db_session, product, external_user_id="free-1")

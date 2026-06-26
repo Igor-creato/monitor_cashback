@@ -1070,6 +1070,37 @@ def test_admin_enabled_store_domain_can_be_added_to_watchlist(
     )
 
 
+def test_ozon_public_product_url_can_be_added_to_watchlist(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    response = _post_watchlist_item(
+        client,
+        _post_payload(
+            product_url=(
+                "https://www.ozon.ru/product/smartfon-test-123456789/"
+                "?utm_source=ad&from=share&region=msk"
+            )
+        ),
+    )
+
+    product = db_session.scalar(select(TrackedProduct))
+    job = db_session.scalar(select(FetchJob))
+
+    assert response.status_code == 200
+    assert response.json()["source"] == "ozon"
+    assert response.json()["external_product_id"] == "123456789"
+    assert (
+        response.json()["product_url"]
+        == "https://www.ozon.ru/product/smartfon-test-123456789/?region=msk"
+    )
+    assert product is not None
+    assert product.source == "ozon"
+    assert product.external_product_id == "123456789"
+    assert job is not None
+    assert job.tracked_product_id == product.id
+
+
 def test_disabled_store_domain_is_not_supported_for_watchlist(
     client: TestClient,
     db_session: Session,
