@@ -15,12 +15,29 @@ method is explicitly approved. The default state for every marketplace is no-go.
 
 | Marketplace | Current posture | Reason |
 | --- | --- | --- |
-| Ozon | No-go for consumer cart/favorites adapters | Current checked OAuth material is for Seller API/private or public seller applications, not a confirmed consumer cart/favorites API for Savello users. |
+| Ozon | `blocked_until_credentials` / `requires_official_access` for consumer cart/favorites adapters | Current checked OAuth material is for Seller API/private or public seller applications, not a confirmed consumer cart/favorites API for Savello users. |
 | Wildberries | No-go for seller-portal scraping; unresolved for consumer cart/favorites | Official WB API uses API tokens and states that seller portal integration without WB API is prohibited. No approved consumer cart/favorites API has been recorded. |
 | Yandex Market | No-go for OAuth-first design; unresolved for consumer cart/favorites | Partner API documentation recommends API-Key and marks OAuth as outdated. No approved consumer cart/favorites API has been recorded. |
 
 This posture may change only through a follow-up source approval that cites live
 official documentation or a legal/security review.
+
+## Ozon browser redirect gate
+
+For the "works in any ordinary browser" requirement, Ozon remains
+`requires_official_access`. An ordinary browser redirect cannot expose Ozon cookies or tokens to Savello because same-origin isolation keeps Ozon session material scoped to Ozon-controlled origins. A redirect-only flow is acceptable only if official Ozon consumer OAuth or an equivalent official application authorization exists for buyer cart/favorites access and returns a scoped code or token to a Savello callback.
+
+The checked Ozon OAuth/application documentation currently describes seller or
+application authorization surfaces and does not confirm buyer cart/favorites
+scopes for Savello users. Until Ozon or an approved partner contract provides
+that consumer API, the user-facing Ozon connection state must stay
+`requires_official_access` / `blocked_until_credentials`.
+
+YoloPrice is only a UX reference for the desired price-monitoring result. Its
+public site does not prove that Savello has an approved Ozon consumer OAuth
+contract or buyer cart/favorites API access.
+
+Server-side browser automation is not approved for this gap; server-side browser automation is not approved as an Ozon connection method. Proxy rotation for bypassing protection is not approved; proxy rotation for bypassing protection is not approved as a source-access escalation. Captcha, fingerprint, bot-detection, or access-control pressure must keep the source blocked or limited rather than escalating into bypass behavior.
 
 ## Allowed Principles
 

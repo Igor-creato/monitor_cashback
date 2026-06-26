@@ -54,3 +54,37 @@ def test_mobile_webview_flow_decision_documents_contract_and_boundaries() -> Non
 
     for fragment in prohibited_fragments:
         assert fragment not in content
+
+
+def test_ozon_browser_redirect_access_posture_blocks_cookie_capture() -> None:
+    doc_path = (
+        Path(__file__).resolve().parents[3]
+        / "docs"
+        / "marketplace-tos-and-access-posture-decision.md"
+    )
+    content = doc_path.read_text(encoding="utf-8")
+
+    required_fragments = [
+        "Ozon browser redirect gate",
+        "`requires_official_access`",
+        "ordinary browser redirect cannot expose Ozon cookies or tokens",
+        "same-origin isolation",
+        "official Ozon consumer OAuth",
+        "buyer cart/favorites",
+        "server-side browser automation is not approved",
+        "proxy rotation for bypassing protection is not approved",
+        "YoloPrice is only a UX reference",
+        "blocked_until_credentials",
+    ]
+
+    for fragment in required_fragments:
+        assert fragment in content
+
+    prohibited_fragments = [
+        "web redirect may capture cookies",
+        "серверный браузер утверждён",
+        "proxy rotation approved",
+    ]
+
+    for fragment in prohibited_fragments:
+        assert fragment not in content
