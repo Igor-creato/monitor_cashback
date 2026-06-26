@@ -6,7 +6,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.db import SessionLocal
-from app.models.monitoring import SourceFetchProfile
+from app.models.monitoring import SourceFetchProfile, Store, StoreSource
 
 
 @dataclass(frozen=True)
@@ -122,8 +122,86 @@ def _get_source_profile(source_code: str, session: Session) -> SourceProfile:
         select(SourceFetchProfile).where(SourceFetchProfile.source_code == source_code)
     )
     if stored_profile is None:
+        store_source = _get_enabled_store_source(source_code, session)
+        if store_source is not None:
+            return _profile_from_store_source(store_source)
         return select_default_profile_for_source(source_code)
     return _serialize_profile(stored_profile)
+
+
+def _get_enabled_store_source(
+    source_code: str,
+    session: Session,
+) -> StoreSource | None:
+    return session.scalar(
+        select(StoreSource)
+        .join(Store)
+        .where(
+            StoreSource.source_code == source_code,
+            StoreSource.enabled.is_(True),
+            Store.enabled.is_(True),
+        )
+        .limit(1)
+    )
+
+
+def _profile_from_store_source(source: StoreSource) -> SourceProfile:
+    difficulty_class = _difficulty_for_store_source(source)
+    preferred_transport = _preferred_transport_for_store_source(
+        difficulty_class,
+        source.proxy_tier_policy,
+    )
+    return SourceProfile(
+        source_code=source.source_code,
+        difficulty_class=difficulty_class,
+        preferred_transport=preferred_transport,
+        fallback_transports=_fallback_transports_for_store_source(
+            difficulty_class,
+            source.proxy_tier_policy,
+        ),
+        proxy_tier_policy=source.proxy_tier_policy,
+        browser_required=difficulty_class in {"medium", "heavy"},
+        extraction_mode=source.extraction_mode,
+        image_policy="copy_to_object_storage",
+        enabled=True,
+    )
+
+
+def _difficulty_for_store_source(source: StoreSource) -> str:
+    if source.proxy_tier_policy == "premium_only" or source.extraction_mode == "hybrid":
+        return "heavy"
+    if (
+        source.proxy_tier_policy == "residential_first"
+        or source.extraction_mode == "css"
+    ):
+        return "medium"
+    return "light"
+
+
+def _preferred_transport_for_store_source(
+    difficulty_class: str,
+    proxy_tier_policy: str,
+) -> str:
+    if difficulty_class == "heavy":
+        return "camoufox"
+    if difficulty_class == "medium":
+        return "crawl4ai"
+    if proxy_tier_policy == "cheap_first":
+        return "curl_cffi"
+    return "direct_http"
+
+
+def _fallback_transports_for_store_source(
+    difficulty_class: str,
+    proxy_tier_policy: str,
+) -> list[str]:
+    if difficulty_class == "heavy":
+        return ["playwright"]
+    if difficulty_class == "medium":
+        return ["playwright", "curl_cffi"]
+    if proxy_tier_policy == "cheap_first":
+        return ["direct_http"]
+    return []
 
 
 def _serialize_profile(profile: SourceFetchProfile) -> SourceProfile:

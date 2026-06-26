@@ -14,6 +14,8 @@ from app.models.monitoring import (
     SourceFetchProfile,
     SourceHealthEvent,
     SourceQuarantineState,
+    Store,
+    StoreSource,
 )
 from app.services.fetch_strategy import select_fetch_strategy
 from app.services.user_limits import (
@@ -150,6 +152,41 @@ def test_ozon_public_page_source_uses_free_curl_strategy(
     assert decision.browser_required is False
     assert decision.cost_level == "free"
     assert decision.allow_fallback is False
+
+
+def test_enabled_admin_store_source_can_be_fetched(db_session: Session) -> None:
+    store = Store(
+        store_code="dns_shop_ru",
+        display_name="DNS",
+        enabled=True,
+    )
+    db_session.add(store)
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code="dns_shop_ru-default",
+            display_name="DNS default",
+            source_type="api",
+            enabled=True,
+            extraction_mode="json",
+            proxy_tier_policy="none",
+            domains_json=["dns-shop.ru", "www.dns-shop.ru"],
+        )
+    )
+    db_session.commit()
+
+    decision = select_fetch_strategy(
+        "dns_shop_ru-default",
+        session=db_session,
+        now=NOW,
+    )
+
+    assert decision.strategy == "direct_http"
+    assert decision.proxy_required is False
+    assert decision.browser_required is False
+    assert decision.cost_level == "free"
+    assert decision.reason == "light_source_healthy"
 
 
 def test_quarantined_source_returns_quarantine(db_session: Session) -> None:

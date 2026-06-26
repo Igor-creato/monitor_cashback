@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from app.db import Base
-from app.models.monitoring import FetchJob, SourceFetchProfile
+from app.models.monitoring import FetchJob, SourceFetchProfile, Store, StoreSource
 from app.services.source_profiles import (
     get_source_profile,
     is_browser_required,
@@ -144,6 +144,43 @@ def test_get_source_profile_reads_persisted_override(db_session: Session) -> Non
     assert profile.extraction_mode == "hybrid"
     assert profile.image_policy == "copy_to_object_storage"
     assert profile.enabled is False
+
+
+def test_get_source_profile_uses_enabled_admin_store_source(
+    db_session: Session,
+) -> None:
+    store = Store(
+        store_code="dns_shop_ru",
+        display_name="DNS",
+        enabled=True,
+    )
+    db_session.add(store)
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code="dns_shop_ru-default",
+            display_name="DNS default",
+            source_type="api",
+            enabled=True,
+            extraction_mode="json",
+            proxy_tier_policy="none",
+            domains_json=["dns-shop.ru", "www.dns-shop.ru"],
+        )
+    )
+    db_session.commit()
+
+    profile = get_source_profile("dns_shop_ru-default", session=db_session)
+
+    assert profile.source_code == "dns_shop_ru-default"
+    assert profile.difficulty_class == "light"
+    assert profile.preferred_transport == "direct_http"
+    assert profile.fallback_transports == []
+    assert profile.proxy_tier_policy == "none"
+    assert profile.browser_required is False
+    assert profile.extraction_mode == "json"
+    assert profile.image_policy == "copy_to_object_storage"
+    assert profile.enabled is True
 
 
 def test_is_browser_required_uses_selected_profile(db_session: Session) -> None:
