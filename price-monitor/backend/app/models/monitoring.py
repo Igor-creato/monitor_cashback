@@ -1055,6 +1055,7 @@ class Store(Base):
     id: Mapped[int] = mapped_column(_bigint_primary_key(), primary_key=True)
     store_code: Mapped[str] = mapped_column(String(64), nullable=False)
     display_name: Mapped[str] = mapped_column(String(255), nullable=False)
+    logo_url: Mapped[str | None] = mapped_column(String(2048), nullable=True)
     enabled: Mapped[bool] = mapped_column(
         Boolean,
         nullable=False,

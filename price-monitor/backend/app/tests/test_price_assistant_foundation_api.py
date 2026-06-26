@@ -288,6 +288,15 @@ def test_sync_session_items_are_idempotent_and_collections_are_owner_scoped(
     client: TestClient,
     db_session: Session,
 ) -> None:
+    db_session.add(
+        Store(
+            store_code="ozon",
+            display_name="Ozon",
+            enabled=True,
+            logo_url="https://cdn.example.com/logos/ozon.svg",
+        )
+    )
+    db_session.commit()
     connection_id = _create_connected_marketplace(client, db_session)
     sync_payload = {
         "site_id": SITE_ID,
@@ -355,6 +364,10 @@ def test_sync_session_items_are_idempotent_and_collections_are_owner_scoped(
     assert db_session.scalar(select(ImportedItem).where()) is not None
     assert len(db_session.scalars(select(ImportedItem)).all()) == 1
     assert own_collections.status_code == 200
+    assert own_collections.json()["items"][0]["source_display_name"] == "Ozon"
+    assert own_collections.json()["items"][0]["source_logo_url"] == (
+        "https://cdn.example.com/logos/ozon.svg"
+    )
     assert own_collections.json()["items"][0]["items"][0]["external_item_id"] == (
         "cart-line-1"
     )
@@ -624,7 +637,12 @@ def test_product_compare_is_owner_scoped_and_local_only(
         last_price=Decimal("1000.00"),
         currency="RUB",
     )
-    store = Store(store_code="dns", display_name="DNS", enabled=True)
+    store = Store(
+        store_code="dns",
+        display_name="DNS",
+        enabled=True,
+        logo_url="https://cdn.example.com/logos/dns.svg",
+    )
     db_session.add_all([product, store])
     db_session.flush()
     db_session.add(
@@ -676,6 +694,7 @@ def test_product_compare_is_owner_scoped_and_local_only(
             "offer_id": 1,
             "store_code": "dns",
             "store_display_name": "DNS",
+            "store_logo_url": "https://cdn.example.com/logos/dns.svg",
             "source_code": "dns",
             "region_code": "default",
             "product_url": "https://dns-shop.local/product/10",

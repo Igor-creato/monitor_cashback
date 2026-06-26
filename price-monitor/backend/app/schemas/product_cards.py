@@ -30,6 +30,7 @@ class ProductCardResponse(BaseModel):
     image_url: str | None = None
     source: str
     source_display_name: str | None = None
+    source_logo_url: str | None = None
     canonical_url: str
     last_price: str | None = None
     last_old_price: str | None = None

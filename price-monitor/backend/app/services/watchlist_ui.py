@@ -13,6 +13,7 @@ from app.schemas.watchlist_ui import (
 )
 from app.services.price_chart import current_utc_datetime, summarize_price_history
 from app.services.product_cards import build_product_card
+from app.services.store_branding import get_store_brand_map
 from app.services.user_regions import get_default_user_region
 
 CHART_SUMMARY_DAYS = 30
@@ -42,6 +43,14 @@ def build_watchlist_ui_response(
     history_by_product = (
         _history_by_product_id(session, subscriptions) if include_chart_summary else {}
     )
+    brand_by_source = get_store_brand_map(
+        session,
+        [
+            subscription.tracked_product.source
+            for subscription in subscriptions
+            if subscription.tracked_product is not None
+        ],
+    )
 
     return WatchlistUiResponse(
         items=[
@@ -49,6 +58,11 @@ def build_watchlist_ui_response(
                 subscription,
                 chart_history=history_by_product.get(
                     subscription.tracked_product_id,
+                ),
+                source_logo_url=(
+                    brand_by_source.get(subscription.tracked_product.source).logo_url
+                    if brand_by_source.get(subscription.tracked_product.source)
+                    else None
                 ),
             )
             for subscription in subscriptions
@@ -141,8 +155,13 @@ def _build_item(
     subscription: UserProductSubscription,
     *,
     chart_history: list[PriceHistory] | None,
+    source_logo_url: str | None = None,
 ) -> WatchlistUiItemResponse:
-    card = build_product_card(subscription.tracked_product, subscription)
+    card = build_product_card(
+        subscription.tracked_product,
+        subscription,
+        source_logo_url=source_logo_url,
+    )
     chart_summary = (
         _build_chart_summary(chart_history) if chart_history is not None else None
     )
@@ -154,6 +173,7 @@ def _build_item(
         price_region_text=f"Цена для региона {region_code}",
         title=card.title,
         source_display_name=card.source_display_name or card.source,
+        source_logo_url=card.source_logo_url,
         image_url=card.image_url,
         current_price=card.last_price,
         currency=card.currency,

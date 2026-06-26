@@ -103,6 +103,13 @@ def test_tracked_product_card_columns_are_registered() -> None:
     assert tracked_products.columns["source_display_name"].nullable is True
 
 
+def test_store_logo_column_is_registered() -> None:
+    stores = Base.metadata.tables["stores"]
+
+    assert "logo_url" in stores.columns
+    assert stores.columns["logo_url"].nullable is True
+
+
 def test_monitoring_foreign_keys_point_to_tracked_products() -> None:
     assert ("tracked_product_id", "tracked_products", "id") in _foreign_key_targets(
         "user_product_subscriptions"

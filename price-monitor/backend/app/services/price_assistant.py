@@ -57,6 +57,7 @@ from app.schemas.price_assistant import (
     SyncSessionResponse,
 )
 from app.services.marketplace_sessions import record_marketplace_sync_auth_failure
+from app.services.store_branding import StoreBrand, get_store_brand_map
 
 AUTH_FAILURE_REASONS = frozenset({"401", "403", "login_required", "expired"})
 
@@ -231,8 +232,18 @@ def list_collections(
         )
         .order_by(ImportedCollection.id.asc())
     ).all()
+    brand_by_source = get_store_brand_map(
+        session,
+        [collection.source for collection in collections],
+    )
     return CollectionsResponse(
-        items=[_serialize_collection(collection) for collection in collections]
+        items=[
+            _serialize_collection(
+                collection,
+                brand_by_source.get(collection.source),
+            )
+            for collection in collections
+        ]
     )
 
 
@@ -357,6 +368,8 @@ def create_admin_store(
     site_id: str | None = None,
 ) -> AdminStoreResponse:
     _validate_homepage_url(request.homepage_url)
+    logo_url = _normalize_logo_url(request.logo_url)
+    _validate_logo_url(logo_url)
     store_code, display_name, homepage_url, domains = _store_identity_from_request(
         request
     )
@@ -367,12 +380,14 @@ def create_admin_store(
         store = Store(
             store_code=store_code,
             display_name=display_name,
+            logo_url=logo_url,
             enabled=request.enabled,
             homepage_url=homepage_url,
         )
         session.add(store)
     else:
         store.display_name = display_name
+        store.logo_url = logo_url
         store.enabled = request.enabled
         store.homepage_url = homepage_url
     session.flush()
@@ -436,12 +451,19 @@ def patch_admin_store(
     if store is None:
         return None
     if patch.display_name is not None:
-        store.display_name = patch.display_name
+        display_name = patch.display_name.strip()
+        if not display_name:
+            raise PriceAssistantError("display_name_required")
+        store.display_name = display_name
     if patch.enabled is not None:
         store.enabled = patch.enabled
     if patch.homepage_url is not None:
         _validate_homepage_url(patch.homepage_url)
         store.homepage_url = patch.homepage_url
+    if "logo_url" in patch.model_fields_set:
+        logo_url = _normalize_logo_url(patch.logo_url)
+        _validate_logo_url(logo_url)
+        store.logo_url = logo_url
     _add_admin_audit_event(
         session,
         event_type="price_assistant_store_updated",
@@ -780,11 +802,14 @@ def _serialize_sync_session(
 
 def _serialize_collection(
     collection: ImportedCollection,
+    brand: StoreBrand | None = None,
 ) -> ImportedCollectionResponse:
     return ImportedCollectionResponse(
         collection_id=collection.id,
         collection_type=collection.collection_type,
         source=collection.source,
+        source_display_name=brand.display_name if brand is not None else None,
+        source_logo_url=brand.logo_url if brand is not None else None,
         region_code=collection.region_code,
         status=collection.status,
         items=[
@@ -807,6 +832,7 @@ def _serialize_offer(offer: ProductOffer) -> ProductOfferResponse:
         offer_id=offer.id,
         store_code=offer.store.store_code,
         store_display_name=offer.store.display_name,
+        store_logo_url=offer.store.logo_url,
         source_code=offer.source_code,
         region_code=offer.region_code,
         product_url=offer.product_url,
@@ -834,8 +860,10 @@ def _serialize_search_item(
     return ProductSearchItemResponse(
         store_code=source.store.store_code,
         store_display_name=source.store.display_name,
+        store_logo_url=source.store.logo_url,
         source_code=source.source_code,
         source_display_name=source.display_name,
+        source_logo_url=source.store.logo_url,
         title=feed_item.title,
         product_url=feed_item.canonical_url,
         image_url=feed_item.image_url,
@@ -858,8 +886,10 @@ def _serialize_search_fallback(
     return ProductSearchItemResponse(
         store_code=source.store.store_code,
         store_display_name=source.store.display_name,
+        store_logo_url=source.store.logo_url,
         source_code=source.source_code,
         source_display_name=source.display_name,
+        source_logo_url=source.store.logo_url,
         title=None,
         product_url=None,
         image_url=None,
@@ -879,6 +909,7 @@ def _serialize_store(store: Store) -> AdminStoreResponse:
         store_id=store.id,
         store_code=store.store_code,
         display_name=store.display_name,
+        logo_url=store.logo_url,
         enabled=store.enabled,
         homepage_url=store.homepage_url,
         sources=[_serialize_store_source(source) for source in store.sources],
@@ -916,7 +947,9 @@ def _store_identity_from_request(
         raise PriceAssistantError("invalid_url")
     domains = _domains_for_homepage_hostname(hostname)
     store_code = request.store_code or _store_code_from_hostname(hostname)
-    display_name = request.display_name or _display_name_from_store_code(store_code)
+    display_name = request.display_name.strip()
+    if not display_name:
+        raise PriceAssistantError("display_name_required")
     return store_code, display_name, request.homepage_url, domains
 
 
@@ -1124,6 +1157,26 @@ def _validate_homepage_url(homepage_url: str | None) -> None:
         validate_fetchable_http_url(homepage_url)
     except UrlPolicyError as exc:
         raise PriceAssistantError("invalid_url") from exc
+
+
+def _normalize_logo_url(logo_url: str | None) -> str | None:
+    if logo_url is None:
+        return None
+    normalized = logo_url.strip()
+    return normalized or None
+
+
+def _validate_logo_url(logo_url: str | None) -> None:
+    if logo_url is None:
+        return
+    try:
+        validate_fetchable_http_url(logo_url)
+    except UrlPolicyError as exc:
+        raise PriceAssistantError("invalid_logo_url") from exc
+    parsed = urlparse(logo_url)
+    for key, _ in parse_qsl(parsed.query, keep_blank_values=True):
+        if _is_secret_like_key(key):
+            raise PriceAssistantError("invalid_logo_url")
 
 
 def _validate_product_url(product_url: str) -> None:

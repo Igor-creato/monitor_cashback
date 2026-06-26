@@ -457,6 +457,7 @@ def test_get_returns_only_current_users_active_subscriptions(
             "title": "Товар",
             "image_url": None,
             "source_display_name": None,
+            "source_logo_url": None,
             "canonical_url": "https://testshop.local/product/123",
             "last_price": None,
             "last_old_price": None,
@@ -681,6 +682,14 @@ def test_get_returns_product_card_fields(
     product.currency = "USD"
     product.last_availability = True
     product.last_checked_at = datetime(2026, 6, 8, 10, 0, tzinfo=UTC)
+    db_session.add(
+        Store(
+            store_code="testshop",
+            display_name="Test Shop",
+            enabled=True,
+            logo_url="https://cdn.example.com/logos/testshop.svg",
+        )
+    )
     db_session.commit()
 
     response = _get_watchlist_items(client)
@@ -693,6 +702,7 @@ def test_get_returns_product_card_fields(
     assert item["image_url"] == "https://cdn.example.com/images/products/123.jpg"
     assert item["source"] == "testshop"
     assert item["source_display_name"] == "Ozon"
+    assert item["source_logo_url"] == "https://cdn.example.com/logos/testshop.svg"
     assert item["canonical_url"] == "https://testshop.local/product/123"
     assert item["last_price"] == "809.70"
     assert item["last_old_price"] == "999.99"

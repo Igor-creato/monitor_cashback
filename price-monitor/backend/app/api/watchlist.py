@@ -28,6 +28,7 @@ from app.services.deeplink import (
 from app.services.fetch_job_dispatcher import dispatch_fetch_job
 from app.services.fetch_jobs import enqueue_fetch_job
 from app.services.product_cards import build_product_card
+from app.services.store_branding import get_store_brand_map
 from app.services.user_limits import get_price_monitor_limits
 from app.services.watchlist import (
     UnsupportedWatchlistSourceError,
@@ -99,9 +100,24 @@ def get_watchlist_items(
         active_only=active_only,
         limit=limit,
     )
+    brand_by_source = get_store_brand_map(
+        session,
+        [
+            subscription.tracked_product.source
+            for subscription in subscriptions
+            if subscription.tracked_product is not None
+        ],
+    )
     return WatchlistItemsResponse(
         items=[
-            _serialize_subscription_with_cashback(subscription)
+            _serialize_subscription_with_cashback(
+                subscription,
+                source_logo_url=(
+                    brand_by_source.get(subscription.tracked_product.source).logo_url
+                    if brand_by_source.get(subscription.tracked_product.source)
+                    else None
+                ),
+            )
             for subscription in subscriptions
         ],
         limit=limit,
@@ -267,9 +283,15 @@ def _serialize_create_result(
 
 def _serialize_subscription_with_cashback(
     subscription: UserProductSubscription,
+    *,
+    source_logo_url: str | None = None,
 ) -> WatchlistItemWithCashbackResponse:
     base_item = _serialize_subscription(subscription)
-    card = build_product_card(subscription.tracked_product, subscription)
+    card = build_product_card(
+        subscription.tracked_product,
+        subscription,
+        source_logo_url=source_logo_url,
+    )
     item = base_item.model_dump()
     item.update(card.model_dump())
     return WatchlistItemWithCashbackResponse(

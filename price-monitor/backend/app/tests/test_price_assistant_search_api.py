@@ -72,8 +72,18 @@ def _signed_headers(site_id: str = SITE_ID) -> dict[str, str]:
 
 
 def _seed_search_sources(session: Session) -> None:
-    dns = Store(store_code="dns", display_name="DNS", enabled=True)
-    mvideo = Store(store_code="mvideo", display_name="М.Видео", enabled=True)
+    dns = Store(
+        store_code="dns",
+        display_name="DNS",
+        enabled=True,
+        logo_url="https://cdn.example.com/logos/dns.svg",
+    )
+    mvideo = Store(
+        store_code="mvideo",
+        display_name="М.Видео",
+        enabled=True,
+        logo_url="https://cdn.example.com/logos/mvideo.svg",
+    )
     disabled = Store(store_code="disabled", display_name="Disabled", enabled=True)
     session.add_all([dns, mvideo, disabled])
     session.flush()
@@ -196,8 +206,10 @@ def test_search_returns_enabled_feed_items_and_safe_source_fallbacks(
     assert data["items"][0] == {
         "store_code": "dns",
         "store_display_name": "DNS",
+        "store_logo_url": "https://cdn.example.com/logos/dns.svg",
         "source_code": "dns-feed",
         "source_display_name": "DNS feed",
+        "source_logo_url": "https://cdn.example.com/logos/dns.svg",
         "title": "Смартфон Apple iPhone 15 128GB черный",
         "product_url": "https://www.dns-shop.ru/product/iphone-15",
         "image_url": "https://cdn.example/iphone.jpg",
@@ -214,6 +226,12 @@ def test_search_returns_enabled_feed_items_and_safe_source_fallbacks(
     }
     fallback_sources = {item["source_code"]: item for item in data["fallbacks"]}
     assert set(fallback_sources) == {"dns-feed", "mvideo-feed"}
+    assert fallback_sources["mvideo-feed"]["store_logo_url"] == (
+        "https://cdn.example.com/logos/mvideo.svg"
+    )
+    assert fallback_sources["mvideo-feed"]["source_logo_url"] == (
+        "https://cdn.example.com/logos/mvideo.svg"
+    )
     assert fallback_sources["mvideo-feed"]["search_url"] == (
         "https://www.mvideo.ru/product-list-page?q=" + quote("смартфон iphone 15")
     )

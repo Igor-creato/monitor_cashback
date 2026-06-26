@@ -17,6 +17,7 @@ from app.core import config, incoming_hmac
 from app.main import app
 from app.models.monitoring import (
     PriceHistory,
+    Store,
     TrackedProduct,
     TrackedProductCashback,
     UserProductSubscription,
@@ -201,6 +202,15 @@ def test_watchlist_ui_returns_card_fields(
     client: TestClient,
     db_session: Session,
 ) -> None:
+    db_session.add(
+        Store(
+            store_code="ozon",
+            display_name="Ozon",
+            enabled=True,
+            logo_url="https://cdn.example.com/logos/ozon.svg",
+        )
+    )
+    db_session.commit()
     _product(db_session, product_id=1)
     subscription = _subscription(db_session, product_id=1)
 
@@ -216,6 +226,7 @@ def test_watchlist_ui_returns_card_fields(
                 "price_region_text": "Цена для региона default",
                 "title": "Palit Видеокарта GeForce RTX 5070",
                 "source_display_name": "Ozon",
+                "source_logo_url": "https://cdn.example.com/logos/ozon.svg",
                 "image_url": "https://cdn.example.com/images/products/1.jpg",
                 "current_price": "809.70",
                 "currency": "USD",

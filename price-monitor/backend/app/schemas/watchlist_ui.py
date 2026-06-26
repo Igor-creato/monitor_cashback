@@ -17,6 +17,7 @@ class WatchlistUiItemResponse(BaseModel):
     price_region_text: str
     title: str
     source_display_name: str
+    source_logo_url: str | None = None
     image_url: str | None = None
     current_price: str | None = None
     currency: str | None = None

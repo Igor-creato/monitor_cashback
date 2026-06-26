@@ -102,9 +102,8 @@ def _create_store(client: TestClient) -> int:
     return int(response.json()["store_id"])
 
 
-def test_admin_can_create_store_from_homepage_url_only(
+def test_admin_create_store_requires_display_name(
     client: TestClient,
-    db_session: Session,
 ) -> None:
     response = _json_request(
         client,
@@ -116,15 +115,35 @@ def test_admin_can_create_store_from_homepage_url_only(
         },
     )
 
+    assert response.status_code == 422
+
+
+def test_admin_can_create_store_with_display_name_and_logo(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    response = _json_request(
+        client,
+        "post",
+        "/v1/price-assistant/admin/stores",
+        {
+            "display_name": "Example Shop",
+            "enabled": True,
+            "homepage_url": "https://www.example-shop.ru/",
+            "logo_url": "https://cdn.example.com/logos/example-shop.svg",
+        },
+    )
+
     assert response.status_code == 200
     data = response.json()
     assert data["store_code"] == "example_shop_ru"
-    assert data["display_name"] == "Example Shop Ru"
+    assert data["display_name"] == "Example Shop"
     assert data["homepage_url"] == "https://www.example-shop.ru/"
+    assert data["logo_url"] == "https://cdn.example.com/logos/example-shop.svg"
     assert data["enabled"] is True
     assert len(data["sources"]) == 1
     assert data["sources"][0]["source_code"] == "example_shop_ru-default"
-    assert data["sources"][0]["display_name"] == "Example Shop Ru"
+    assert data["sources"][0]["display_name"] == "Example Shop"
     assert data["sources"][0]["domains"] == ["example-shop.ru", "www.example-shop.ru"]
     assert data["sources"][0]["search_template"] is None
     assert data["sources"][0]["enabled"] is True
@@ -136,8 +155,37 @@ def test_admin_can_create_store_from_homepage_url_only(
         select(StoreSource).where(StoreSource.source_code == "example_shop_ru-default")
     )
     assert stored_store is not None
+    assert stored_store.logo_url == "https://cdn.example.com/logos/example-shop.svg"
     assert stored_source is not None
     assert stored_source.store_id == stored_store.id
+
+
+def test_admin_can_patch_store_logo_url(client: TestClient) -> None:
+    store_id = _create_store(client)
+
+    patch = _json_request(
+        client,
+        "patch",
+        f"/v1/price-assistant/admin/stores/{store_id}",
+        {
+            "display_name": "DNS",
+            "logo_url": "https://cdn.example.com/logos/dns.png",
+        },
+    )
+    clear = _json_request(
+        client,
+        "patch",
+        f"/v1/price-assistant/admin/stores/{store_id}",
+        {
+            "display_name": "DNS",
+            "logo_url": None,
+        },
+    )
+
+    assert patch.status_code == 200
+    assert patch.json()["logo_url"] == "https://cdn.example.com/logos/dns.png"
+    assert clear.status_code == 200
+    assert clear.json()["logo_url"] is None
 
 
 def test_default_marketplace_seed_is_idempotent(db_session: Session) -> None:
@@ -303,6 +351,38 @@ def test_store_homepage_url_rejects_ssrf_targets(
     )
 
     assert response.status_code == 422
+
+
+@pytest.mark.parametrize(
+    "logo_url",
+    [
+        "http://127.0.0.1/logo.png",
+        "https://localhost/logo.png",
+        "http://169.254.169.254/latest/meta-data",
+        "ftp://cdn.example.com/logo.png",
+        "https://user:password@cdn.example.com/logo.png",
+        "https://cdn.example.com/logo.png?api_key=secret-token-value",
+    ],
+)
+def test_store_logo_url_rejects_ssrf_and_secret_like_values(
+    client: TestClient,
+    logo_url: str,
+) -> None:
+    response = _json_request(
+        client,
+        "post",
+        "/v1/price-assistant/admin/stores",
+        {
+            "store_code": "bad-store",
+            "display_name": "Bad Store",
+            "enabled": True,
+            "homepage_url": "https://www.dns-shop.ru",
+            "logo_url": logo_url,
+        },
+    )
+
+    assert response.status_code == 422
+    assert "secret-token-value" not in response.text
 
 
 @pytest.mark.parametrize(

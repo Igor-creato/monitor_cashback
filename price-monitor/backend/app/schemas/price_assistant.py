@@ -107,6 +107,8 @@ class ImportedCollectionResponse(BaseModel):
     collection_id: int
     collection_type: str
     source: str
+    source_display_name: str | None = None
+    source_logo_url: str | None = None
     region_code: str
     status: str
     items: list[ImportedItemResponse]
@@ -125,6 +127,7 @@ class ProductOfferResponse(BaseModel):
     offer_id: int
     store_code: str
     store_display_name: str
+    store_logo_url: str | None = None
     source_code: str
     region_code: str
     product_url: str
@@ -148,8 +151,10 @@ class ProductCompareResponse(BaseModel):
 class ProductSearchItemResponse(BaseModel):
     store_code: str
     store_display_name: str
+    store_logo_url: str | None = None
     source_code: str
     source_display_name: str
+    source_logo_url: str | None = None
     title: str | None
     product_url: str | None
     image_url: str | None
@@ -172,17 +177,19 @@ class ProductSearchResponse(BaseModel):
 
 class AdminStoreCreate(BaseModel):
     store_code: str | None = Field(default=None, min_length=1, max_length=64)
-    display_name: str | None = Field(default=None, min_length=1, max_length=255)
+    display_name: str = Field(min_length=1, max_length=255)
     enabled: bool = True
     homepage_url: str | None = Field(default=None, max_length=2048)
+    logo_url: str | None = Field(default=None, max_length=2048)
 
     model_config = ConfigDict(extra="forbid")
 
 
 class AdminStorePatch(BaseModel):
-    display_name: str | None = Field(default=None, max_length=255)
+    display_name: str | None = Field(default=None, min_length=1, max_length=255)
     enabled: bool | None = None
     homepage_url: str | None = Field(default=None, max_length=2048)
+    logo_url: str | None = Field(default=None, max_length=2048)
 
     model_config = ConfigDict(extra="forbid")
 
@@ -228,6 +235,7 @@ class AdminStoreResponse(BaseModel):
     store_id: int
     store_code: str
     display_name: str
+    logo_url: str | None = None
     enabled: bool
     homepage_url: str | None
     sources: list[AdminStoreSourceResponse] = Field(default_factory=list)

@@ -20,6 +20,8 @@ from app.services.wildberries_media import wildberries_image_url
 def build_product_card(
     tracked_product: TrackedProduct,
     subscription: UserProductSubscription | None = None,
+    *,
+    source_logo_url: str | None = None,
 ) -> ProductCardResponse:
     return ProductCardResponse(
         tracked_product_id=tracked_product.id,
@@ -28,6 +30,7 @@ def build_product_card(
         image_url=_image_url(tracked_product),
         source=tracked_product.source,
         source_display_name=tracked_product.source_display_name,
+        source_logo_url=source_logo_url,
         canonical_url=tracked_product.canonical_url,
         last_price=_format_money(tracked_product.last_price),
         last_old_price=_format_money(tracked_product.last_old_price),
