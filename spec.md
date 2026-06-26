@@ -23,7 +23,6 @@ tracking and comparison, but it must follow stricter security boundaries:
 - backend storage for session bundles must be encrypted at rest;
 - sync workers use encrypted session bundles to refresh cart/favorites data;
 - expired, forbidden, or login-required sessions move to `reconnect_required`;
-- no captcha bypass or prohibited access escalation is part of the product.
 
 This document defines product scope, production model, risks, roadmap, go/no-go
 gates, and ADR backlog. It does not implement code, migrations, tests, APIs,
@@ -312,12 +311,8 @@ Request shape:
   "captured_at": "2026-06-15T10:00:00Z",
   "connector_version": "0.1.0",
   "session_bundle": {
-    "cookies": [
-      {"name": "allowlisted_cookie_name", "value": "secret"}
-    ],
-    "tokens": [
-      {"name": "allowlisted_token_name", "value": "secret"}
-    ],
+    "cookies": [{ "name": "allowlisted_cookie_name", "value": "secret" }],
+    "tokens": [{ "name": "allowlisted_token_name", "value": "secret" }],
     "metadata": {
       "region": "default"
     }
@@ -423,20 +418,20 @@ Safe metrics examples:
 
 ## 8. Risk Matrix
 
-| Risk | Severity | Likelihood | Product impact | Required mitigation | Gate |
-| --- | --- | --- | --- | --- | --- |
-| Marketplace ToS violation | High | Medium | Account blocks, legal/commercial risk, feature shutdown | Legal review per source; use official APIs where available; no password collection; no captcha bypass; source-specific go/no-go approval | Legal gate |
-| Unstable marketplace API/DOM | High | High | Sync breaks, false prices, support load | Versioned connectors, fixtures, parser monitoring, source health, rollback/disable switch | Marketplace stability gate |
-| Source blocks/rate limits | High | High | Lost sync, IP/proxy cost spikes, user distrust | Cost budgets, backoff, source quarantine, low sync frequency, no aggressive retries | Fetch risk gate |
-| Cookie/token expiry | Medium | High | User must reconnect often | `reconnect_required` state, clear UX, expiry telemetry, reconnect funnel tracking | Consent UX gate |
-| User security breach from session bundle leak | Critical | Low/Medium | Account takeover or private data exposure | Authenticated encryption, key rotation, strict redaction, least privilege, audit, access controls | Security gate |
-| Overcollection of personal data | High | Medium | 152-ФЗ compliance risk, privacy harm | Data minimization, explicit consent, retention policy, DPIA/legal review, no full HTML dumps | 152-ФЗ gate |
-| Cross-user access/IDOR | Critical | Low | One user sees another user's products or connection | WordPress auth boundary, `site_id + external_user_id` scoping, server-generated user identity, tests | Security gate |
-| Misleading comparison | Medium | Medium | User buys wrong item or loses trust | Match confidence, analog labeling, admin review for uncertain matches | Product quality gate |
-| Cashback estimate mismatch | Medium | Medium | Effective price is wrong | Snapshot timestamp, display policy, uncertainty labels, refresh before alert | Product quality gate |
-| Notification spam | Medium | Medium | Unsubscribes, complaints, support load | Deduplication, rate limits, quiet hours/preferences, alert cooldowns | Notification gate |
-| Worker idempotency bug | High | Medium | Duplicate items, duplicated alerts, inconsistent history | Idempotency keys for sync/import/alerts, unique constraints, retry tests | Worker gate |
-| Secret exposure in admin/metrics | Critical | Low | Credential leak | Serialization tests, redaction helpers, safe labels only | Security gate |
+| Risk                                          | Severity | Likelihood | Product impact                                           | Required mitigation                                                                                                                      | Gate                       |
+| --------------------------------------------- | -------- | ---------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------------- |
+| Marketplace ToS violation                     | High     | Medium     | Account blocks, legal/commercial risk, feature shutdown  | Legal review per source; use official APIs where available; no password collection; no captcha bypass; source-specific go/no-go approval | Legal gate                 |
+| Unstable marketplace API/DOM                  | High     | High       | Sync breaks, false prices, support load                  | Versioned connectors, fixtures, parser monitoring, source health, rollback/disable switch                                                | Marketplace stability gate |
+| Source blocks/rate limits                     | High     | High       | Lost sync, IP/proxy cost spikes, user distrust           | Cost budgets, backoff, source quarantine, low sync frequency, no aggressive retries                                                      | Fetch risk gate            |
+| Cookie/token expiry                           | Medium   | High       | User must reconnect often                                | `reconnect_required` state, clear UX, expiry telemetry, reconnect funnel tracking                                                        | Consent UX gate            |
+| User security breach from session bundle leak | Critical | Low/Medium | Account takeover or private data exposure                | Authenticated encryption, key rotation, strict redaction, least privilege, audit, access controls                                        | Security gate              |
+| Overcollection of personal data               | High     | Medium     | 152-ФЗ compliance risk, privacy harm                     | Data minimization, explicit consent, retention policy, DPIA/legal review, no full HTML dumps                                             | 152-ФЗ gate                |
+| Cross-user access/IDOR                        | Critical | Low        | One user sees another user's products or connection      | WordPress auth boundary, `site_id + external_user_id` scoping, server-generated user identity, tests                                     | Security gate              |
+| Misleading comparison                         | Medium   | Medium     | User buys wrong item or loses trust                      | Match confidence, analog labeling, admin review for uncertain matches                                                                    | Product quality gate       |
+| Cashback estimate mismatch                    | Medium   | Medium     | Effective price is wrong                                 | Snapshot timestamp, display policy, uncertainty labels, refresh before alert                                                             | Product quality gate       |
+| Notification spam                             | Medium   | Medium     | Unsubscribes, complaints, support load                   | Deduplication, rate limits, quiet hours/preferences, alert cooldowns                                                                     | Notification gate          |
+| Worker idempotency bug                        | High     | Medium     | Duplicate items, duplicated alerts, inconsistent history | Idempotency keys for sync/import/alerts, unique constraints, retry tests                                                                 | Worker gate                |
+| Secret exposure in admin/metrics              | Critical | Low        | Credential leak                                          | Serialization tests, redaction helpers, safe labels only                                                                                 | Security gate              |
 
 ## 9. 152-ФЗ and Privacy Notes
 
