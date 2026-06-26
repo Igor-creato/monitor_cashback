@@ -477,11 +477,34 @@ def patch_admin_store(
     return _serialize_store(store)
 
 
-def list_admin_stores(session: Session) -> AdminStoresResponse:
-    stores = session.scalars(
-        select(Store).options(selectinload(Store.sources)).order_by(Store.id.asc())
-    ).all()
-    return AdminStoresResponse(items=[_serialize_store(store) for store in stores])
+def list_admin_stores(
+    session: Session,
+    *,
+    page: int = 1,
+    per_page: int | None = None,
+) -> AdminStoresResponse:
+    total_items = session.scalar(select(func.count(Store.id))) or 0
+    current_page = max(1, page)
+    query = select(Store).options(selectinload(Store.sources)).order_by(Store.id.asc())
+
+    if per_page is not None:
+        current_per_page = max(1, min(per_page, 100))
+        query = query.limit(current_per_page).offset(
+            (current_page - 1) * current_per_page
+        )
+        total_pages = (total_items + current_per_page - 1) // current_per_page
+    else:
+        current_per_page = total_items
+        total_pages = 1 if total_items > 0 else 0
+
+    stores = session.scalars(query).all()
+    return AdminStoresResponse(
+        items=[_serialize_store(store) for store in stores],
+        total_items=total_items,
+        page=current_page,
+        per_page=current_per_page,
+        total_pages=total_pages,
+    )
 
 
 def create_admin_store_source(

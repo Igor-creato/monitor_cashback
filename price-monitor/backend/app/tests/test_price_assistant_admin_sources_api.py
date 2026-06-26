@@ -188,6 +188,38 @@ def test_admin_can_patch_store_logo_url(client: TestClient) -> None:
     assert clear.json()["logo_url"] is None
 
 
+def test_admin_stores_supports_optional_pagination_metadata(
+    client: TestClient,
+) -> None:
+    for index in range(25):
+        response = _json_request(
+            client,
+            "post",
+            "/v1/price-assistant/admin/stores",
+            {
+                "store_code": f"store_{index:02d}",
+                "display_name": f"Store {index:02d}",
+                "enabled": True,
+                "homepage_url": f"https://www.store-{index:02d}.example.com/",
+            },
+        )
+        assert response.status_code == 200
+
+    response = client.get(
+        "/v1/price-assistant/admin/stores?page=2&per_page=20",
+        headers=_signed_headers(),
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["total_items"] == 25
+    assert data["page"] == 2
+    assert data["per_page"] == 20
+    assert data["total_pages"] == 2
+    assert len(data["items"]) == 5
+    assert data["items"][0]["store_code"] == "store_20"
+
+
 def test_default_marketplace_seed_is_idempotent(db_session: Session) -> None:
     seed_default_admin_stores(db_session)
     seed_default_admin_stores(db_session)

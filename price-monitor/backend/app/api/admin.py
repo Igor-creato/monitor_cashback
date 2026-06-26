@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 
 from app.core.admin_auth import verify_admin_api_key
@@ -168,8 +168,12 @@ def admin_marketplace_connections(
 
 
 @router.get("/stores", response_model=AdminStoresResponse)
-def admin_stores(session: DbSession) -> AdminStoresResponse:
-    return list_admin_stores(session)
+def admin_stores(
+    session: DbSession,
+    page: int = Query(default=1, ge=1),
+    per_page: int | None = Query(default=None, ge=1, le=100),
+) -> AdminStoresResponse:
+    return list_admin_stores(session, page=page, per_page=per_page)
 
 
 @router.post("/stores", response_model=AdminStoreResponse)

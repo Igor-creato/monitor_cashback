@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends, HTTPException, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 
 from app.core.incoming_hmac import verify_incoming_hmac_request
@@ -33,8 +33,12 @@ DbSession = Annotated[Session, Depends(get_db)]
 
 
 @router.get("/stores")
-def get_stores(session: DbSession):
-    return list_admin_stores(session)
+def get_stores(
+    session: DbSession,
+    page: int = Query(default=1, ge=1),
+    per_page: int | None = Query(default=None, ge=1, le=100),
+):
+    return list_admin_stores(session, page=page, per_page=per_page)
 
 
 @router.post("/stores")

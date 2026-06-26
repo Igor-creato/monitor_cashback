@@ -243,6 +243,10 @@ class AdminStoreResponse(BaseModel):
 
 class AdminStoresResponse(BaseModel):
     items: list[AdminStoreResponse]
+    total_items: int = 0
+    page: int = 1
+    per_page: int = 0
+    total_pages: int = 0
 
 
 class AdminImportResponse(BaseModel):
