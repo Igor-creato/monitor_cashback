@@ -11,7 +11,15 @@ class Base(DeclarativeBase):
     pass
 
 
-engine = create_engine(settings.database_url) if settings.database_url else None
+def create_db_engine(database_url: str):
+    return create_engine(
+        database_url,
+        pool_pre_ping=True,
+        pool_recycle=3600,
+    )
+
+
+engine = create_db_engine(settings.database_url) if settings.database_url else None
 SessionLocal = sessionmaker(bind=engine) if engine is not None else None
 
 
