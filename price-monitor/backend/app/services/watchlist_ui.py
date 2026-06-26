@@ -52,21 +52,22 @@ def build_watchlist_ui_response(
         ],
     )
 
-    return WatchlistUiResponse(
-        items=[
+    items: list[WatchlistUiItemResponse] = []
+    for subscription in subscriptions:
+        brand = brand_by_source.get(subscription.tracked_product.source)
+        items.append(
             _build_item(
                 subscription,
                 chart_history=history_by_product.get(
                     subscription.tracked_product_id,
                 ),
-                source_logo_url=(
-                    brand_by_source.get(subscription.tracked_product.source).logo_url
-                    if brand_by_source.get(subscription.tracked_product.source)
-                    else None
-                ),
+                source_display_name=brand.display_name if brand is not None else None,
+                source_logo_url=brand.logo_url if brand is not None else None,
             )
-            for subscription in subscriptions
-        ],
+        )
+
+    return WatchlistUiResponse(
+        items=items,
         pagination=WatchlistUiPaginationResponse(
             limit=limit,
             offset=offset,
@@ -155,11 +156,13 @@ def _build_item(
     subscription: UserProductSubscription,
     *,
     chart_history: list[PriceHistory] | None,
+    source_display_name: str | None = None,
     source_logo_url: str | None = None,
 ) -> WatchlistUiItemResponse:
     card = build_product_card(
         subscription.tracked_product,
         subscription,
+        source_display_name=source_display_name,
         source_logo_url=source_logo_url,
     )
     chart_summary = (

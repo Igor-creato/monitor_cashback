@@ -701,7 +701,7 @@ def test_get_returns_product_card_fields(
     assert item["title"] == "Palit Видеокарта GeForce RTX 5070"
     assert item["image_url"] == "https://cdn.example.com/images/products/123.jpg"
     assert item["source"] == "testshop"
-    assert item["source_display_name"] == "Ozon"
+    assert item["source_display_name"] == "Test Shop"
     assert item["source_logo_url"] == "https://cdn.example.com/logos/testshop.svg"
     assert item["canonical_url"] == "https://testshop.local/product/123"
     assert item["last_price"] == "809.70"
@@ -714,6 +714,45 @@ def test_get_returns_product_card_fields(
     assert item["region_code"] == "default"
     assert item["target_price"] == "5000.00"
     assert item["is_active"] is True
+
+
+def test_get_returns_admin_store_brand_for_source_code(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    store = Store(
+        store_code="dns_shop_ru",
+        display_name="DNS",
+        enabled=True,
+        homepage_url="https://www.dns-shop.ru/",
+        logo_url="https://cdn.example.com/logos/dns.svg",
+    )
+    db_session.add(store)
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code="dns_shop_ru_default",
+            display_name="DNS source",
+            enabled=True,
+            source_type="api",
+            domains_json=["dns-shop.ru", "www.dns-shop.ru"],
+        )
+    )
+    db_session.commit()
+    post_response = _post_watchlist_item(
+        client,
+        _post_payload(product_url="https://www.dns-shop.ru/product/sku-123"),
+    )
+
+    response = _get_watchlist_items(client)
+
+    assert post_response.status_code == 200
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["source"] == "dns_shop_ru_default"
+    assert item["source_display_name"] == "DNS"
+    assert item["source_logo_url"] == "https://cdn.example.com/logos/dns.svg"
 
 
 def test_get_no_partner_snapshot_returns_cashback_unavailable(

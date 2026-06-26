@@ -18,6 +18,7 @@ from app.main import app
 from app.models.monitoring import (
     PriceHistory,
     Store,
+    StoreSource,
     TrackedProduct,
     TrackedProductCashback,
     UserProductSubscription,
@@ -249,6 +250,45 @@ def test_watchlist_ui_returns_card_fields(
             "is_default": True,
         },
     }
+
+
+def test_watchlist_ui_returns_admin_store_brand_for_source_code(
+    client: TestClient,
+    db_session: Session,
+) -> None:
+    store = Store(
+        store_code="dns_shop_ru",
+        display_name="DNS",
+        enabled=True,
+        logo_url="https://cdn.example.com/logos/dns.svg",
+    )
+    db_session.add(store)
+    db_session.flush()
+    db_session.add(
+        StoreSource(
+            store=store,
+            source_code="dns_shop_ru_default",
+            display_name="DNS source",
+            enabled=True,
+            source_type="api",
+            domains_json=["dns-shop.ru", "www.dns-shop.ru"],
+        )
+    )
+    db_session.commit()
+    _product(
+        db_session,
+        product_id=1,
+        source="dns_shop_ru_default",
+        source_display_name=None,
+    )
+    _subscription(db_session, product_id=1)
+
+    response = client.get(_ui_url(include_chart_summary=False), headers=_headers())
+
+    assert response.status_code == 200
+    item = response.json()["items"][0]
+    assert item["source_display_name"] == "DNS"
+    assert item["source_logo_url"] == "https://cdn.example.com/logos/dns.svg"
 
 
 def test_watchlist_ui_keeps_same_product_regions_separate(

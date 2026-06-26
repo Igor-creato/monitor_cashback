@@ -108,18 +108,19 @@ def get_watchlist_items(
             if subscription.tracked_product is not None
         ],
     )
-    return WatchlistItemsResponse(
-        items=[
+    items: list[WatchlistItemWithCashbackResponse] = []
+    for subscription in subscriptions:
+        brand = brand_by_source.get(subscription.tracked_product.source)
+        items.append(
             _serialize_subscription_with_cashback(
                 subscription,
-                source_logo_url=(
-                    brand_by_source.get(subscription.tracked_product.source).logo_url
-                    if brand_by_source.get(subscription.tracked_product.source)
-                    else None
-                ),
+                source_display_name=brand.display_name if brand is not None else None,
+                source_logo_url=brand.logo_url if brand is not None else None,
             )
-            for subscription in subscriptions
-        ],
+        )
+
+    return WatchlistItemsResponse(
+        items=items,
         limit=limit,
     )
 
@@ -284,12 +285,14 @@ def _serialize_create_result(
 def _serialize_subscription_with_cashback(
     subscription: UserProductSubscription,
     *,
+    source_display_name: str | None = None,
     source_logo_url: str | None = None,
 ) -> WatchlistItemWithCashbackResponse:
     base_item = _serialize_subscription(subscription)
     card = build_product_card(
         subscription.tracked_product,
         subscription,
+        source_display_name=source_display_name,
         source_logo_url=source_logo_url,
     )
     item = base_item.model_dump()

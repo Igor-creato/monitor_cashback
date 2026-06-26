@@ -21,6 +21,7 @@ def build_product_card(
     tracked_product: TrackedProduct,
     subscription: UserProductSubscription | None = None,
     *,
+    source_display_name: str | None = None,
     source_logo_url: str | None = None,
 ) -> ProductCardResponse:
     return ProductCardResponse(
@@ -29,7 +30,7 @@ def build_product_card(
         title=_title(tracked_product.product_name),
         image_url=_image_url(tracked_product),
         source=tracked_product.source,
-        source_display_name=tracked_product.source_display_name,
+        source_display_name=source_display_name or tracked_product.source_display_name,
         source_logo_url=source_logo_url,
         canonical_url=tracked_product.canonical_url,
         last_price=_format_money(tracked_product.last_price),
