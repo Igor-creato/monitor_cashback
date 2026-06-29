@@ -71,6 +71,13 @@ def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
     assert 'docker compose --env-file "$BASE_DIR/shared/.env" up -d --build' in workflow
     assert "http://127.0.0.1:8000/health/live" in workflow
     assert "http://127.0.0.1:8000/health/ready" in workflow
+    assert 'docker compose --env-file "$BASE_DIR/shared/.env" ps' in workflow
+    assert 'docker compose --env-file "$BASE_DIR/shared/.env" images' in workflow
+    assert "platform.python_version()" in workflow
+    assert "fastapi.__version__" in workflow
+    assert "postgres --version" in workflow
+    assert "redis-server --version" in workflow
+    assert "rabbitmq-diagnostics server_version" in workflow
 
 
 def test_compose_uses_server_managed_env_file_override() -> None:

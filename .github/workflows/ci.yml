@@ -142,8 +142,20 @@ jobs:
           REMOTE="$TEST_SERVER_USER@$TEST_SERVER_HOST"
           MIGRATE_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" run --rm api alembic upgrade head'
           COMPOSE_UP_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" up -d --build'
+          COMPOSE_PS_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" ps'
+          COMPOSE_IMAGES_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" images'
+          API_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T api python -c "import fastapi, platform; print(\"python=\" + platform.python_version()); print(\"fastapi=\" + fastapi.__version__)"'
+          POSTGRES_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T postgres postgres --version'
+          REDIS_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T redis redis-server --version'
+          RABBITMQ_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T rabbitmq rabbitmq-diagnostics server_version'
 
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $MIGRATE_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $COMPOSE_UP_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "curl -fsS http://127.0.0.1:8000/health/live"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "curl -fsS http://127.0.0.1:8000/health/ready"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $COMPOSE_PS_COMMAND"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $COMPOSE_IMAGES_COMMAND"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $API_VERSION_COMMAND"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $POSTGRES_VERSION_COMMAND"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $REDIS_VERSION_COMMAND"
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $RABBITMQ_VERSION_COMMAND"
