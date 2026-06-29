@@ -1,0 +1,16 @@
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+*.egg-info/
+graphify-out/
+.coverage
+htmlcov/
+.env
+.env.*
+!.env.example
+.swarm/
+ruvector.db
+docker-compose.override.yml
