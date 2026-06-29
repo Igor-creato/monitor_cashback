@@ -10,7 +10,7 @@ def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     assert "permissions:" in workflow
     assert "contents: read" in workflow
     assert "secret-scan:" in workflow
-    assert "gitleaks/gitleaks-action@v3" in workflow
+    assert "gitleaks/gitleaks-action@v3.0.0" in workflow
     assert "fetch-depth: 0" in workflow
     assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
     assert "python -m pytest" in workflow
@@ -20,10 +20,29 @@ def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     assert "git diff --check" in workflow
     assert "docker compose config --quiet" in workflow
     assert "docker build -t price-monitor:${{ github.sha }} ." in workflow
-    assert "aquasecurity/trivy-action@0.35.0" in workflow
+    assert "aquasecurity/trivy-action@0.36.0" in workflow
     assert "scanners: vuln,config,secret" in workflow
     assert '-czf "$RUNNER_TEMP/release.tar.gz" .' in workflow
     assert " release.tar.gz ." not in workflow
+
+
+def test_runtime_and_ci_versions_use_latest_compatible_stable_pins() -> None:
+    dockerfile = (ROOT / "Dockerfile").read_text(encoding="utf-8")
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
+    workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+
+    assert "FROM python:3.11.15-slim-bookworm AS runtime" in dockerfile
+    assert "image: postgres:16.14-alpine" in compose
+    assert "image: rabbitmq:4.3.2-management-alpine" in compose
+    assert "image: redis:8.8.0-alpine" in compose
+    assert 'requires = ["setuptools==82.0.1", "wheel==0.47.0"]' in pyproject
+    assert '"fastapi==0.138.2"' in pyproject
+    assert "actions/checkout@v7.0.0" in workflow
+    assert "actions/setup-python@v6.3.0" in workflow
+    assert 'python-version: "3.11.15"' in workflow
+    assert "aquasecurity/trivy-action@0.36.0" in workflow
+    assert "gitleaks/gitleaks-action@v3.0.0" in workflow
 
 
 def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:

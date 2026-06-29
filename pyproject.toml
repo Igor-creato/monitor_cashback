@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools==80.9.0", "wheel==0.45.1"]
+requires = ["setuptools==82.0.1", "wheel==0.47.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -12,7 +12,7 @@ license = { text = "Proprietary" }
 dependencies = [
     "alembic==1.18.5",
     "celery==5.6.3",
-    "fastapi==0.138.1",
+    "fastapi==0.138.2",
     "httpx==0.28.1",
     "psycopg[binary]==3.3.4",
     "pydantic-settings==2.14.2",
