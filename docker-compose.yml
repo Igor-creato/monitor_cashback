@@ -1,12 +1,10 @@
 services:
   postgres:
     image: postgres:16.4-alpine
-    environment:
-      POSTGRES_DB: price_monitor
-      POSTGRES_USER: price_monitor
-      POSTGRES_PASSWORD: price_monitor
+    env_file:
+      - ${PRICE_MONITOR_ENV_FILE:-.env.example}
     ports:
-      - "5432:5432"
+      - "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:5432:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -17,12 +15,11 @@ services:
 
   rabbitmq:
     image: rabbitmq:4.2-management-alpine
-    environment:
-      RABBITMQ_DEFAULT_USER: price_monitor
-      RABBITMQ_DEFAULT_PASS: price_monitor
+    env_file:
+      - ${PRICE_MONITOR_ENV_FILE:-.env.example}
     ports:
-      - "5672:5672"
-      - "15672:15672"
+      - "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:5672:5672"
+      - "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:15672:15672"
     volumes:
       - rabbitmq-data:/var/lib/rabbitmq
     healthcheck:
@@ -34,7 +31,7 @@ services:
   redis:
     image: redis:8.0.1-alpine
     ports:
-      - "6379:6379"
+      - "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:6379:6379"
     volumes:
       - redis-data:/data
     healthcheck:
@@ -46,7 +43,7 @@ services:
   api:
     build: .
     env_file:
-      - .env.example
+      - ${PRICE_MONITOR_ENV_FILE:-.env.example}
     depends_on:
       postgres:
         condition: service_healthy
@@ -55,7 +52,7 @@ services:
       redis:
         condition: service_healthy
     ports:
-      - "8000:8000"
+      - "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:8000:8000"
     healthcheck:
       test:
         [
@@ -71,7 +68,7 @@ services:
   worker:
     build: .
     env_file:
-      - .env.example
+      - ${PRICE_MONITOR_ENV_FILE:-.env.example}
     depends_on:
       postgres:
         condition: service_healthy
