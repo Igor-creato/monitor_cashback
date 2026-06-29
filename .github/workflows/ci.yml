@@ -2,9 +2,9 @@ name: CI
 
 on:
   push:
-    branches: [master, "feature/**", "fix/**"]
+    branches: [develop, master, "feature/**", "fix/**"]
   pull_request:
-    branches: [master]
+    branches: [develop, master]
   workflow_dispatch:
 
 permissions:
@@ -75,7 +75,7 @@ jobs:
   deploy-test:
     runs-on: ubuntu-latest
     needs: [quality, secret-scan]
-    if: github.event_name == 'push' && github.ref == 'refs/heads/master'
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     environment: test
     concurrency:
       group: deploy-test

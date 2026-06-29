@@ -20,7 +20,10 @@ rtk docker compose run --rm api alembic upgrade head
 
 The `CI` workflow runs quality gates and secret scanning on pull requests and
 pushes. It deploys to the test server only after a successful `push` to
-`master`.
+`develop`.
+
+The `master` branch is intentionally not connected to test deployment. It is
+reserved for a later production deployment workflow.
 
 Configure a GitHub Environment named `test` with these values:
 

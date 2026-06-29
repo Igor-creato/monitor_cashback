@@ -26,12 +26,14 @@ def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     assert " release.tar.gz ." not in workflow
 
 
-def test_ci_workflow_deploys_to_test_server_only_from_master() -> None:
+def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
+    assert "branches: [develop, master" in workflow
     assert "deploy-test:" in workflow
     assert "needs: [quality, secret-scan]" in workflow
-    assert "github.event_name == 'push' && github.ref == 'refs/heads/master'" in workflow
+    assert "github.event_name == 'push' && github.ref == 'refs/heads/develop'" in workflow
+    assert "github.ref == 'refs/heads/master'" not in workflow
     assert "environment: test" in workflow
     assert "TEST_SERVER_HOST" in workflow
     assert "TEST_SERVER_USER" in workflow
