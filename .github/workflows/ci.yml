@@ -69,7 +69,7 @@ jobs:
       - name: Gitleaks secret scan
         uses: gitleaks/gitleaks-action@v3
         env:
-          GITHUB_TOKEN: ""
+          GITHUB_TOKEN: ${{ github.token }}
           GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
 
   deploy-test:

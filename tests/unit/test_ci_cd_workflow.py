@@ -12,7 +12,7 @@ def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     assert "secret-scan:" in workflow
     assert "gitleaks/gitleaks-action@v3" in workflow
     assert "fetch-depth: 0" in workflow
-    assert 'GITHUB_TOKEN: ""' in workflow
+    assert "GITHUB_TOKEN: ${{ github.token }}" in workflow
     assert "python -m pytest" in workflow
     assert "python -m ruff check ." in workflow
     assert "python -m ruff format --check ." in workflow
