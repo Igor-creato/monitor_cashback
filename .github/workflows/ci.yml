@@ -22,7 +22,7 @@ jobs:
 
       - uses: actions/setup-python@v6.3.0
         with:
-          python-version: "3.11.15"
+          python-version: "3.14.6"
           cache: pip
           cache-dependency-path: pyproject.toml
 
@@ -140,6 +140,7 @@ jobs:
           set -euo pipefail
           SSH_OPTS=(-i "$HOME/.ssh/test_server_key" -p "$TEST_SERVER_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes)
           REMOTE="$TEST_SERVER_USER@$TEST_SERVER_HOST"
+          POSTGRES_MAJOR_UPGRADE_COMMAND='cd "$BASE_DIR/current" && TARGET_POSTGRES_MAJOR=18 PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" bash .github/scripts/postgres-major-upgrade.sh'
           MIGRATE_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" run --rm api alembic upgrade head'
           COMPOSE_UP_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" up -d --build'
           COMPOSE_PS_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" ps'
@@ -149,6 +150,7 @@ jobs:
           REDIS_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T redis redis-server --version'
           RABBITMQ_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T rabbitmq rabbitmq-diagnostics server_version'
 
+          ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR' RELEASE_SHA='$RELEASE_SHA'; $POSTGRES_MAJOR_UPGRADE_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $MIGRATE_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR'; $COMPOSE_UP_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "curl -fsS http://127.0.0.1:8000/health/live"

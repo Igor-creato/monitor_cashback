@@ -32,21 +32,24 @@ def test_runtime_and_ci_versions_use_latest_compatible_stable_pins() -> None:
     pyproject = (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
-    assert "FROM python:3.11.15-slim-bookworm AS runtime" in dockerfile
-    assert "image: postgres:16.14-alpine" in compose
+    assert "FROM python:3.14.6-slim-bookworm AS runtime" in dockerfile
+    assert "image: postgres:18.4-alpine" in compose
     assert "image: rabbitmq:4.3.2-management-alpine" in compose
     assert "image: redis:8.8.0-alpine" in compose
     assert 'requires = ["setuptools==82.0.1", "wheel==0.47.0"]' in pyproject
     assert '"fastapi==0.138.2"' in pyproject
     assert "actions/checkout@v7.0.0" in workflow
     assert "actions/setup-python@v6.3.0" in workflow
-    assert 'python-version: "3.11.15"' in workflow
+    assert 'python-version: "3.14.6"' in workflow
     assert "aquasecurity/trivy-action@v0.36.0" in workflow
     assert "gitleaks/gitleaks-action@v3.0.0" in workflow
 
 
 def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    postgres_upgrade = (ROOT / ".github" / "scripts" / "postgres-major-upgrade.sh").read_text(
+        encoding="utf-8"
+    )
 
     assert "branches: [develop, master" in workflow
     assert "deploy-test:" in workflow
@@ -69,6 +72,11 @@ def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
         in workflow
     )
     assert 'docker compose --env-file "$BASE_DIR/shared/.env" up -d --build' in workflow
+    assert "POSTGRES_MAJOR_UPGRADE_COMMAND=" in workflow
+    assert "TARGET_POSTGRES_MAJOR=18" in workflow
+    assert "pg_dump" in postgres_upgrade
+    assert "pg_restore" in postgres_upgrade
+    assert "postgres-data-v18" in postgres_upgrade
     assert "http://127.0.0.1:8000/health/live" in workflow
     assert "http://127.0.0.1:8000/health/ready" in workflow
     assert 'docker compose --env-file "$BASE_DIR/shared/.env" ps' in workflow

@@ -16,6 +16,16 @@ Run migrations before accepting traffic:
 rtk docker compose run --rm api alembic upgrade head
 ```
 
+## PostgreSQL Major Upgrades
+
+The test deployment workflow upgrades PostgreSQL major versions without
+rewriting the legacy data volume in place. Before switching to the target
+PostgreSQL image, it stops API/worker writers, dumps the current database with
+`pg_dump`, starts the target major on `postgres-data-v18`, restores with
+`pg_restore`, and then runs Alembic plus health checks. The legacy
+`postgres-data` volume is intentionally retained as the rollback data source for
+the previous release.
+
 ## GitHub Actions Test Deployment
 
 The `CI` workflow runs quality gates and secret scanning on pull requests and

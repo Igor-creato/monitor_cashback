@@ -38,7 +38,7 @@ testpaths = ["tests"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py311"
+target-version = "py314"
 src = ["src", "tests"]
 
 [tool.ruff.lint]
@@ -51,7 +51,7 @@ ignore = [
 "tests/**/*.py" = ["S106"]
 
 [tool.mypy]
-python_version = "3.11"
+python_version = "3.14"
 mypy_path = "src"
 packages = ["price_monitor"]
 strict = true
