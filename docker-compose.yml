@@ -88,6 +88,8 @@ services:
         "-Q",
         "price-monitor.fetch,price-monitor.outbox",
       ]
+    healthcheck:
+      disable: true
 
 volumes:
   postgres-data:

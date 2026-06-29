@@ -82,3 +82,12 @@ def test_compose_keeps_stateful_service_credentials_and_ports_server_safe() -> N
         "PRICE_MONITOR_RABBITMQ_URL=amqp://"
         "price_monitor:synthetic-local-rabbitmq-password@rabbitmq:5672//" in env_example
     )
+
+
+def test_compose_worker_does_not_inherit_api_http_healthcheck() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    worker_section = compose.split("  worker:", maxsplit=1)[1]
+
+    assert "healthcheck:" in worker_section
+    assert "disable: true" in worker_section
