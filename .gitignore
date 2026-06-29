@@ -12,5 +12,7 @@ htmlcov/
 .env.*
 !.env.example
 .swarm/
+.codex/
 ruvector.db
+agentdb.rvf*
 docker-compose.override.yml
