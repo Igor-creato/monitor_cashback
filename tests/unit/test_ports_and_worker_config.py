@@ -17,6 +17,7 @@ def test_celery_app_defaults_to_reliable_at_least_once_worker_settings() -> None
     assert celery_app.conf.task_acks_late is True
     assert celery_app.conf.task_reject_on_worker_lost is True
     assert celery_app.conf.worker_prefetch_multiplier == 1
+    assert celery_app.conf.worker_enable_remote_control is False
     assert celery_app.conf.task_default_queue == "price-monitor.default"
     assert (
         celery_app.conf.task_routes["price_monitor.workers.tasks.fetch_product"]["queue"]

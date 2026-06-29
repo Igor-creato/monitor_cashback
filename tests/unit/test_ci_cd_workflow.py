@@ -3,6 +3,21 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 
 
+def _compose_service_section(compose: str, service: str) -> str:
+    lines = compose.splitlines()
+    start = lines.index(f"  {service}:")
+    end = len(lines)
+    for index in range(start + 1, len(lines)):
+        line = lines[index]
+        if line and not line.startswith(" "):
+            end = index
+            break
+        if line.startswith("  ") and not line.startswith("    ") and line.endswith(":"):
+            end = index
+            break
+    return "\n".join(lines[start:end])
+
+
 def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
 
@@ -125,10 +140,31 @@ def test_compose_keeps_stateful_service_credentials_and_ports_server_safe() -> N
     )
 
 
+def test_compose_sets_resource_limits_and_low_noise_healthchecks() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    expected_limits = {
+        "postgres": "1g",
+        "rabbitmq": "768m",
+        "redis": "256m",
+        "api": "512m",
+        "worker": "1536m",
+    }
+
+    for service, memory_limit in expected_limits.items():
+        section = _compose_service_section(compose, service)
+        assert f"    mem_limit: {memory_limit}" in section
+        assert f"    memswap_limit: {memory_limit}" in section
+
+    for service in ("postgres", "rabbitmq", "redis", "api"):
+        section = _compose_service_section(compose, service)
+        assert "      interval: 60s" in section
+
+
 def test_compose_worker_does_not_inherit_api_http_healthcheck() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
-    worker_section = compose.split("  worker:", maxsplit=1)[1]
+    worker_section = _compose_service_section(compose, "worker")
 
     assert "healthcheck:" in worker_section
     assert "disable: true" in worker_section

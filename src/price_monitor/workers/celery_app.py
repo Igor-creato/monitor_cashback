@@ -7,6 +7,7 @@ def create_celery_app(broker_url: str, result_backend: str) -> Celery:
         task_acks_late=True,
         task_reject_on_worker_lost=True,
         worker_prefetch_multiplier=1,
+        worker_enable_remote_control=False,
         task_default_queue="price-monitor.default",
         task_default_exchange="price-monitor",
         task_default_routing_key="default",
