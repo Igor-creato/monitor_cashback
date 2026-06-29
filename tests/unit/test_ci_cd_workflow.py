@@ -47,6 +47,7 @@ def test_runtime_and_ci_versions_use_latest_compatible_stable_pins() -> None:
 
 def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
     workflow = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
     postgres_upgrade = (ROOT / ".github" / "scripts" / "postgres-major-upgrade.sh").read_text(
         encoding="utf-8"
     )
@@ -76,7 +77,11 @@ def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
     assert "TARGET_POSTGRES_MAJOR=18" in workflow
     assert "pg_dump" in postgres_upgrade
     assert "pg_restore" in postgres_upgrade
-    assert "postgres-data-v18" in postgres_upgrade
+    assert "postgres-data-pg18" in compose
+    assert "postgres-data-pg18:/var/lib/postgresql" in compose
+    assert "postgres-data-v18:/var/lib/postgresql/data" not in compose
+    assert "find_latest_dump" in postgres_upgrade
+    assert "logs --no-color --tail=200 postgres" in postgres_upgrade
     assert "http://127.0.0.1:8000/health/live" in workflow
     assert "http://127.0.0.1:8000/health/ready" in workflow
     assert 'docker compose --env-file "$BASE_DIR/shared/.env" ps' in workflow

@@ -6,7 +6,7 @@ services:
     ports:
       - "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:5432:5432"
     volumes:
-      - postgres-data-v18:/var/lib/postgresql/data
+      - postgres-data-pg18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U price_monitor -d price_monitor"]
       interval: 10s
@@ -93,6 +93,6 @@ services:
 
 volumes:
   postgres-data:
-  postgres-data-v18:
+  postgres-data-pg18:
   rabbitmq-data:
   redis-data:

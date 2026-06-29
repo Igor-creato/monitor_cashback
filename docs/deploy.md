@@ -21,10 +21,14 @@ rtk docker compose run --rm api alembic upgrade head
 The test deployment workflow upgrades PostgreSQL major versions without
 rewriting the legacy data volume in place. Before switching to the target
 PostgreSQL image, it stops API/worker writers, dumps the current database with
-`pg_dump`, starts the target major on `postgres-data-v18`, restores with
+`pg_dump`, starts the target major on `postgres-data-pg18`, restores with
 `pg_restore`, and then runs Alembic plus health checks. The legacy
 `postgres-data` volume is intentionally retained as the rollback data source for
 the previous release.
+
+PostgreSQL 18+ uses `/var/lib/postgresql/18/docker` as `PGDATA`, so the Compose
+volume is mounted at `/var/lib/postgresql` instead of the pre-18
+`/var/lib/postgresql/data` path.
 
 ## GitHub Actions Test Deployment
 
