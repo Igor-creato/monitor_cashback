@@ -111,13 +111,14 @@ jobs:
       - name: Package release
         run: |
           set -euo pipefail
+          rm -f "$RUNNER_TEMP/release.tar.gz"
           tar \
             --exclude='.git' \
             --exclude='.mypy_cache' \
             --exclude='.pytest_cache' \
             --exclude='.ruff_cache' \
             --exclude='.venv' \
-            -czf release.tar.gz .
+            -czf "$RUNNER_TEMP/release.tar.gz" .
 
       - name: Upload release
         run: |
@@ -130,7 +131,7 @@ jobs:
 
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR' RELEASE_SHA='$RELEASE_SHA'; $CREATE_RELEASE_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "test -f '$BASE_DIR/shared/.env'"
-          scp -i "$HOME/.ssh/test_server_key" -P "$TEST_SERVER_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes release.tar.gz "$REMOTE:$BASE_DIR/releases/$RELEASE_SHA/release.tar.gz"
+          scp -i "$HOME/.ssh/test_server_key" -P "$TEST_SERVER_PORT" -o BatchMode=yes -o StrictHostKeyChecking=yes "$RUNNER_TEMP/release.tar.gz" "$REMOTE:$BASE_DIR/releases/$RELEASE_SHA/release.tar.gz"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR' RELEASE_SHA='$RELEASE_SHA'; $EXTRACT_RELEASE_COMMAND"
           ssh "${SSH_OPTS[@]}" "$REMOTE" "export BASE_DIR='$BASE_DIR' RELEASE_SHA='$RELEASE_SHA'; $LINK_CURRENT_COMMAND"
 

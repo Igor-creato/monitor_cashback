@@ -22,6 +22,8 @@ def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     assert "docker build -t price-monitor:${{ github.sha }} ." in workflow
     assert "aquasecurity/trivy-action@0.35.0" in workflow
     assert "scanners: vuln,config,secret" in workflow
+    assert '-czf "$RUNNER_TEMP/release.tar.gz" .' in workflow
+    assert " release.tar.gz ." not in workflow
 
 
 def test_ci_workflow_deploys_to_test_server_only_from_master() -> None:
