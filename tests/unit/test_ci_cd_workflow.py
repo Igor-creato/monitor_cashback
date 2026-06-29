@@ -20,7 +20,7 @@ def test_ci_workflow_scans_secrets_and_runs_quality_gates() -> None:
     assert "git diff --check" in workflow
     assert "docker compose config --quiet" in workflow
     assert "docker build -t price-monitor:${{ github.sha }} ." in workflow
-    assert "aquasecurity/trivy-action@0.36.0" in workflow
+    assert "aquasecurity/trivy-action@v0.36.0" in workflow
     assert "scanners: vuln,config,secret" in workflow
     assert '-czf "$RUNNER_TEMP/release.tar.gz" .' in workflow
     assert " release.tar.gz ." not in workflow
@@ -41,7 +41,7 @@ def test_runtime_and_ci_versions_use_latest_compatible_stable_pins() -> None:
     assert "actions/checkout@v7.0.0" in workflow
     assert "actions/setup-python@v6.3.0" in workflow
     assert 'python-version: "3.11.15"' in workflow
-    assert "aquasecurity/trivy-action@0.36.0" in workflow
+    assert "aquasecurity/trivy-action@v0.36.0" in workflow
     assert "gitleaks/gitleaks-action@v3.0.0" in workflow
 
 
