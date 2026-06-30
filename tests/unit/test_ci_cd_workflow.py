@@ -84,8 +84,8 @@ def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
     assert 'PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env"' in workflow
     assert "alembic upgrade head" in workflow
     assert (
-        'docker compose --env-file "$BASE_DIR/shared/.env" run --rm api alembic upgrade head'
-        in workflow
+        'docker compose --env-file "$BASE_DIR/shared/.env" '
+        "run --rm --build api alembic upgrade head" in workflow
     )
     assert 'docker compose --env-file "$BASE_DIR/shared/.env" up -d --build --force-recreate' in (
         workflow
