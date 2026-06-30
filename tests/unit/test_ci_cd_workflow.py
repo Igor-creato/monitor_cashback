@@ -87,7 +87,9 @@ def test_ci_workflow_deploys_to_test_server_only_from_develop() -> None:
         'docker compose --env-file "$BASE_DIR/shared/.env" run --rm api alembic upgrade head'
         in workflow
     )
-    assert 'docker compose --env-file "$BASE_DIR/shared/.env" up -d --build' in workflow
+    assert 'docker compose --env-file "$BASE_DIR/shared/.env" up -d --build --force-recreate' in (
+        workflow
+    )
     assert "POSTGRES_MAJOR_UPGRADE_COMMAND=" in workflow
     assert "TARGET_POSTGRES_MAJOR=18" in workflow
     assert "pg_dump" in postgres_upgrade

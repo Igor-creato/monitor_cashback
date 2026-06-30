@@ -142,7 +142,7 @@ jobs:
           REMOTE="$TEST_SERVER_USER@$TEST_SERVER_HOST"
           POSTGRES_MAJOR_UPGRADE_COMMAND='cd "$BASE_DIR/current" && TARGET_POSTGRES_MAJOR=18 PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" bash .github/scripts/postgres-major-upgrade.sh'
           MIGRATE_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" run --rm api alembic upgrade head'
-          COMPOSE_UP_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" up -d --build'
+          COMPOSE_UP_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" up -d --build --force-recreate'
           COMPOSE_PS_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" ps'
           COMPOSE_IMAGES_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" images'
           API_VERSION_COMMAND='cd "$BASE_DIR/current" && PRICE_MONITOR_ENV_FILE="$BASE_DIR/shared/.env" docker compose --env-file "$BASE_DIR/shared/.env" exec -T api python -c "import fastapi, platform; print(\"python=\" + platform.python_version()); print(\"fastapi=\" + fastapi.__version__)"'
