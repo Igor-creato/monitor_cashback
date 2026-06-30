@@ -138,3 +138,59 @@ Reviewer found blocking issues requiring fixes:
 - Supported subdomain URLs still match configured monitored sources, and products created from those URLs now retain the monitored source identity required by product-card lookup.
 - No migration, model, or `.claude-flow/` changes were needed for these fixes.
 
+
+## Task 2 Review 2
+
+Reviewer found one remaining Important issue:
+- DELETE /api/v1/watchlist/items/{item_id} only checks Idempotency-Key presence but does not reserve/complete idempotency state. Mutating backend endpoints require real HMAC and idempotency semantics.
+
+## Task 2 Review 2 Fix
+
+### Scope
+
+- Fixed only the remaining Important DELETE idempotency issue.
+- Kept the change scoped to the watchlist DELETE endpoint, its contract tests, and the minimal helper behavior needed to replay a completed `204` response.
+
+### RED
+
+1. Added `test_watchlist_delete_replays_completed_idempotent_response(...)` to `tests/contract/test_api_contract.py`.
+2. Added `test_watchlist_delete_rejects_same_idempotency_key_for_different_target(...)` to `tests/contract/test_api_contract.py`.
+3. Ran:
+   - `rtk python -m pytest tests/contract/test_api_contract.py -k "watchlist_delete" -q`
+4. Result:
+   - `test_watchlist_delete_replays_completed_idempotent_response` failed because DELETE never created or completed an idempotency record.
+   - `test_watchlist_delete_rejects_same_idempotency_key_for_different_target` failed because reusing the same key against a different `item_id` returned `204` instead of `409 idempotency_conflict`.
+
+### GREEN
+
+1. Updated `src/price_monitor/api/v1/watchlist.py` so DELETE now:
+   - reserves/completes an idempotency record;
+   - replays a completed `204` safely for the same key and target;
+   - hashes `item_id` into the delete request identity so same-key/different-target reuse conflicts.
+2. Updated `src/price_monitor/core/idempotency.py` so completed records with an empty JSON body (`{}`) still replay correctly.
+3. Re-ran focused regressions:
+   - `rtk python -m pytest tests/contract/test_api_contract.py -k "watchlist_delete" -q`
+   - Result: `2 passed`
+4. Ran required verification:
+   - `rtk python -m pytest tests/contract/test_api_contract.py tests/integration/test_watchlist_service.py -q`
+     - Result: `15 passed`
+   - `rtk python -m pytest tests/contract/test_product_card_contract.py tests/contract/test_admin_api_contract.py tests/unit/test_security.py -q`
+     - Result: `9 passed`
+   - `rtk python -m ruff check src/price_monitor/api/v1/watchlist.py tests/contract/test_api_contract.py tests/integration/test_watchlist_service.py src/price_monitor/core/idempotency.py`
+     - Result: `All checks passed!`
+   - `rtk git diff --check`
+     - Result: no whitespace or patch-format issues
+
+### Files Changed
+
+- `tests/contract/test_api_contract.py`
+- `src/price_monitor/api/v1/watchlist.py`
+- `src/price_monitor/core/idempotency.py`
+
+### Self-Review
+
+- DELETE now matches the existing mutating-endpoint pattern: require HMAC, reserve idempotency state before mutation, and complete it with the final response.
+- Repeating the same DELETE with the same `Idempotency-Key` replays the original `204` and does not emit a second delete outbox event.
+- Reusing the same key against a different delete target now fails closed with `idempotency_conflict`.
+- Product rows and price history remain untouched; delete still only deactivates the watch by clearing the active identity key.
+

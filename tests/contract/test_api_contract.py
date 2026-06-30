@@ -1,10 +1,14 @@
 import json
 
 from fastapi.testclient import TestClient
+from sqlalchemy import select
 from sqlalchemy.orm import Session
 from tests.conftest import signed_headers
 
+from price_monitor.domains.reliability.models import IdempotencyRecord, OutboxEvent
 from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
+from price_monitor.domains.watchlist.models import WatchlistItem
+from price_monitor.domains.watchlist.service import WatchlistService
 
 
 def test_openapi_exposes_initial_wordpress_facing_endpoints(client: TestClient) -> None:
@@ -161,6 +165,121 @@ def test_idempotency_key_replay_returns_original_response(
     assert first.status_code == 201
     assert second.status_code == 201
     assert second.json() == first.json()
+
+
+def test_watchlist_delete_replays_completed_idempotent_response(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    created = WatchlistService(session).add_item(
+        user_id="wp-user-1",
+        product_url="https://example.com/delete-me",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-create-delete",
+    )
+    item_id = created.item.id
+    path = f"/api/v1/watchlist/items/{item_id}"
+    headers = signed_headers(
+        "DELETE", path, b"", request_id="req-delete-1", idempotency_key="idem-delete-1"
+    )
+
+    first = client.delete(path, headers=headers)
+    second = client.delete(path, headers=headers)
+
+    assert first.status_code == 204
+    assert second.status_code == 204
+    deleted_item = session.get(WatchlistItem, item_id)
+    assert deleted_item is not None
+    assert deleted_item.status == "deleted"
+
+    events = session.scalars(
+        select(OutboxEvent).where(OutboxEvent.event_type == "watchlist.item_deleted")
+    ).all()
+    assert len(events) == 1
+
+    record = session.scalar(
+        select(IdempotencyRecord).where(
+            IdempotencyRecord.key == "idem-delete-1",
+            IdempotencyRecord.route == "DELETE /api/v1/watchlist/items",
+        )
+    )
+    assert record is not None
+    assert record.status == "completed"
+    assert record.response_status == 204
+    assert record.response_body == {}
+
+
+def test_watchlist_delete_rejects_same_idempotency_key_for_different_target(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    first_item = WatchlistService(session).add_item(
+        user_id="wp-user-1",
+        product_url="https://example.com/delete-a",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-create-a",
+    ).item
+    second_item = WatchlistService(session).add_item(
+        user_id="wp-user-1",
+        product_url="https://example.com/delete-b",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-create-b",
+    ).item
+    first_path = f"/api/v1/watchlist/items/{first_item.id}"
+    second_path = f"/api/v1/watchlist/items/{second_item.id}"
+
+    first = client.delete(
+        first_path,
+        headers=signed_headers(
+            "DELETE",
+            first_path,
+            b"",
+            request_id="req-delete-a",
+            idempotency_key="idem-delete-conflict",
+        ),
+    )
+    second = client.delete(
+        second_path,
+        headers=signed_headers(
+            "DELETE",
+            second_path,
+            b"",
+            request_id="req-delete-b",
+            idempotency_key="idem-delete-conflict",
+        ),
+    )
+
+    assert first.status_code == 204
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "idempotency_conflict"
+    still_active = session.get(WatchlistItem, second_item.id)
+    assert still_active is not None
+    assert still_active.status == "active"
 
 
 def test_health_and_read_endpoints_return_stable_empty_foundation_contract(

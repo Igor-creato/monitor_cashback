@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from hashlib import sha256
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, Header, Response, status
@@ -142,13 +143,34 @@ def delete_watchlist_item(
                 "error": {"code": "idempotency_key_required", "message": "Idempotency-Key required"}
             },
         )
+
+    route = "DELETE /api/v1/watchlist/items"
+    reserved = get_replay_or_reserve(
+        session=session,
+        key=idempotency_key,
+        route=route,
+        request_hash=_delete_request_hash(item_id=item_id, body_sha256=verified.body_sha256),
+    )
+    if isinstance(reserved, IdempotencyReplay):
+        if reserved.status_code == status.HTTP_204_NO_CONTENT and reserved.response_body == {}:
+            return Response(status_code=status.HTTP_204_NO_CONTENT)
+        return JSONResponse(status_code=reserved.status_code, content=reserved.response_body)
+
     WatchlistService(session).delete_item(item_id=item_id, request_id=verified.request_id)
+    complete_idempotency_record(
+        record=reserved,
+        status_code=status.HTTP_204_NO_CONTENT,
+        response_body={},
+    )
     session.commit()
     return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 def _json_ready(value: dict[str, Any]) -> dict[str, Any]:
     return value
+
+def _delete_request_hash(*, item_id: str, body_sha256: str) -> str:
+    return sha256(f"{item_id}:{body_sha256}".encode()).hexdigest()
 
 
 def _max_tracked_products(session: Session) -> int:
