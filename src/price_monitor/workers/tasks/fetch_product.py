@@ -1,5 +1,6 @@
 from price_monitor.core.config import get_settings
 from price_monitor.db.session import get_session_factory
+from price_monitor.domains.fetching.http_fetcher import HttpProductPageFetcher
 from price_monitor.domains.fetching.service import FetchPipeline
 from price_monitor.workers.celery_app import create_celery_app
 
@@ -18,6 +19,13 @@ celery_app = create_celery_app(settings.rabbitmq_url, settings.redis_url)
 )
 def fetch_product(product_id: str) -> dict[str, str]:
     with get_session_factory()() as session:
-        result = FetchPipeline(session).run(product_id=product_id)
+        result = FetchPipeline(
+            session,
+            direct_fetcher=HttpProductPageFetcher(),
+        ).run(product_id=product_id)
         session.commit()
     return {"product_id": product_id, "status": result.status}
+
+
+def enqueue_fetch_product(product_id: str) -> None:
+    fetch_product.delay(product_id)

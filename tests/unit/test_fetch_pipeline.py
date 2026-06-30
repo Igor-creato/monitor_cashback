@@ -271,7 +271,7 @@ def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(
     assert attempts[1].error_type == "RuntimeError"
 
 
-def test_fetch_product_task_without_configured_adapters_returns_not_configured_without_failed_state(
+def test_fetch_product_task_uses_http_fetcher_to_update_product(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -291,6 +291,17 @@ def test_fetch_product_task_without_configured_adapters_returns_not_configured_w
 
     monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: DummyFactory())
 
+    class DummyHttpProductPageFetcher(FakeFetcher):
+        def __init__(self) -> None:
+            super().__init__(html=_product_html(title="Worker Phone", price="222.33"))
+
+    monkeypatch.setattr(
+        fetch_product_module,
+        "HttpProductPageFetcher",
+        DummyHttpProductPageFetcher,
+        raising=False,
+    )
+
     result = fetch_product_module.fetch_product(product.id)
 
     session.expire_all()
@@ -299,11 +310,14 @@ def test_fetch_product_task_without_configured_adapters_returns_not_configured_w
         select(FetchAttempt).where(FetchAttempt.product_id == product.id)
     ).all()
 
-    assert result == {"product_id": product.id, "status": "not_configured"}
+    assert result == {"product_id": product.id, "status": "ok"}
     assert refreshed_product is not None
-    assert refreshed_product.last_fetch_status is None
-    assert refreshed_product.last_fetched_at is None
-    assert attempts == []
+    assert refreshed_product.title == "Worker Phone"
+    assert refreshed_product.current_price_minor == 22233
+    assert refreshed_product.last_fetch_status == "ok"
+    assert refreshed_product.last_fetched_at is not None
+    assert len(attempts) == 1
+    assert attempts[0].strategy == "direct"
 
 
 def test_price_chart_endpoint_requires_hmac_and_returns_daily_summary(
@@ -389,15 +403,25 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
             return DummySession()
 
     class DummyPipeline:
-        def __init__(self, session: object) -> None:
+        def __init__(self, session: object, **kwargs: object) -> None:
             seen["session"] = session
+            seen["direct_fetcher"] = kwargs.get("direct_fetcher")
 
         def run(self, *, product_id: str) -> object:
             seen["product_id"] = product_id
             return type("Result", (), {"status": "ok"})()
 
+    class DummyHttpProductPageFetcher:
+        pass
+
     monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: DummyFactory())
     monkeypatch.setattr(fetch_product_module, "FetchPipeline", DummyPipeline)
+    monkeypatch.setattr(
+        fetch_product_module,
+        "HttpProductPageFetcher",
+        DummyHttpProductPageFetcher,
+        raising=False,
+    )
 
     result = fetch_product_module.fetch_product("product-123")
 
@@ -406,6 +430,7 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     assert seen["committed"] is True
     assert seen["exited"] is True
     assert seen["product_id"] == "product-123"
+    assert isinstance(seen["direct_fetcher"], DummyHttpProductPageFetcher)
 
 
 def _create_product(

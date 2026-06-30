@@ -19,6 +19,7 @@ from price_monitor.core.security import VerifiedRequest
 from price_monitor.domains.sources.service import SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
 from price_monitor.domains.watchlist.service import WatchlistService
+from price_monitor.workers.tasks.fetch_product import enqueue_fetch_product
 
 router = APIRouter(prefix="/api/v1/watchlist", tags=["watchlist"])
 
@@ -322,6 +323,7 @@ def refresh_watchlist_item(
         response_body=_json_ready(response_dict),
     )
     session.commit()
+    enqueue_fetch_product(job.product_id)
     return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_dict)
 
 

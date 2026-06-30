@@ -1,6 +1,8 @@
+import importlib
 import json
 from hashlib import sha256
 
+import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -552,8 +554,17 @@ def test_watchlist_delete_requires_matching_owner_and_replays_for_owner(
 
 
 def test_watchlist_refresh_requires_owner_and_idempotency_and_schedules_job(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    watchlist_api = importlib.import_module("price_monitor.api.v1.watchlist")
+    enqueued_product_ids: list[str] = []
+    monkeypatch.setattr(
+        watchlist_api,
+        "enqueue_fetch_product",
+        enqueued_product_ids.append,
+        raising=False,
+    )
+
     SourceService(session).upsert_source(
         MonitoredSourceInput(
             source_domain="example.com",
@@ -629,6 +640,7 @@ def test_watchlist_refresh_requires_owner_and_idempotency_and_schedules_job(
     assert len(jobs) == 1
     assert jobs[0].product_id == item.product_id
     assert jobs[0].status == "queued"
+    assert enqueued_product_ids == [item.product_id]
 
 
 def test_health_and_read_endpoints_return_stable_empty_foundation_contract(
