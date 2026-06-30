@@ -175,6 +175,7 @@ def test_compose_hardens_rabbitmq_memory_and_logs_for_fresh_servers() -> None:
         rabbitmq_section
     )
     assert "vm_memory_high_watermark.absolute = 512MB" in rabbitmq_conf
+    assert "deprecated_features.permit.global_qos = true" in rabbitmq_conf
     assert "deprecated_features.permit.transient_nonexcl_queues" not in rabbitmq_conf
 
 
