@@ -4,6 +4,8 @@ from fastapi.testclient import TestClient
 from sqlalchemy.orm import Session
 from tests.conftest import signed_headers
 
+from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
+
 
 def test_openapi_exposes_initial_wordpress_facing_endpoints(client: TestClient) -> None:
     schema = client.get("/openapi.json").json()
@@ -13,6 +15,7 @@ def test_openapi_exposes_initial_wordpress_facing_endpoints(client: TestClient) 
     assert "/health/ready" in paths
     assert "/api/v1/watchlist/items" in paths
     assert "/api/v1/watchlist/items/{item_id}" in paths
+    assert "/api/v1/products/{product_id}" in paths
     assert "/api/v1/products/{product_id}/price-history" in paths
     assert "/api/v1/sources/status" in paths
 
@@ -24,10 +27,35 @@ def test_watchlist_create_requires_hmac_and_idempotency_key(client: TestClient) 
     assert response.json()["error"]["code"] == "authentication_failed"
 
 
+def test_watchlist_list_requires_hmac(client: TestClient) -> None:
+    response = client.get("/api/v1/watchlist/items")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_failed"
+
+
+def test_product_detail_requires_hmac(client: TestClient) -> None:
+    response = client.get("/api/v1/products/product-1")
+
+    assert response.status_code == 401
+    assert response.json()["error"]["code"] == "authentication_failed"
+
+
 def test_watchlist_create_returns_stable_contract_and_deduplicates(
     client: TestClient, session: Session
 ) -> None:
-    del session
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
     path = "/api/v1/watchlist/items"
     body = {
         "user_id": "wp-user-1",
@@ -55,11 +83,25 @@ def test_watchlist_create_returns_stable_contract_and_deduplicates(
     assert first.status_code == 201
     assert first.json()["created"] is True
     assert first.json()["item"]["canonical_url"] == "https://example.com/item?id=42"
-    assert second.status_code == 200
-    assert second.json()["created"] is False
+    assert second.status_code == 409
+    assert second.json()["error"]["code"] == "duplicate_watchlist_item"
 
 
-def test_idempotency_key_replay_returns_original_response(client: TestClient) -> None:
+def test_idempotency_key_replay_returns_original_response(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
     path = "/api/v1/watchlist/items"
     body = {
         "user_id": "wp-user-1",

@@ -67,8 +67,62 @@ def upgrade() -> None:
     op.create_index("ix_proxy_endpoints_status", "proxy_endpoints", ["status"])
     op.create_index("ix_proxy_endpoints_tier", "proxy_endpoints", ["tier"])
 
+    with op.batch_alter_table("products") as batch_op:
+        batch_op.add_column(sa.Column("image_url", sa.String(length=2048), nullable=True))
+        batch_op.add_column(sa.Column("rating_value", sa.String(length=32), nullable=True))
+        batch_op.add_column(sa.Column("current_price_minor", sa.Integer(), nullable=True))
+        batch_op.add_column(sa.Column("currency", sa.String(length=3), nullable=True))
+        batch_op.add_column(sa.Column("last_fetch_status", sa.String(length=32), nullable=True))
+        batch_op.add_column(sa.Column("last_fetched_at", sa.DateTime(timezone=True), nullable=True))
+        batch_op.add_column(
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("CURRENT_TIMESTAMP"),
+            )
+        )
+    op.execute("UPDATE products SET updated_at = created_at WHERE updated_at IS NULL")
+
+    with op.batch_alter_table("watchlist_items") as batch_op:
+        batch_op.add_column(sa.Column("active_identity_key", sa.String(length=255), nullable=True))
+        batch_op.add_column(
+            sa.Column(
+                "updated_at",
+                sa.DateTime(timezone=True),
+                nullable=False,
+                server_default=sa.text("CURRENT_TIMESTAMP"),
+            )
+        )
+    op.execute("UPDATE watchlist_items SET updated_at = created_at WHERE updated_at IS NULL")
+    op.execute(
+        "UPDATE watchlist_items "
+        "SET active_identity_key = user_id || ':' || canonical_url_hash "
+        "WHERE status = 'active' AND active_identity_key IS NULL"
+    )
+    with op.batch_alter_table("watchlist_items") as batch_op:
+        batch_op.drop_constraint("uq_watchlist_user_url_hash", type_="unique")
+        batch_op.create_unique_constraint(
+            "uq_watchlist_items_active_identity_key", ["active_identity_key"]
+        )
+
 
 def downgrade() -> None:
+    with op.batch_alter_table("watchlist_items") as batch_op:
+        batch_op.drop_constraint("uq_watchlist_items_active_identity_key", type_="unique")
+        batch_op.create_unique_constraint(
+            "uq_watchlist_user_url_hash", ["user_id", "canonical_url_hash"]
+        )
+        batch_op.drop_column("updated_at")
+        batch_op.drop_column("active_identity_key")
+    with op.batch_alter_table("products") as batch_op:
+        batch_op.drop_column("updated_at")
+        batch_op.drop_column("last_fetched_at")
+        batch_op.drop_column("last_fetch_status")
+        batch_op.drop_column("currency")
+        batch_op.drop_column("current_price_minor")
+        batch_op.drop_column("rating_value")
+        batch_op.drop_column("image_url")
     op.drop_index("ix_proxy_endpoints_tier", table_name="proxy_endpoints")
     op.drop_index("ix_proxy_endpoints_status", table_name="proxy_endpoints")
     op.drop_index("ix_proxy_endpoints_pool_id", table_name="proxy_endpoints")

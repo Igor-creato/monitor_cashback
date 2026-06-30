@@ -15,6 +15,7 @@ from price_monitor.core.idempotency import (
     get_replay_or_reserve,
 )
 from price_monitor.core.security import VerifiedRequest
+from price_monitor.domains.sources.service import SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
 from price_monitor.domains.watchlist.service import WatchlistService
 
@@ -87,7 +88,19 @@ def create_watchlist_item(
         target_price_minor=payload.target_price_minor,
         currency=payload.currency,
         request_id=verified.request_id,
+        max_tracked_products=_max_tracked_products(session),
     )
+    if result.error_code is not None:
+        status_code = _status_for_watchlist_error(result.error_code)
+        response_body = _watchlist_error(result.error_code)
+        complete_idempotency_record(
+            record=reserved,
+            status_code=status_code,
+            response_body=response_body,
+        )
+        session.commit()
+        return JSONResponse(status_code=status_code, content=response_body)
+
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
     response_body = WatchlistCreateResponse(
         created=result.created, item=_serialize_item(result.item)
@@ -104,12 +117,13 @@ def create_watchlist_item(
 
 @router.get("/items")
 def list_watchlist_items(
+    verified: Annotated[VerifiedRequest, Depends(verify_wordpress_request)],
     session: Annotated[Session, Depends(get_db_session)],
-    user_id: str | None = None,
+    user_id: str,
 ) -> dict[str, list[dict[str, Any]]]:
+    del verified
     statement = select(WatchlistItem).where(WatchlistItem.status == "active")
-    if user_id is not None:
-        statement = statement.where(WatchlistItem.user_id == user_id)
+    statement = statement.where(WatchlistItem.user_id == user_id)
     items = session.scalars(statement.order_by(WatchlistItem.created_at.desc())).all()
     return {"items": [_serialize_item(item).model_dump() for item in items]}
 
@@ -135,3 +149,24 @@ def delete_watchlist_item(
 
 def _json_ready(value: dict[str, Any]) -> dict[str, Any]:
     return value
+
+
+def _max_tracked_products(session: Session) -> int:
+    settings = SourceService(session).get_settings()
+    return int(settings["max_tracked_products_per_user"])
+
+
+def _status_for_watchlist_error(error_code: str) -> int:
+    if error_code in {"duplicate_watchlist_item", "limit_exceeded"}:
+        return status.HTTP_409_CONFLICT
+    return status.HTTP_422_UNPROCESSABLE_ENTITY
+
+
+def _watchlist_error(error_code: str) -> dict[str, dict[str, str]]:
+    messages = {
+        "duplicate_watchlist_item": "Товар уже в списке отслеживания",
+        "invalid_target_price": "Некорректная целевая цена",
+        "limit_exceeded": "Достигнут лимит отслеживаемых товаров",
+        "unsupported_store": "Магазин не поддерживается",
+    }
+    return {"error": {"code": error_code, "message": messages[error_code]}}
