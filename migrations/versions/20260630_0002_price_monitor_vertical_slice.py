@@ -18,6 +18,26 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.create_table(
+        "alert_events",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("watchlist_item_id", sa.String(length=36), nullable=False),
+        sa.Column("product_id", sa.String(length=36), nullable=False),
+        sa.Column("user_id", sa.String(length=128), nullable=False),
+        sa.Column("target_price_minor", sa.Integer(), nullable=False),
+        sa.Column("observed_price_minor", sa.Integer(), nullable=False),
+        sa.Column("currency", sa.String(length=3), nullable=False),
+        sa.Column("dedup_key", sa.String(length=255), nullable=False),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.Column("sent_at", sa.DateTime(timezone=True), nullable=True),
+        sa.PrimaryKeyConstraint("id"),
+        sa.UniqueConstraint("dedup_key", name="uq_alert_events_dedup_key"),
+    )
+    op.create_index("ix_alert_events_product_id", "alert_events", ["product_id"])
+    op.create_index("ix_alert_events_user_id", "alert_events", ["user_id"])
+    op.create_index("ix_alert_events_watchlist_item_id", "alert_events", ["watchlist_item_id"])
+
+    op.create_table(
         "monitored_sources",
         sa.Column("source_domain", sa.String(length=255), nullable=False),
         sa.Column("display_name", sa.String(length=255), nullable=False),
@@ -132,6 +152,10 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
+    op.drop_index("ix_alert_events_watchlist_item_id", table_name="alert_events")
+    op.drop_index("ix_alert_events_user_id", table_name="alert_events")
+    op.drop_index("ix_alert_events_product_id", table_name="alert_events")
+    op.drop_table("alert_events")
     with op.batch_alter_table("price_points") as batch_op:
         batch_op.drop_index("ix_price_points_fetch_attempt_id")
         batch_op.drop_constraint("fk_price_points_fetch_attempt_id", type_="foreignkey")

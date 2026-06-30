@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session
 
 from price_monitor.domains.fetching.extraction import extract_product_data
 from price_monitor.domains.fetching.ports import ProductPageFetcher, ProxyUrlResolver
+from price_monitor.domains.notifications.service import NotificationService
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
 from price_monitor.domains.reliability.models import FetchAttempt
@@ -127,6 +128,10 @@ class FetchPipeline:
             )
             self._session.add(price_point)
             self._session.flush()
+            NotificationService(self._session).evaluate_product(
+                product_id=product.id,
+                now=current_time,
+            )
             return ProductFetchResult(
                 product_id=product.id,
                 status="ok",

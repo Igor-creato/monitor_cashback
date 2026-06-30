@@ -13,7 +13,7 @@ from price_monitor.domains.fetching.ports import FetchPageResult
 from price_monitor.domains.fetching.service import FetchPipeline
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
-from price_monitor.domains.reliability.models import FetchAttempt
+from price_monitor.domains.reliability.models import AlertEvent, FetchAttempt, OutboxEvent
 from price_monitor.domains.sources.models import ProxyEndpoint, ProxyPool
 from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
 from price_monitor.domains.watchlist.service import WatchlistService
@@ -139,6 +139,35 @@ def test_fetch_pipeline_does_not_resolve_proxy_before_direct_success(
     assert len(attempts) == 1
     assert attempts[0].strategy == "direct"
     assert attempts[0].status == "ok"
+
+
+def test_fetch_pipeline_creates_pending_alert_event_when_price_crosses_target(
+    session: Session,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=False)
+    direct_fetcher = FakeFetcher(html=_product_html(title="Alert Phone", price="99.90"))
+    proxy_fetcher = FakeFetcher(exc=AssertionError("proxy fetcher should not be used"))
+    browser_fetcher = FakeFetcher(exc=AssertionError("browser fetcher should not be used"))
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+        proxy_fetcher=proxy_fetcher,
+        browser_fetcher=browser_fetcher,
+    ).run(product_id=product.id, now=datetime(2026, 6, 30, 11, 30, tzinfo=UTC))
+
+    session.commit()
+
+    assert result.status == "ok"
+    alerts = session.scalars(select(AlertEvent)).all()
+    assert len(alerts) == 1
+    assert alerts[0].status == "pending"
+    outbox_events = session.scalars(
+        select(OutboxEvent).where(
+            OutboxEvent.event_type == "notification.price_target_reached"
+        )
+    ).all()
+    assert len(outbox_events) == 1
 
 
 def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_url(

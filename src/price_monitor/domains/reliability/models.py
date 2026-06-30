@@ -9,6 +9,25 @@ from sqlalchemy.orm import Mapped, mapped_column
 from price_monitor.db.base import Base
 
 
+class AlertEvent(Base):
+    __tablename__ = "alert_events"
+    __table_args__ = (UniqueConstraint("dedup_key", name="uq_alert_events_dedup_key"),)
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
+    watchlist_item_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    product_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    user_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    target_price_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    observed_price_minor: Mapped[int] = mapped_column(Integer, nullable=False)
+    currency: Mapped[str] = mapped_column(String(3), nullable=False)
+    dedup_key: Mapped[str] = mapped_column(String(255), nullable=False)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="pending")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
+    )
+    sent_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+
 class OutboxEvent(Base):
     __tablename__ = "outbox_events"
     __table_args__ = (UniqueConstraint("logical_key", name="uq_outbox_events_logical_key"),)
