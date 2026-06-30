@@ -19,6 +19,9 @@ class PricePoint(Base):
 
     id: Mapped[str] = mapped_column(String(36), primary_key=True, default=lambda: str(uuid4()))
     product_id: Mapped[str] = mapped_column(ForeignKey("products.id"), nullable=False, index=True)
+    fetch_attempt_id: Mapped[str | None] = mapped_column(
+        ForeignKey("fetch_attempts.id"), nullable=True, index=True
+    )
     source_domain: Mapped[str] = mapped_column(String(255), nullable=False)
     price_minor: Mapped[int] = mapped_column(Integer, nullable=False)
     currency: Mapped[str] = mapped_column(String(3), nullable=False)

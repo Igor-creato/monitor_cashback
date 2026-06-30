@@ -38,7 +38,13 @@ def get_replay_or_reserve(
 
     if existing.request_hash != request_hash:
         raise IdempotencyConflictError("idempotency key reused with a different request body")
-    if existing.status == "completed" and existing.response_status and existing.response_body:
+    if existing.status == "pending":
+        raise IdempotencyConflictError("idempotency request with this key is already in progress")
+    if (
+        existing.status == "completed"
+        and existing.response_status is not None
+        and existing.response_body is not None
+    ):
         return IdempotencyReplay(
             status_code=existing.response_status,
             response_body=existing.response_body,
