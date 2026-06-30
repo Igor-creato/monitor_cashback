@@ -1,4 +1,5 @@
 import json
+from hashlib import sha256
 
 from fastapi.testclient import TestClient
 from sqlalchemy import select
@@ -280,6 +281,115 @@ def test_watchlist_delete_rejects_same_idempotency_key_for_different_target(
     still_active = session.get(WatchlistItem, second_item.id)
     assert still_active is not None
     assert still_active.status == "active"
+
+
+def test_watchlist_create_rejects_pending_same_key_retry(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    path = "/api/v1/watchlist/items"
+    body = {
+        "user_id": "wp-user-1",
+        "url": "https://example.com/pending-create",
+        "target_price_minor": None,
+        "currency": "RUB",
+    }
+    raw_body = json.dumps(body, separators=(",", ":")).encode()
+    session.add(
+        IdempotencyRecord(
+            key="idem-pending-create",
+            route="POST /api/v1/watchlist/items",
+            request_hash=sha256(raw_body).hexdigest(),
+            status="pending",
+        )
+    )
+    session.commit()
+
+    response = client.post(
+        path,
+        content=raw_body,
+        headers=signed_headers(
+            "POST",
+            path,
+            raw_body,
+            request_id="req-pending-create",
+            idempotency_key="idem-pending-create",
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_conflict"
+    assert "progress" in response.json()["error"]["message"]
+    items = session.scalars(select(WatchlistItem)).all()
+    assert items == []
+
+
+def test_watchlist_delete_rejects_pending_same_key_retry(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    created = WatchlistService(session).add_item(
+        user_id="wp-user-1",
+        product_url="https://example.com/pending-delete",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-create-pending-delete",
+    )
+    item_id = created.item.id
+    path = f"/api/v1/watchlist/items/{item_id}"
+    session.add(
+        IdempotencyRecord(
+            key="idem-pending-delete",
+            route="DELETE /api/v1/watchlist/items",
+            request_hash=sha256(f"{item_id}:{sha256(b'').hexdigest()}".encode()).hexdigest(),
+            status="pending",
+        )
+    )
+    session.commit()
+
+    response = client.delete(
+        path,
+        headers=signed_headers(
+            "DELETE",
+            path,
+            b"",
+            request_id="req-pending-delete",
+            idempotency_key="idem-pending-delete",
+        ),
+    )
+
+    assert response.status_code == 409
+    assert response.json()["error"]["code"] == "idempotency_conflict"
+    assert "progress" in response.json()["error"]["message"]
+    item = session.get(WatchlistItem, item_id)
+    assert item is not None
+    assert item.status == "active"
+    events = session.scalars(
+        select(OutboxEvent).where(OutboxEvent.event_type == "watchlist.item_deleted")
+    ).all()
+    assert events == []
 
 
 def test_health_and_read_endpoints_return_stable_empty_foundation_contract(

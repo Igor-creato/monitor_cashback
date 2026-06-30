@@ -194,3 +194,53 @@ Reviewer found one remaining Important issue:
 - Reusing the same key against a different delete target now fails closed with `idempotency_conflict`.
 - Product rows and price history remain untouched; delete still only deactivates the watch by clearing the active identity key.
 
+
+## Task 2 Review 3
+
+Reviewer found one remaining Important issue:
+- Idempotency helper returns an existing pending record to callers, and watchlist POST/DELETE treat it as a fresh reservation. Same-key concurrent/in-flight retries can execute business logic twice instead of replaying/completing or failing closed.
+
+## Task 2 Review 3 Fix
+
+### Scope
+
+- Fixed only the remaining Important pending-idempotency gap for watchlist mutations.
+- Kept completed replay behavior unchanged: completed same-key DELETE still replays `204`, and same key with a different target/request hash still conflicts.
+
+### RED
+
+1. Added `test_watchlist_create_rejects_pending_same_key_retry(...)` to `tests/contract/test_api_contract.py`.
+2. Added `test_watchlist_delete_rejects_pending_same_key_retry(...)` to `tests/contract/test_api_contract.py`.
+3. Ran:
+   - `rtk python -m pytest tests/contract/test_api_contract.py -k "pending_same_key_retry" -q`
+4. Result:
+   - `test_watchlist_create_rejects_pending_same_key_retry` failed because POST returned `201` and created a watchlist item even when a matching `pending` idempotency record already existed.
+   - `test_watchlist_delete_rejects_pending_same_key_retry` failed because DELETE returned `204` and performed the delete even when a matching `pending` idempotency record already existed.
+
+### GREEN
+
+1. Updated `src/price_monitor/core/idempotency.py` so `get_replay_or_reserve(...)` raises `IdempotencyConflictError` when the existing same-key/same-hash record is still `pending`, instead of returning that record as a fresh reservation.
+2. Re-ran focused regressions:
+   - `rtk python -m pytest tests/contract/test_api_contract.py -k "pending_same_key_retry" -q`
+   - Result: `2 passed`
+3. Ran required verification:
+   - `rtk python -m pytest tests/contract/test_api_contract.py -q`
+     - Result: `12 passed`
+   - `rtk python -m pytest tests/integration/test_watchlist_service.py tests/contract/test_product_card_contract.py tests/contract/test_admin_api_contract.py tests/unit/test_security.py -q`
+     - Result: `14 passed`
+   - `rtk python -m ruff check src/price_monitor/core/idempotency.py src/price_monitor/api/v1/watchlist.py tests/contract/test_api_contract.py`
+     - Result: `All checks passed!`
+   - `rtk git diff --check`
+     - Result: no whitespace or patch-format issues
+
+### Files Changed
+
+- `src/price_monitor/core/idempotency.py`
+- `tests/contract/test_api_contract.py`
+
+### Self-Review
+
+- Same-key in-flight POST and DELETE retries now fail closed with `409 idempotency_conflict` and do not execute watchlist business logic a second time.
+- Completed replay behavior remains intact because only `pending` records changed behavior; completed records still replay from stored status/body, including empty `{}` DELETE bodies.
+- Same-key/different-request-hash conflict behavior remains unchanged.
+
