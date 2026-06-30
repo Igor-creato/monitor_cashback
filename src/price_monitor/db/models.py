@@ -8,16 +8,26 @@ from price_monitor.domains.reliability.models import (
     InboxMessage,
     OutboxEvent,
 )
-from price_monitor.domains.sources.models import SourceStatus
+from price_monitor.domains.sources.models import (
+    MonitoredSource,
+    MonitorSetting,
+    ProxyEndpoint,
+    ProxyPool,
+    SourceStatus,
+)
 from price_monitor.domains.watchlist.models import WatchlistItem
 
 __all__ = [
     "FetchJob",
     "IdempotencyRecord",
     "InboxMessage",
+    "MonitorSetting",
+    "MonitoredSource",
     "OutboxEvent",
     "PricePoint",
     "Product",
+    "ProxyEndpoint",
+    "ProxyPool",
     "SourceStatus",
     "WatchlistItem",
 ]

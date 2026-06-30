@@ -3,7 +3,15 @@ from __future__ import annotations
 from fastapi import FastAPI, Request, status
 from fastapi.responses import JSONResponse
 
-from price_monitor.api.v1 import health, internal, price_history, products, sources, watchlist
+from price_monitor.api.v1 import (
+    admin,
+    health,
+    internal,
+    price_history,
+    products,
+    sources,
+    watchlist,
+)
 from price_monitor.core.config import Settings
 from price_monitor.core.idempotency import IdempotencyConflictError
 from price_monitor.core.logging import configure_logging
@@ -22,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.state.settings = settings or Settings()
 
     app.include_router(health.router)
+    app.include_router(admin.router)
     app.include_router(watchlist.router)
     app.include_router(products.router)
     app.include_router(price_history.router)
