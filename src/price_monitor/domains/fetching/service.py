@@ -7,7 +7,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from price_monitor.domains.fetching.extraction import extract_product_data
-from price_monitor.domains.fetching.ports import ProductPageFetcher
+from price_monitor.domains.fetching.ports import ProductPageFetcher, ProxyUrlResolver
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
 from price_monitor.domains.reliability.models import FetchAttempt
@@ -22,15 +22,6 @@ class ProductFetchResult:
     fetch_attempt_id: str | None = None
 
 
-class _UnavailableFetcher:
-    def __init__(self, name: str) -> None:
-        self._name = name
-
-    def fetch(self, *, url: str, proxy_url: str | None) -> object:
-        del url, proxy_url
-        raise RuntimeError(f"{self._name}_fetcher_not_configured")
-
-
 class FetchPipeline:
     def __init__(
         self,
@@ -39,11 +30,13 @@ class FetchPipeline:
         direct_fetcher: ProductPageFetcher | None = None,
         proxy_fetcher: ProductPageFetcher | None = None,
         browser_fetcher: ProductPageFetcher | None = None,
+        proxy_url_resolver: ProxyUrlResolver | None = None,
     ) -> None:
         self._session = session
-        self._direct_fetcher = direct_fetcher or _UnavailableFetcher("direct")
-        self._proxy_fetcher = proxy_fetcher or _UnavailableFetcher("proxy")
-        self._browser_fetcher = browser_fetcher or _UnavailableFetcher("browser")
+        self._direct_fetcher = direct_fetcher
+        self._proxy_fetcher = proxy_fetcher
+        self._browser_fetcher = browser_fetcher
+        self._proxy_url_resolver = proxy_url_resolver
 
     def run(self, product_id: str, now: datetime | None = None) -> ProductFetchResult:
         current_time = now or datetime.now(UTC)
@@ -60,15 +53,14 @@ class FetchPipeline:
             return ProductFetchResult(product_id=product.id, status="unsupported_store")
 
         fallback_currency = product.currency or "RUB"
-        strategies: list[tuple[str, int | None, str | None, ProductPageFetcher]] = [
-            ("direct", None, None, self._direct_fetcher),
-        ]
-        strategies.extend(
-            ("proxy", endpoint.tier, endpoint.proxy_url_secret_ref, self._proxy_fetcher)
-            for endpoint in self._active_proxy_endpoints(source)
-        )
-        if source.browser_fallback_allowed:
+        strategies: list[tuple[str, int | None, str | None, ProductPageFetcher]] = []
+        if self._direct_fetcher is not None:
+            strategies.append(("direct", None, None, self._direct_fetcher))
+        strategies.extend(self._proxy_strategies(source))
+        if source.browser_fallback_allowed and self._browser_fetcher is not None:
             strategies.append(("browser", None, None, self._browser_fetcher))
+        if not strategies:
+            return ProductFetchResult(product_id=product.id, status="not_configured")
 
         for attempt_index, (strategy, proxy_tier, proxy_url, fetcher) in enumerate(strategies):
             attempt_time = current_time + timedelta(microseconds=attempt_index)
@@ -138,6 +130,23 @@ class FetchPipeline:
         product.updated_at = current_time
         self._session.flush()
         return ProductFetchResult(product_id=product.id, status="fetch_failed")
+
+    def _proxy_strategies(
+        self,
+        source: MonitoredSource,
+    ) -> list[tuple[str, int | None, str | None, ProductPageFetcher]]:
+        if self._proxy_fetcher is None or self._proxy_url_resolver is None:
+            return []
+
+        strategies: list[tuple[str, int | None, str | None, ProductPageFetcher]] = []
+        for endpoint in self._active_proxy_endpoints(source):
+            proxy_url = self._proxy_url_resolver.resolve(
+                secret_ref=endpoint.proxy_url_secret_ref
+            )
+            if not proxy_url:
+                continue
+            strategies.append(("proxy", endpoint.tier, proxy_url, self._proxy_fetcher))
+        return strategies
 
     def _active_proxy_endpoints(self, source: MonitoredSource) -> list[ProxyEndpoint]:
         if not source.proxy_pool_id:

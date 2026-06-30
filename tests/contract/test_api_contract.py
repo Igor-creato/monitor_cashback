@@ -22,6 +22,7 @@ def test_openapi_exposes_initial_wordpress_facing_endpoints(client: TestClient) 
     assert "/api/v1/watchlist/items/{item_id}" in paths
     assert "/api/v1/products/{product_id}" in paths
     assert "/api/v1/products/{product_id}/price-history" in paths
+    assert "/api/v1/products/{product_id}/price-chart" in paths
     assert "/api/v1/sources/status" in paths
 
 
@@ -394,7 +395,30 @@ def test_watchlist_delete_rejects_pending_same_key_retry(
 
 def test_health_and_read_endpoints_return_stable_empty_foundation_contract(
     client: TestClient,
+    session: Session,
 ) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    created = WatchlistService(session).add_item(
+        user_id="wp-empty-reader",
+        product_url="https://example.com/empty-chart",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-empty-chart",
+    )
+    assert created.item is not None
+    assert created.item.product is not None
+
     assert client.get("/health/live").json() == {"status": "ok"}
     assert client.get("/health/ready").json()["status"] == "ok"
     assert client.get("/api/v1/sources/status").json() == {"sources": []}
@@ -402,6 +426,31 @@ def test_health_and_read_endpoints_return_stable_empty_foundation_contract(
     history_path = "/api/v1/products/missing-product/price-history"
     history = client.get(
         history_path,
-        headers=signed_headers("GET", history_path, b"", request_id="req-empty-history", idempotency_key=None),
+        headers=signed_headers(
+            "GET",
+            history_path,
+            b"",
+            request_id="req-empty-history",
+            idempotency_key=None,
+        ),
     ).json()
     assert history == {"product_id": "missing-product", "points": []}
+
+    chart_path = f"/api/v1/products/{created.item.product.id}/price-chart?days=30"
+    chart = client.get(
+        chart_path,
+        headers=signed_headers(
+            "GET",
+            chart_path,
+            b"",
+            request_id="req-empty-chart",
+            idempotency_key=None,
+        ),
+    )
+    assert chart.status_code == 200
+    assert chart.json() == {
+        "product_id": created.item.product.id,
+        "currency": None,
+        "points": [],
+        "summary": {"lowest_price_minor": None, "latest_price_minor": None},
+    }

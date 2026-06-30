@@ -24,3 +24,8 @@ class FetchPageResult:
 class ProductPageFetcher(Protocol):
     def fetch(self, *, url: str, proxy_url: str | None) -> FetchPageResult:
         """Fetch a public product page."""
+
+
+class ProxyUrlResolver(Protocol):
+    def resolve(self, *, secret_ref: str) -> str | None:
+        """Resolve a proxy secret reference into a usable proxy URL."""

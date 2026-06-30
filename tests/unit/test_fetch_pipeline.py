@@ -3,10 +3,11 @@ from __future__ import annotations
 import importlib
 from datetime import UTC, datetime
 
-from fastapi.testclient import TestClient
 import pytest
+from fastapi.testclient import TestClient
 from sqlalchemy import select
 from sqlalchemy.orm import Session
+from tests.conftest import signed_headers
 
 from price_monitor.domains.fetching.ports import FetchPageResult
 from price_monitor.domains.fetching.service import FetchPipeline
@@ -16,7 +17,6 @@ from price_monitor.domains.reliability.models import FetchAttempt
 from price_monitor.domains.sources.models import ProxyEndpoint, ProxyPool
 from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
 from price_monitor.domains.watchlist.service import WatchlistService
-from tests.conftest import signed_headers
 
 
 class FakeFetcher:
@@ -31,6 +31,16 @@ class FakeFetcher:
             raise self.exc
         assert self.html is not None
         return FetchPageResult(content=self.html, final_url=url, http_status=200, response_ms=7)
+
+
+class FakeProxyUrlResolver:
+    def __init__(self, values: dict[str, str | None]) -> None:
+        self.values = values
+        self.calls: list[str] = []
+
+    def resolve(self, *, secret_ref: str) -> str | None:
+        self.calls.append(secret_ref)
+        return self.values.get(secret_ref)
 
 
 def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetch(
@@ -64,7 +74,9 @@ def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetc
     assert refreshed_product.last_fetch_status == "ok"
     assert refreshed_product.last_fetched_at == now
 
-    price_points = session.scalars(select(PricePoint).where(PricePoint.product_id == product.id)).all()
+    price_points = session.scalars(
+        select(PricePoint).where(PricePoint.product_id == product.id)
+    ).all()
     assert len(price_points) == 1
     attempts = session.scalars(
         select(FetchAttempt)
@@ -83,6 +95,7 @@ def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetc
 def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_url(
     session: Session,
 ) -> None:
+    secret_ref = "proxy-ref-tier-1"  # noqa: S105
     proxy_pool = ProxyPool(name="Pool A", status="active")
     session.add(proxy_pool)
     session.flush()
@@ -90,7 +103,7 @@ def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_u
         ProxyEndpoint(
             pool_id=proxy_pool.id,
             tier=1,
-            proxy_url_secret_ref="http://proxy-tier-1.local",
+            proxy_url_secret_ref=secret_ref,
             status="active",
         )
     )
@@ -102,12 +115,14 @@ def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_u
     direct_fetcher = FakeFetcher(exc=TimeoutError("direct timed out"))
     proxy_fetcher = FakeFetcher(html=_product_html(title="Proxy Phone", price="111.00"))
     browser_fetcher = FakeFetcher(exc=AssertionError("browser fetcher should not be used"))
+    proxy_url_resolver = FakeProxyUrlResolver({secret_ref: "http://proxy-tier-1.local"})
 
     result = FetchPipeline(
         session,
         direct_fetcher=direct_fetcher,
         proxy_fetcher=proxy_fetcher,
         browser_fetcher=browser_fetcher,
+        proxy_url_resolver=proxy_url_resolver,
     ).run(product_id=product.id, now=datetime(2026, 6, 30, 12, 0, tzinfo=UTC))
 
     session.commit()
@@ -115,6 +130,8 @@ def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_u
     assert result.status == "ok"
     assert direct_fetcher.calls == [(product.canonical_url, None)]
     assert proxy_fetcher.calls == [(product.canonical_url, "http://proxy-tier-1.local")]
+    assert proxy_url_resolver.calls == [secret_ref]
+    assert all(call[1] != secret_ref for call in proxy_fetcher.calls)
 
     attempts = session.scalars(
         select(FetchAttempt)
@@ -131,7 +148,10 @@ def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_u
     assert attempts[1].proxy_tier == 1
 
 
-def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(session: Session) -> None:
+def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(
+    session: Session,
+) -> None:
+    secret_ref = "proxy-ref-tier-1"  # noqa: S105
     proxy_pool = ProxyPool(name="Pool B", status="active")
     session.add(proxy_pool)
     session.flush()
@@ -139,7 +159,7 @@ def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(session:
         ProxyEndpoint(
             pool_id=proxy_pool.id,
             tier=1,
-            proxy_url_secret_ref="http://proxy-tier-1.local",
+            proxy_url_secret_ref=secret_ref,
             status="active",
         )
     )
@@ -151,12 +171,14 @@ def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(session:
     direct_fetcher = FakeFetcher(exc=TimeoutError("direct timed out"))
     proxy_fetcher = FakeFetcher(exc=RuntimeError("proxy failed"))
     browser_fetcher = FakeFetcher(html=_product_html(title="Browser Phone", price="77.70"))
+    proxy_url_resolver = FakeProxyUrlResolver({secret_ref: "http://proxy-tier-1.local"})
 
     result = FetchPipeline(
         session,
         direct_fetcher=direct_fetcher,
         proxy_fetcher=proxy_fetcher,
         browser_fetcher=browser_fetcher,
+        proxy_url_resolver=proxy_url_resolver,
     ).run(product_id=product.id, now=datetime(2026, 6, 30, 13, 0, tzinfo=UTC))
 
     session.commit()
@@ -171,6 +193,41 @@ def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(session:
     assert [attempt.strategy for attempt in attempts] == ["direct", "proxy"]
     assert attempts[1].proxy_tier == 1
     assert attempts[1].error_type == "RuntimeError"
+
+
+def test_fetch_product_task_without_configured_adapters_returns_not_configured_without_failed_state(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=False)
+    fetch_product_module = importlib.import_module("price_monitor.workers.tasks.fetch_product")
+
+    class SessionContext:
+        def __enter__(self) -> Session:
+            return session
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            del exc_type, exc, tb
+
+    class DummyFactory:
+        def __call__(self) -> SessionContext:
+            return SessionContext()
+
+    monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: DummyFactory())
+
+    result = fetch_product_module.fetch_product(product.id)
+
+    session.expire_all()
+    refreshed_product = session.get(Product, product.id)
+    attempts = session.scalars(
+        select(FetchAttempt).where(FetchAttempt.product_id == product.id)
+    ).all()
+
+    assert result == {"product_id": product.id, "status": "not_configured"}
+    assert refreshed_product is not None
+    assert refreshed_product.last_fetch_status is None
+    assert refreshed_product.last_fetched_at is None
+    assert attempts == []
 
 
 def test_price_chart_endpoint_requires_hmac_and_returns_daily_summary(
@@ -213,7 +270,13 @@ def test_price_chart_endpoint_requires_hmac_and_returns_daily_summary(
     chart_path = f"/api/v1/products/{product.id}/price-chart?days=7"
     response = client.get(
         chart_path,
-        headers=signed_headers("GET", chart_path, b"", request_id="req-chart", idempotency_key=None),
+        headers=signed_headers(
+            "GET",
+            chart_path,
+            b"",
+            request_id="req-chart",
+            idempotency_key=None,
+        ),
     )
 
     assert response.status_code == 200
@@ -228,7 +291,9 @@ def test_price_chart_endpoint_requires_hmac_and_returns_daily_summary(
     }
 
 
-def test_fetch_product_task_runs_pipeline_and_returns_status(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_fetch_product_task_runs_pipeline_and_returns_status(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     fetch_product_module = importlib.import_module("price_monitor.workers.tasks.fetch_product")
     seen: dict[str, object] = {}
 

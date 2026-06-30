@@ -85,3 +85,53 @@
 - Existing warnings remain in adjacent tests:
   - `fastapi.testclient` / `httpx` deprecation warning
   - existing watchlist `HTTP_422_UNPROCESSABLE_ENTITY` deprecation warning
+
+## Task 3 Review 1
+
+Reviewer found blocking issues requiring fixes:
+- Worker default runtime constructs FetchPipeline without real adapters and mutates products to fetch_failed/write failed attempts, so the path is not safely fake/adapter-gated.
+- ProxyEndpoint.proxy_url_secret_ref is forwarded to fetcher as proxy_url, blurring secret-reference versus resolved proxy URL boundary.
+- tests/contract/test_api_contract.py does not pin the new /api/v1/products/{product_id}/price-chart path/contract.
+
+## Task 3 Review 1 Fix
+
+### Blocking findings fixed
+
+- Added a safe `not_configured` path in `FetchPipeline.run()` when no fetch adapters are actually configured, so the default worker runtime no longer writes failed attempts or flips products to `fetch_failed` just because adapters are absent.
+- Added an explicit `ProxyUrlResolver` seam and now resolve `ProxyEndpoint.proxy_url_secret_ref` before proxy fetches. The raw secret reference is no longer forwarded as `proxy_url`.
+- Pinned the public `/api/v1/products/{product_id}/price-chart` contract in `tests/contract/test_api_contract.py` via OpenAPI exposure and a stable signed empty-response shape.
+
+### RED/GREEN evidence
+
+1. `rtk python -m pytest tests/unit/test_fetch_pipeline.py tests/contract/test_api_contract.py -q`
+   - RED: `FetchPipeline.__init__() got an unexpected keyword argument 'proxy_url_resolver'`
+   - RED: `fetch_product()` returned `fetch_failed` instead of `not_configured`
+2. `rtk python -m pytest tests/unit/test_fetch_pipeline.py tests/contract/test_api_contract.py -q`
+   - GREEN: `18 passed`
+
+### Verification commands and results
+
+1. `rtk python -m pytest tests/unit/test_fetch_pipeline.py tests/contract/test_api_contract.py -q`
+   - GREEN: `18 passed`
+2. `rtk python -m pytest tests/unit/test_fetch_extraction.py tests/contract/test_product_card_contract.py tests/unit/test_ports_and_worker_config.py -q`
+   - GREEN: `8 passed`
+3. `rtk python -m ruff check src/price_monitor/domains/fetching src/price_monitor/workers/tasks/fetch_product.py src/price_monitor/api/v1/price_history.py tests/unit/test_fetch_pipeline.py tests/contract/test_api_contract.py`
+   - GREEN: `All checks passed!`
+4. `rtk git diff --check`
+   - GREEN: no whitespace or conflict-marker issues
+
+### Files changed for review fix
+
+- Modified: `src/price_monitor/domains/fetching/ports.py`
+- Modified: `src/price_monitor/domains/fetching/service.py`
+- Modified: `tests/unit/test_fetch_pipeline.py`
+- Modified: `tests/contract/test_api_contract.py`
+- Modified: `src/price_monitor/domains/fetching/__init__.py` (ruff-driven import/line cleanup only)
+- Modified: `src/price_monitor/domains/fetching/extraction.py` (ruff-driven import/line cleanup only)
+
+### Self-review
+
+- The adapter gate is fail-closed for missing runtime wiring: if no runnable fetch strategies exist, the worker returns `not_configured` and leaves product/attempt tables untouched.
+- Proxy resolution is now explicit and injectable, which keeps fake tests honest and avoids treating secret refs as usable URLs.
+- `fetch_product.py` behavior stays otherwise unchanged; it still opens one DB session, commits, and returns pipeline status.
+- `.claude-flow/` remains untouched and uncommitted.

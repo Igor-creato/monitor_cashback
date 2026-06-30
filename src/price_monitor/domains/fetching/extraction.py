@@ -1,8 +1,7 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
-from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from html.parser import HTMLParser
 from typing import Any
 
@@ -123,7 +122,11 @@ def _extract_offer_data(
         if price_minor is None:
             continue
         raw_currency = offer.get("priceCurrency")
-        currency = raw_currency if isinstance(raw_currency, str) and raw_currency.strip() else fallback_currency
+        currency = (
+            raw_currency
+            if isinstance(raw_currency, str) and raw_currency.strip()
+            else fallback_currency
+        )
         return price_minor, currency.upper()
     return None, None
 
