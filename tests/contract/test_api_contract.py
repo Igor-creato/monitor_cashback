@@ -87,6 +87,47 @@ def test_watchlist_create_returns_stable_contract_and_deduplicates(
     assert second.json()["error"]["code"] == "duplicate_watchlist_item"
 
 
+def test_watchlist_create_rejects_negative_target_price_with_stable_error(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    path = "/api/v1/watchlist/items"
+    body = {
+        "user_id": "wp-user-1",
+        "url": "https://example.com/item?id=13",
+        "target_price_minor": -1,
+        "currency": "RUB",
+    }
+    raw_body = json.dumps(body, separators=(",", ":")).encode()
+
+    response = client.post(
+        path,
+        content=raw_body,
+        headers=signed_headers(
+            "POST", path, raw_body, request_id="req-negative-price", idempotency_key="idem-neg"
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "invalid_target_price",
+            "message": "Некорректная целевая цена",
+        }
+    }
+
+
 def test_idempotency_key_replay_returns_original_response(
     client: TestClient, session: Session
 ) -> None:

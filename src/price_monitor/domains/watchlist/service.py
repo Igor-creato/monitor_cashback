@@ -37,7 +37,8 @@ class WatchlistService:
         if target_price_minor is not None and target_price_minor < 0:
             return WatchlistAddResult(item=None, created=False, error_code="invalid_target_price")
 
-        if SourceService(self._session).find_supported_source(product_url) is None:
+        source = SourceService(self._session).find_supported_source(product_url)
+        if source is None:
             return WatchlistAddResult(item=None, created=False, error_code="unsupported_store")
 
         validated = validate_public_product_url(product_url)
@@ -62,7 +63,9 @@ class WatchlistService:
         if active_count is not None and active_count >= max_tracked_products:
             return WatchlistAddResult(item=None, created=False, error_code="limit_exceeded")
 
-        product = self._get_or_create_product(validated)
+        product = self._get_or_create_product(
+            validated, matched_source_domain=source.source_domain
+        )
         now = datetime.now(UTC)
         item = WatchlistItem(
             user_id=user_id,
@@ -136,8 +139,10 @@ class WatchlistService:
         self._session.flush()
         return item
 
-    def _get_or_create_product(self, validated: ValidatedProductUrl) -> Product:
-        source_domain = validated.source_domain
+    def _get_or_create_product(
+        self, validated: ValidatedProductUrl, *, matched_source_domain: str
+    ) -> Product:
+        source_domain = matched_source_domain
         canonical_url_hash = validated.canonical_url_hash
         product = self._session.scalar(
             select(Product).where(

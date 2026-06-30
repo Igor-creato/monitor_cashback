@@ -25,7 +25,7 @@ router = APIRouter(prefix="/api/v1/watchlist", tags=["watchlist"])
 class WatchlistCreateRequest(BaseModel):
     user_id: str = Field(min_length=1, max_length=128)
     url: str = Field(min_length=1, max_length=2048)
-    target_price_minor: int | None = Field(default=None, ge=0)
+    target_price_minor: int | None = Field(default=None)
     currency: str = Field(default="RUB", min_length=3, max_length=3)
 
 
