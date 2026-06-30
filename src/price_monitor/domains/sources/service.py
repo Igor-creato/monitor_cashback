@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
@@ -11,6 +12,12 @@ from price_monitor.domains.sources.models import MonitoredSource, MonitorSetting
 
 ALLOWED_SOURCE_STATUSES = {"active", "paused", "disabled"}
 DEFAULT_MONITOR_SETTINGS = {"max_tracked_products_per_user": "10"}
+SECOND_LEVEL_PUBLIC_SUFFIXES = {"ac", "co", "com", "edu", "gov", "mil", "net", "org"}
+DOMAIN_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
+
+
+class InvalidMonitoredSourceError(ValueError):
+    """Raised when monitored source input is invalid."""
 
 
 @dataclass(frozen=True)
@@ -30,22 +37,22 @@ class SourceService:
         self._session = session
 
     def upsert_source(self, payload: MonitoredSourceInput) -> MonitoredSource:
-        normalized_domain = self._normalize_domain(payload.source_domain)
+        normalized_domain = normalize_source_domain(payload.source_domain)
         display_name = payload.display_name.strip()
         logo_url = payload.logo_url.strip()
         status = payload.status.strip().lower()
         if not normalized_domain:
-            raise ValueError("source_domain is required")
+            raise InvalidMonitoredSourceError("source_domain is required")
         if not display_name:
-            raise ValueError("display_name is required")
+            raise InvalidMonitoredSourceError("display_name is required")
         if not logo_url:
-            raise ValueError("logo_url is required")
+            raise InvalidMonitoredSourceError("logo_url is required")
         if status not in ALLOWED_SOURCE_STATUSES:
-            raise ValueError("status is invalid")
+            raise InvalidMonitoredSourceError("status is invalid")
         if payload.fetch_interval_hours < 1:
-            raise ValueError("fetch_interval_hours must be at least 1")
+            raise InvalidMonitoredSourceError("fetch_interval_hours must be at least 1")
         if payload.history_retention_days < 1 or payload.history_retention_days > 365:
-            raise ValueError("history_retention_days must be between 1 and 365")
+            raise InvalidMonitoredSourceError("history_retention_days must be between 1 and 365")
 
         source = self._session.get(MonitoredSource, normalized_domain)
         if source is None:
@@ -110,3 +117,32 @@ class SourceService:
     @staticmethod
     def _normalize_domain(raw_domain: str) -> str:
         return raw_domain.strip().lower().rstrip(".")
+
+
+def normalize_source_domain(raw_domain: str) -> str:
+    normalized = raw_domain.strip().lower().rstrip(".")
+    if not normalized:
+        raise InvalidMonitoredSourceError("source_domain is required")
+    if "://" in normalized or any(token in normalized for token in ("/", "?", "#", "@", ":")):
+        raise InvalidMonitoredSourceError("source_domain must be a bare domain")
+
+    labels = normalized.split(".")
+    if len(labels) < 2:
+        raise InvalidMonitoredSourceError("source_domain must be a registrable domain")
+    if any(not DOMAIN_LABEL_PATTERN.fullmatch(label) for label in labels):
+        raise InvalidMonitoredSourceError("source_domain must be a valid domain")
+
+    top_level_label = labels[-1]
+    if len(top_level_label) < 2 or (
+        not top_level_label.isalpha() and not top_level_label.startswith("xn--")
+    ):
+        raise InvalidMonitoredSourceError("source_domain must be a valid domain")
+
+    if (
+        len(labels) < 3
+        and len(top_level_label) == 2
+        and labels[-2] in SECOND_LEVEL_PUBLIC_SUFFIXES
+    ):
+        raise InvalidMonitoredSourceError("source_domain must be a registrable domain")
+
+    return normalized

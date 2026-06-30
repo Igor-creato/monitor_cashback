@@ -193,3 +193,143 @@ Results:
 
 - commit message: `feat: add monitored source admin api`
 - exact short SHA: see current `HEAD` with `rtk git log -1 --oneline`
+
+## Task 1 Review 1
+
+Reviewer found Important issues requiring fixes:
+- GET /api/v1/sources/supported must bind its url query input into the signature or otherwise reject mismatched signed input.
+- Admin source validation must reject invalid status/ranges/blank or overly broad domains without 500s and without weakening unsupported_store matching.
+
+## Task 1 Review 1 Fix
+
+### Scope
+
+- Fixed only the two Important review findings from round 1.
+- Left the existing body-based HMAC contract for mutating endpoints unchanged.
+- Left unrelated untracked `.claude-flow/` untouched.
+
+### RED -> GREEN evidence
+
+#### RED: new unit test for broad monitored-source domains
+
+Command:
+
+```powershell
+rtk python -m pytest tests/unit/test_source_service.py -q
+```
+
+Result:
+
+```text
+ImportError: cannot import name 'InvalidMonitoredSourceError' from 'price_monitor.domains.sources.service'
+```
+
+This was the expected RED showing the new service-level validation path did not exist yet.
+
+#### RED: new contract coverage for signed GET query binding and invalid admin payloads
+
+Command:
+
+```powershell
+rtk python -m pytest tests/contract/test_admin_api_contract.py -q
+```
+
+Result:
+
+```text
+FAILED test_admin_source_and_settings_contract
+TypeError: build_signed_headers() got an unexpected keyword argument 'query'
+
+FAILED test_supported_source_signature_cannot_be_reused_for_different_url
+TypeError: build_signed_headers() got an unexpected keyword argument 'query'
+
+FAILED test_admin_source_contract_rejects_invalid_payloads
+ValueError: status is invalid
+```
+
+This proved both review findings before any production fix:
+
+- GET signing could not bind query input yet.
+- Invalid admin payloads still escaped as uncaught service `ValueError`.
+
+#### GREEN: focused review-fix tests
+
+Commands:
+
+```powershell
+rtk python -m pytest tests/unit/test_source_service.py -q
+rtk python -m pytest tests/contract/test_admin_api_contract.py -q
+rtk python -m pytest tests/unit/test_source_service.py tests/contract/test_admin_api_contract.py -q
+```
+
+Results:
+
+```text
+... [100%]
+... [100%]
+...... [100%]
+```
+
+### Implementation summary
+
+- Added query-aware canonical request-target signing in `src/price_monitor/core/security.py` and bound GET query strings in `src/price_monitor/api/dependencies.py`, so `GET /api/v1/sources/supported?url=...` now authenticates the signed `url` input.
+- Kept the existing path+body signing contract for body-based mutating requests by signing query input only for GET verification.
+- Added shared monitored-source domain validation in `src/price_monitor/domains/sources/service.py` with rejection for blank, malformed, scheme/path-bearing, and public-suffix-like broad domains such as `com` and `co.uk`.
+- Added schema validation in `src/price_monitor/domains/sources/schemas.py` for normalized source status and domain input.
+- Added admin fallback handling in `src/price_monitor/api/v1/admin.py` so service-side monitored-source validation errors return a client error instead of a 500.
+
+### Commands and results
+
+1. Required focused verification
+
+```powershell
+rtk python -m pytest tests/unit/test_source_service.py tests/contract/test_admin_api_contract.py -q
+```
+
+Result:
+
+```text
+...... [100%]
+```
+
+2. Required lint
+
+```powershell
+rtk python -m ruff check src/price_monitor/api/v1/admin.py src/price_monitor/api/v1/sources.py src/price_monitor/api/dependencies.py src/price_monitor/core/security.py src/price_monitor/domains/sources tests/unit/test_source_service.py tests/contract/test_admin_api_contract.py
+```
+
+Result:
+
+```text
+All checks passed!
+```
+
+3. Required diff hygiene
+
+```powershell
+rtk git diff --check
+```
+
+Result:
+
+```text
+clean output
+```
+
+### Files changed for the fix
+
+- `src/price_monitor/api/v1/admin.py`
+- `src/price_monitor/api/dependencies.py`
+- `src/price_monitor/core/security.py`
+- `src/price_monitor/domains/sources/schemas.py`
+- `src/price_monitor/domains/sources/service.py`
+- `tests/unit/test_source_service.py`
+- `tests/contract/test_admin_api_contract.py`
+- `.superpowers/sdd/task-1-report.md`
+
+### Self-review
+
+- The new supported-source contract test now proves a signature generated for `https://example.com/p/1` is rejected when replayed against a different `url` query value.
+- Existing mutating request signing still uses the same canonical path/body inputs as before.
+- Broad monitored-source domains are now rejected both at the API boundary and inside `SourceService`, so unsupported-store matching cannot be widened by storing `com`/`co.uk`.
+- I did not touch migrations or models for this repair because the review findings were confined to request signing and validation behavior.

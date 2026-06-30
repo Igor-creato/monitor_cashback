@@ -24,10 +24,12 @@ async def verify_wordpress_request(
     settings: Annotated[Settings, Depends(get_app_settings)],
 ) -> VerifiedRequest:
     body = await request.body()
+    signed_query = request.url.query if request.method.upper() == "GET" else None
     return verify_signed_request(
         headers=request.headers,
         method=request.method,
         path=request.url.path,
+        query=signed_query,
         body=body,
         secrets=settings.hmac_secret_list,
         replay_window_seconds=settings.hmac_replay_window_seconds,

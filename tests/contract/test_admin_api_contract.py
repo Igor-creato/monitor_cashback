@@ -1,7 +1,10 @@
 import json
+from urllib.parse import urlencode
 
 from fastapi.testclient import TestClient
 from tests.conftest import signed_headers
+
+from price_monitor.core.security import build_signed_headers
 
 
 def test_admin_source_and_settings_contract(client: TestClient) -> None:
@@ -34,23 +37,19 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     supported = client.get(
         "/api/v1/sources/supported",
         params={"url": "https://example.com/p/1"},
-        headers=signed_headers(
-            "GET",
+        headers=_signed_query_headers(
             "/api/v1/sources/supported",
-            b"",
+            {"url": "https://example.com/p/1"},
             request_id="req-supported",
-            idempotency_key=None,
         ),
     )
     missing = client.get(
         "/api/v1/sources/supported",
         params={"url": "https://unsupported.test/p/1"},
-        headers=signed_headers(
-            "GET",
+        headers=_signed_query_headers(
             "/api/v1/sources/supported",
-            b"",
+            {"url": "https://unsupported.test/p/1"},
             request_id="req-unsupported",
-            idempotency_key=None,
         ),
     )
 
@@ -90,3 +89,134 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     assert update_settings.json()["settings"]["max_tracked_products_per_user"] == 25
     assert get_settings.status_code == 200
     assert get_settings.json()["settings"]["max_tracked_products_per_user"] == 25
+
+
+def test_supported_source_signature_cannot_be_reused_for_different_url(
+    client: TestClient,
+) -> None:
+    first_source = {
+        "source_domain": "example.com",
+        "display_name": "Example",
+        "logo_url": "https://example.com/logo.png",
+        "status": "active",
+        "fetch_interval_hours": 6,
+        "history_retention_days": 90,
+        "browser_fallback_allowed": False,
+        "proxy_pool_id": None,
+    }
+    second_source = {
+        "source_domain": "other.com",
+        "display_name": "Other",
+        "logo_url": "https://other.com/logo.png",
+        "status": "active",
+        "fetch_interval_hours": 6,
+        "history_retention_days": 90,
+        "browser_fallback_allowed": False,
+        "proxy_pool_id": None,
+    }
+    for request_id, payload in (
+        ("req-admin-source-1", first_source),
+        ("req-admin-source-2", second_source),
+    ):
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        response = client.post(
+            "/api/v1/admin/sources",
+            content=body,
+            headers=signed_headers(
+                "POST",
+                "/api/v1/admin/sources",
+                body,
+                request_id=request_id,
+                idempotency_key=f"idem-{request_id}",
+            ),
+        )
+        assert response.status_code == 201
+
+    reused_signature = client.get(
+        "/api/v1/sources/supported",
+        params={"url": "https://other.com/p/2"},
+        headers=_signed_query_headers(
+            "/api/v1/sources/supported",
+            {"url": "https://example.com/p/1"},
+            request_id="req-supported-replay",
+        ),
+    )
+
+    assert reused_signature.status_code == 401
+    assert reused_signature.json()["error"]["code"] == "authentication_failed"
+
+
+def test_admin_source_contract_rejects_invalid_payloads(client: TestClient) -> None:
+    invalid_cases = (
+        (
+            "invalid-status",
+            {
+                "source_domain": "example.com",
+                "display_name": "Example",
+                "logo_url": "https://example.com/logo.png",
+                "status": "broken",
+                "fetch_interval_hours": 6,
+                "history_retention_days": 90,
+                "browser_fallback_allowed": False,
+                "proxy_pool_id": None,
+            },
+        ),
+        (
+            "broad-domain",
+            {
+                "source_domain": "co.uk",
+                "display_name": "Too Broad",
+                "logo_url": "https://example.co.uk/logo.png",
+                "status": "active",
+                "fetch_interval_hours": 6,
+                "history_retention_days": 90,
+                "browser_fallback_allowed": False,
+                "proxy_pool_id": None,
+            },
+        ),
+        (
+            "malformed-domain",
+            {
+                "source_domain": "https://example.com/store",
+                "display_name": "Malformed",
+                "logo_url": "https://example.com/logo.png",
+                "status": "active",
+                "fetch_interval_hours": 6,
+                "history_retention_days": 90,
+                "browser_fallback_allowed": False,
+                "proxy_pool_id": None,
+            },
+        ),
+    )
+
+    for request_id, payload in invalid_cases:
+        body = json.dumps(payload, separators=(",", ":")).encode()
+        response = client.post(
+            "/api/v1/admin/sources",
+            content=body,
+            headers=signed_headers(
+                "POST",
+                "/api/v1/admin/sources",
+                body,
+                request_id=f"req-{request_id}",
+                idempotency_key=f"idem-{request_id}",
+            ),
+        )
+
+        assert response.status_code == 422
+
+
+def _signed_query_headers(
+    path: str,
+    params: dict[str, str],
+    *,
+    request_id: str,
+) -> dict[str, str]:
+    return build_signed_headers(
+        secret="test-secret",
+        method="GET",
+        path=path,
+        query=urlencode(params),
+        body=b"",
+        request_id=request_id,
+    )

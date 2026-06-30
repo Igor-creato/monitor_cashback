@@ -20,7 +20,11 @@ from price_monitor.domains.sources.schemas import (
     MonitorSettingsPatchRequest,
     MonitorSettingsResponse,
 )
-from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
+from price_monitor.domains.sources.service import (
+    InvalidMonitoredSourceError,
+    MonitoredSourceInput,
+    SourceService,
+)
 
 router = APIRouter(prefix="/api/v1/admin", tags=["admin"])
 
@@ -46,7 +50,10 @@ def create_source(
     if isinstance(reserved, IdempotencyReplay):
         return JSONResponse(status_code=reserved.status_code, content=reserved.response_body)
 
-    source = SourceService(session).upsert_source(MonitoredSourceInput(**payload.model_dump()))
+    try:
+        source = SourceService(session).upsert_source(MonitoredSourceInput(**payload.model_dump()))
+    except InvalidMonitoredSourceError as exc:
+        return _validation_error(str(exc))
     response.status_code = status.HTTP_201_CREATED
     response_body = {"source": _serialize_source(source).model_dump()}
     complete_idempotency_record(
@@ -133,6 +140,13 @@ def _idempotency_required() -> JSONResponse:
         content={
             "error": {"code": "idempotency_key_required", "message": "Idempotency-Key required"}
         },
+    )
+
+
+def _validation_error(message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+        content={"error": {"code": "validation_failed", "message": message}},
     )
 
 

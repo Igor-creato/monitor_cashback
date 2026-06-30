@@ -1,6 +1,12 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+from price_monitor.domains.sources.service import (
+    ALLOWED_SOURCE_STATUSES,
+    InvalidMonitoredSourceError,
+    normalize_source_domain,
+)
 
 
 class MonitoredSourceRequest(BaseModel):
@@ -12,6 +18,22 @@ class MonitoredSourceRequest(BaseModel):
     history_retention_days: int = Field(ge=1, le=365)
     browser_fallback_allowed: bool = False
     proxy_pool_id: str | None = Field(default=None, max_length=36)
+
+    @field_validator("source_domain")
+    @classmethod
+    def validate_source_domain(cls, value: str) -> str:
+        try:
+            return normalize_source_domain(value)
+        except InvalidMonitoredSourceError as exc:
+            raise ValueError(str(exc)) from exc
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, value: str) -> str:
+        normalized = value.strip().lower()
+        if normalized not in ALLOWED_SOURCE_STATUSES:
+            raise ValueError("status is invalid")
+        return normalized
 
 
 class MonitoredSourceResponse(BaseModel):
