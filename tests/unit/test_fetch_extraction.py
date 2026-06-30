@@ -38,4 +38,7 @@ def test_extract_product_data_from_json_ld_graph_with_low_price() -> None:
 
 
 def test_extract_product_data_returns_none_when_price_or_title_missing() -> None:
-    assert extract_product_data("<html><title>No price</title></html>", fallback_currency="RUB") is None
+    assert (
+        extract_product_data("<html><title>No price</title></html>", fallback_currency="RUB")
+        is None
+    )

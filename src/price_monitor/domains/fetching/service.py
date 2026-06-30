@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 
@@ -172,21 +173,23 @@ class FetchPipeline:
         if pool is None or pool.status != "active":
             return []
 
-        return self._session.scalars(
-            select(ProxyEndpoint)
-            .where(
-                ProxyEndpoint.pool_id == source.proxy_pool_id,
-                ProxyEndpoint.status == "active",
-            )
-            .order_by(ProxyEndpoint.tier.asc(), ProxyEndpoint.id.asc())
-        ).all()
+        return list(
+            self._session.scalars(
+                select(ProxyEndpoint)
+                .where(
+                    ProxyEndpoint.pool_id == source.proxy_pool_id,
+                    ProxyEndpoint.status == "active",
+                )
+                .order_by(ProxyEndpoint.tier.asc(), ProxyEndpoint.id.asc())
+            ).all()
+        )
 
 
 def summarize_price_chart(
-    points: list[PricePoint],
+    points: Sequence[PricePoint],
     *,
     days: int,
-) -> tuple[list[dict[str, int | str]], dict[str, int | None], str | None]:
+) -> tuple[list[dict[str, object]], dict[str, int | None], str | None]:
     if not points:
         return [], {"lowest_price_minor": None, "latest_price_minor": None}, None
 

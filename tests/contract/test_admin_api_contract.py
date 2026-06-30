@@ -145,6 +145,7 @@ def test_supported_source_signature_cannot_be_reused_for_different_url(
     assert reused_signature.status_code == 401
     assert reused_signature.json()["error"]["code"] == "authentication_failed"
 
+
 def test_supported_source_rejects_duplicate_url_query_params(
     client: TestClient,
 ) -> None:
@@ -264,6 +265,7 @@ def _signed_query_headers(
         body=b"",
         request_id=request_id,
     )
+
 
 def _signed_raw_query_headers(
     path: str,

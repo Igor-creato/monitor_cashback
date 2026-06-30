@@ -39,9 +39,7 @@ def test_price_target_alert_created_once_per_threshold_crossing(session: Session
     assert alerts[0].id == first[0].id
 
     outbox_events = session.scalars(
-        select(OutboxEvent).where(
-            OutboxEvent.event_type == "notification.price_target_reached"
-        )
+        select(OutboxEvent).where(OutboxEvent.event_type == "notification.price_target_reached")
     ).all()
     assert len(outbox_events) == 1
     assert outbox_events[0].aggregate_type == "alert_event"
@@ -207,7 +205,5 @@ def _assert_no_notifications_created(
 
 def _price_target_outbox_events(session: Session) -> list[OutboxEvent]:
     return session.scalars(
-        select(OutboxEvent).where(
-            OutboxEvent.event_type == "notification.price_target_reached"
-        )
+        select(OutboxEvent).where(OutboxEvent.event_type == "notification.price_target_reached")
     ).all()

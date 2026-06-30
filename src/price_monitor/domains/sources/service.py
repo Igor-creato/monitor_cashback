@@ -88,9 +88,11 @@ class SourceService:
         return max(matches, key=lambda source: len(source.source_domain))
 
     def list_sources(self) -> list[MonitoredSource]:
-        return self._session.scalars(
-            select(MonitoredSource).order_by(MonitoredSource.source_domain)
-        ).all()
+        return list(
+            self._session.scalars(
+                select(MonitoredSource).order_by(MonitoredSource.source_domain)
+            ).all()
+        )
 
     def get_settings(self) -> dict[str, str]:
         settings = {
@@ -138,11 +140,7 @@ def normalize_source_domain(raw_domain: str) -> str:
     ):
         raise InvalidMonitoredSourceError("source_domain must be a valid domain")
 
-    if (
-        len(labels) < 3
-        and len(top_level_label) == 2
-        and labels[-2] in SECOND_LEVEL_PUBLIC_SUFFIXES
-    ):
+    if len(labels) < 3 and len(top_level_label) == 2 and labels[-2] in SECOND_LEVEL_PUBLIC_SUFFIXES:
         raise InvalidMonitoredSourceError("source_domain must be a registrable domain")
 
     return normalized

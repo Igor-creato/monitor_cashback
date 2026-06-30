@@ -39,9 +39,7 @@ def test_product_detail_returns_card_contract(client: TestClient, session: Sessi
     path = f"/api/v1/products/{product.id}"
     response = client.get(
         path,
-        headers=signed_headers(
-            "GET", path, b"", request_id="req-card", idempotency_key=None
-        ),
+        headers=signed_headers("GET", path, b"", request_id="req-card", idempotency_key=None),
     )
 
     assert response.status_code == 200

@@ -110,9 +110,7 @@ def _build_product_data(
     )
 
 
-def _extract_offer_data(
-    offers: Any, *, fallback_currency: str
-) -> tuple[int | None, str | None]:
+def _extract_offer_data(offers: Any, *, fallback_currency: str) -> tuple[int | None, str | None]:
     offer_candidates = offers if isinstance(offers, list) else [offers]
     for offer in offer_candidates:
         if not isinstance(offer, dict):

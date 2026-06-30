@@ -93,27 +93,28 @@ def create_watchlist_item(
     )
     if result.error_code is not None:
         status_code = _status_for_watchlist_error(result.error_code)
-        response_body = _watchlist_error(result.error_code)
+        error_response = _watchlist_error(result.error_code)
         complete_idempotency_record(
             record=reserved,
             status_code=status_code,
-            response_body=response_body,
+            response_body=error_response,
         )
         session.commit()
-        return JSONResponse(status_code=status_code, content=response_body)
+        return JSONResponse(status_code=status_code, content=error_response)
 
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
-    response_body = WatchlistCreateResponse(
+    assert result.item is not None
+    success_response = WatchlistCreateResponse(
         created=result.created, item=_serialize_item(result.item)
     )
-    response_dict = response_body.model_dump()
+    response_dict = success_response.model_dump()
     complete_idempotency_record(
         record=reserved,
         status_code=response.status_code,
         response_body=_json_ready(response_dict),
     )
     session.commit()
-    return response_body
+    return success_response
 
 
 @router.get("/items")
@@ -168,6 +169,7 @@ def delete_watchlist_item(
 
 def _json_ready(value: dict[str, Any]) -> dict[str, Any]:
     return value
+
 
 def _delete_request_hash(*, item_id: str, body_sha256: str) -> str:
     return sha256(f"{item_id}:{body_sha256}".encode()).hexdigest()

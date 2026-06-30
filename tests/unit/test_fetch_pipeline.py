@@ -163,9 +163,7 @@ def test_fetch_pipeline_creates_pending_alert_event_when_price_crosses_target(
     assert len(alerts) == 1
     assert alerts[0].status == "pending"
     outbox_events = session.scalars(
-        select(OutboxEvent).where(
-            OutboxEvent.event_type == "notification.price_target_reached"
-        )
+        select(OutboxEvent).where(OutboxEvent.event_type == "notification.price_target_reached")
     ).all()
     assert len(outbox_events) == 1
 

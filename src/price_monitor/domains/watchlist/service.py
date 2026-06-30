@@ -63,9 +63,7 @@ class WatchlistService:
         if active_count is not None and active_count >= max_tracked_products:
             return WatchlistAddResult(item=None, created=False, error_code="limit_exceeded")
 
-        product = self._get_or_create_product(
-            validated, matched_source_domain=source.source_domain
-        )
+        product = self._get_or_create_product(validated, matched_source_domain=source.source_domain)
         now = datetime.now(UTC)
         item = WatchlistItem(
             user_id=user_id,

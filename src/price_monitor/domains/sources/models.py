@@ -29,9 +29,7 @@ class MonitoredSource(Base):
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="active", index=True)
     fetch_interval_hours: Mapped[int] = mapped_column(Integer, nullable=False, default=6)
     history_retention_days: Mapped[int] = mapped_column(Integer, nullable=False, default=90)
-    browser_fallback_allowed: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, default=False
-    )
+    browser_fallback_allowed: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     proxy_pool_id: Mapped[str | None] = mapped_column(String(36))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False

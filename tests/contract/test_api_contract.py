@@ -238,20 +238,28 @@ def test_watchlist_delete_rejects_same_idempotency_key_for_different_target(
             proxy_pool_id=None,
         )
     )
-    first_item = WatchlistService(session).add_item(
-        user_id="wp-user-1",
-        product_url="https://example.com/delete-a",
-        target_price_minor=None,
-        currency="RUB",
-        request_id="req-create-a",
-    ).item
-    second_item = WatchlistService(session).add_item(
-        user_id="wp-user-1",
-        product_url="https://example.com/delete-b",
-        target_price_minor=None,
-        currency="RUB",
-        request_id="req-create-b",
-    ).item
+    first_item = (
+        WatchlistService(session)
+        .add_item(
+            user_id="wp-user-1",
+            product_url="https://example.com/delete-a",
+            target_price_minor=None,
+            currency="RUB",
+            request_id="req-create-a",
+        )
+        .item
+    )
+    second_item = (
+        WatchlistService(session)
+        .add_item(
+            user_id="wp-user-1",
+            product_url="https://example.com/delete-b",
+            target_price_minor=None,
+            currency="RUB",
+            request_id="req-create-b",
+        )
+        .item
+    )
     first_path = f"/api/v1/watchlist/items/{first_item.id}"
     second_path = f"/api/v1/watchlist/items/{second_item.id}"
 
