@@ -1,6 +1,6 @@
 from typing import Annotated, Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
@@ -33,11 +33,17 @@ def source_status(
 
 @router.get("/supported")
 def supported_source(
+    request: Request,
     url: str,
     verified: Annotated[VerifiedRequest, Depends(verify_wordpress_request)],
     session: Annotated[Session, Depends(get_db_session)],
 ) -> dict[str, Any]:
     del verified
+    if len(request.query_params.getlist("url")) != 1:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
+            detail="duplicate url query params are not allowed",
+        )
     source = SourceService(session).find_supported_source(url)
     if source is None:
         return {

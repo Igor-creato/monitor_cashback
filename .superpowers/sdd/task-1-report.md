@@ -333,3 +333,105 @@ clean output
 - Existing mutating request signing still uses the same canonical path/body inputs as before.
 - Broad monitored-source domains are now rejected both at the API boundary and inside `SourceService`, so unsupported-store matching cannot be widened by storing `com`/`co.uk`.
 - I did not touch migrations or models for this repair because the review findings were confined to request signing and validation behavior.
+
+## Task 1 Review 2
+
+Reviewer found one remaining Important issue:
+- Query signature binding remains bypassable with duplicate url params because canonicalization sorts query pairs while FastAPI scalar url consumption is order-sensitive. Add RED regression for url=a&url=b versus url=b&url=a and fix by rejecting duplicate url params or signing exact raw query input.
+
+## Task 1 Review 2 Fix
+
+### Scope
+
+- Fixed exactly the remaining duplicate-`url` query-signature bypass on `GET /api/v1/sources/supported`.
+- Preserved the existing body-based signing behavior for mutating endpoints.
+- Left unrelated untracked `.claude-flow/` untouched.
+
+### RED -> GREEN evidence
+
+#### RED: duplicate `url` query ordering replay still passed
+
+Command:
+
+```powershell
+rtk python -m pytest tests/contract/test_admin_api_contract.py -q
+```
+
+Result:
+
+```text
+FAILED tests/contract/test_admin_api_contract.py::test_supported_source_rejects_duplicate_url_query_params
+assert 200 == 422
+```
+
+This proved the remaining review finding before the production fix:
+
+- a signature minted for one raw duplicate-`url` ordering was accepted for the reversed ordering
+- FastAPI still resolved the scalar `url` input from that reordered duplicate query and returned `200 OK`
+
+#### GREEN: duplicate `url` query params are now rejected
+
+Commands:
+
+```powershell
+rtk python -m pytest tests/contract/test_admin_api_contract.py -q
+rtk python -m pytest tests/unit/test_source_service.py tests/contract/test_admin_api_contract.py -q
+```
+
+Results:
+
+```text
+.... [100%]
+....... [100%]
+```
+
+### Implementation summary
+
+- Added a contract regression in `tests/contract/test_admin_api_contract.py` that signs one duplicate-`url` raw query ordering and replays the same signature against the reversed ordering.
+- Updated `src/price_monitor/api/v1/sources.py` to reject requests containing anything other than exactly one `url` query param with `422`, preventing order-sensitive scalar binding from changing the effective supported-source lookup target.
+- Did not change `src/price_monitor/core/security.py` or `src/price_monitor/api/dependencies.py` because the endpoint-level rejection fully closes the remaining supported-source bypass without altering the current mutating-request signing contract.
+
+### Commands and results
+
+1. Required RED proof
+
+```powershell
+rtk python -m pytest tests/contract/test_admin_api_contract.py -q
+```
+
+Result:
+
+```text
+FAILED tests/contract/test_admin_api_contract.py::test_supported_source_rejects_duplicate_url_query_params
+assert 200 == 422
+```
+
+2. Required verification
+
+```powershell
+rtk python -m pytest tests/contract/test_admin_api_contract.py -q
+rtk python -m pytest tests/unit/test_source_service.py tests/contract/test_admin_api_contract.py -q
+rtk python -m ruff check src/price_monitor/api/dependencies.py src/price_monitor/api/v1/sources.py src/price_monitor/core/security.py tests/contract/test_admin_api_contract.py
+rtk git diff --check
+```
+
+Results:
+
+```text
+.... [100%]
+....... [100%]
+All checks passed!
+clean output
+```
+
+### Files changed for the fix
+
+- `src/price_monitor/api/v1/sources.py`
+- `tests/contract/test_admin_api_contract.py`
+- `.superpowers/sdd/task-1-report.md`
+
+### Self-review
+
+- The new regression proves duplicate `url` params cannot be used to replay one valid signature against a different effective supported-source lookup target.
+- The fix is narrowly scoped to the only endpoint that currently binds signed GET query input into a scalar `url` parameter.
+- Existing body-based mutating signing behavior remains unchanged.

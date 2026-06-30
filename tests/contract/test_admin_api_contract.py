@@ -145,6 +145,50 @@ def test_supported_source_signature_cannot_be_reused_for_different_url(
     assert reused_signature.status_code == 401
     assert reused_signature.json()["error"]["code"] == "authentication_failed"
 
+def test_supported_source_rejects_duplicate_url_query_params(
+    client: TestClient,
+) -> None:
+    supported_source = {
+        "source_domain": "example.com",
+        "display_name": "Example",
+        "logo_url": "https://example.com/logo.png",
+        "status": "active",
+        "fetch_interval_hours": 6,
+        "history_retention_days": 90,
+        "browser_fallback_allowed": False,
+        "proxy_pool_id": None,
+    }
+    body = json.dumps(supported_source, separators=(",", ":")).encode()
+    create = client.post(
+        "/api/v1/admin/sources",
+        content=body,
+        headers=signed_headers(
+            "POST",
+            "/api/v1/admin/sources",
+            body,
+            request_id="req-admin-source-duplicate-url",
+            idempotency_key="idem-duplicate-url",
+        ),
+    )
+    assert create.status_code == 201
+
+    signed_query = (
+        "url=https%3A%2F%2Fexample.com%2Fp%2F1&url=https%3A%2F%2Funsupported.test%2Fp%2F1"
+    )
+    replayed_query = (
+        "url=https%3A%2F%2Funsupported.test%2Fp%2F1&url=https%3A%2F%2Fexample.com%2Fp%2F1"
+    )
+    replayed = client.get(
+        f"/api/v1/sources/supported?{replayed_query}",
+        headers=_signed_raw_query_headers(
+            "/api/v1/sources/supported",
+            signed_query,
+            request_id="req-supported-duplicate-url",
+        ),
+    )
+
+    assert replayed.status_code == 422
+
 
 def test_admin_source_contract_rejects_invalid_payloads(client: TestClient) -> None:
     invalid_cases = (
@@ -217,6 +261,21 @@ def _signed_query_headers(
         method="GET",
         path=path,
         query=urlencode(params),
+        body=b"",
+        request_id=request_id,
+    )
+
+def _signed_raw_query_headers(
+    path: str,
+    query: str,
+    *,
+    request_id: str,
+) -> dict[str, str]:
+    return build_signed_headers(
+        secret="test-secret",
+        method="GET",
+        path=path,
+        query=query,
         body=b"",
         request_id=request_id,
     )
