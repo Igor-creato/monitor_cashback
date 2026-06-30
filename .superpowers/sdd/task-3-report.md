@@ -135,3 +135,46 @@ Reviewer found blocking issues requiring fixes:
 - Proxy resolution is now explicit and injectable, which keeps fake tests honest and avoids treating secret refs as usable URLs.
 - `fetch_product.py` behavior stays otherwise unchanged; it still opens one DB session, commits, and returns pipeline status.
 - `.claude-flow/` remains untouched and uncommitted.
+
+## Task 3 Review 2
+
+Reviewer found one remaining Important issue:
+- FetchPipeline resolves proxy URL secrets while building the strategy list before direct fetch runs. Proxy resolver failure can block a direct success path, violating direct-first fallback ordering.
+
+## Task 3 Review 2 Fix
+
+### Important finding fixed
+
+- Changed `FetchPipeline` proxy fallback ordering so proxy secret refs stay unresolved while the strategy list is built. Direct fetch now runs before any proxy resolver call, and proxy URL resolution happens lazily only when a proxy attempt is actually executed.
+
+### RED/GREEN evidence
+
+1. `rtk python -m pytest tests/unit/test_fetch_pipeline.py -q -k direct_success`
+   - RED: `AssertionError: resolver should not be called: proxy-ref-tier-1`
+2. `rtk python -m pytest tests/unit/test_fetch_pipeline.py -q -k direct_success`
+   - GREEN: `1 passed`
+3. `rtk python -m pytest tests/unit/test_fetch_pipeline.py -q -k redacts_proxy_url`
+   - GREEN: `1 passed`
+
+### Verification commands and results
+
+1. `rtk python -m pytest tests/unit/test_fetch_pipeline.py -q`
+   - GREEN: `7 passed`
+2. `rtk python -m pytest tests/unit/test_fetch_extraction.py tests/contract/test_api_contract.py tests/contract/test_product_card_contract.py tests/unit/test_ports_and_worker_config.py -q`
+   - GREEN: `20 passed`
+3. `rtk python -m ruff check src/price_monitor/domains/fetching tests/unit/test_fetch_pipeline.py`
+   - GREEN: `All checks passed!`
+4. `rtk git diff --check`
+   - pending at time of writing; rerun after this report update
+
+### Files changed for review 2 fix
+
+- Modified: `src/price_monitor/domains/fetching/service.py`
+- Modified: `tests/unit/test_fetch_pipeline.py`
+- Modified: `.superpowers/sdd/task-3-report.md`
+
+### Self-review
+
+- Direct-first ordering is now real instead of nominal: a healthy direct fetch path does not depend on proxy secret infrastructure being available.
+- The proxy resolver seam remains explicit, and fetchers still receive only resolved proxy URLs, never raw `proxy_url_secret_ref` values.
+- Proxy fallback coverage remains in place after direct failure, including the existing assertion that the fetcher sees the resolved proxy URL.

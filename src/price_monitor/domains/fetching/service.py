@@ -62,7 +62,9 @@ class FetchPipeline:
         if not strategies:
             return ProductFetchResult(product_id=product.id, status="not_configured")
 
-        for attempt_index, (strategy, proxy_tier, proxy_url, fetcher) in enumerate(strategies):
+        for attempt_index, (strategy, proxy_tier, proxy_secret_ref, fetcher) in enumerate(
+            strategies
+        ):
             attempt_time = current_time + timedelta(microseconds=attempt_index)
             attempt = FetchAttempt(
                 fetch_job_id=None,
@@ -75,6 +77,13 @@ class FetchPipeline:
             )
             self._session.add(attempt)
             try:
+                proxy_url = None
+                if strategy == "proxy":
+                    proxy_url = self._resolve_proxy_url(secret_ref=proxy_secret_ref)
+                    if not proxy_url:
+                        attempt.reason = "proxy_url_unavailable"
+                        self._session.flush()
+                        continue
                 page = fetcher.fetch(
                     url=product.canonical_url,
                     proxy_url=proxy_url if strategy == "proxy" else None,
@@ -140,13 +149,15 @@ class FetchPipeline:
 
         strategies: list[tuple[str, int | None, str | None, ProductPageFetcher]] = []
         for endpoint in self._active_proxy_endpoints(source):
-            proxy_url = self._proxy_url_resolver.resolve(
-                secret_ref=endpoint.proxy_url_secret_ref
+            strategies.append(
+                ("proxy", endpoint.tier, endpoint.proxy_url_secret_ref, self._proxy_fetcher)
             )
-            if not proxy_url:
-                continue
-            strategies.append(("proxy", endpoint.tier, proxy_url, self._proxy_fetcher))
         return strategies
+
+    def _resolve_proxy_url(self, *, secret_ref: str | None) -> str | None:
+        if self._proxy_url_resolver is None or not secret_ref:
+            return None
+        return self._proxy_url_resolver.resolve(secret_ref=secret_ref)
 
     def _active_proxy_endpoints(self, source: MonitoredSource) -> list[ProxyEndpoint]:
         if not source.proxy_pool_id:

@@ -92,6 +92,55 @@ def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetc
     assert price_points[0].fetch_attempt_id == attempts[0].id
 
 
+def test_fetch_pipeline_does_not_resolve_proxy_before_direct_success(
+    session: Session,
+) -> None:
+    secret_ref = "proxy-ref-tier-1"  # noqa: S105
+    proxy_pool = ProxyPool(name="Pool Direct First", status="active")
+    session.add(proxy_pool)
+    session.flush()
+    session.add(
+        ProxyEndpoint(
+            pool_id=proxy_pool.id,
+            tier=1,
+            proxy_url_secret_ref=secret_ref,
+            status="active",
+        )
+    )
+    product = _create_product(
+        session,
+        browser_fallback_allowed=False,
+        proxy_pool_id=proxy_pool.id,
+    )
+    direct_fetcher = FakeFetcher(html=_product_html(title="Direct Wins", price="99.90"))
+    proxy_fetcher = FakeFetcher(exc=AssertionError("proxy fetcher should not be used"))
+
+    class RaisingProxyUrlResolver:
+        def resolve(self, *, secret_ref: str) -> str | None:
+            raise AssertionError(f"resolver should not be called: {secret_ref}")
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+        proxy_fetcher=proxy_fetcher,
+        proxy_url_resolver=RaisingProxyUrlResolver(),
+    ).run(product_id=product.id, now=datetime(2026, 6, 30, 11, 0, tzinfo=UTC))
+
+    session.commit()
+
+    assert result.status == "ok"
+    assert direct_fetcher.calls == [(product.canonical_url, None)]
+    assert proxy_fetcher.calls == []
+    attempts = session.scalars(
+        select(FetchAttempt)
+        .where(FetchAttempt.product_id == product.id)
+        .order_by(FetchAttempt.created_at.asc())
+    ).all()
+    assert len(attempts) == 1
+    assert attempts[0].strategy == "direct"
+    assert attempts[0].status == "ok"
+
+
 def test_fetch_pipeline_uses_proxy_tier_after_direct_failure_and_redacts_proxy_url(
     session: Session,
 ) -> None:
