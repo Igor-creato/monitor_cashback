@@ -399,5 +399,9 @@ def test_health_and_read_endpoints_return_stable_empty_foundation_contract(
     assert client.get("/health/ready").json()["status"] == "ok"
     assert client.get("/api/v1/sources/status").json() == {"sources": []}
 
-    history = client.get("/api/v1/products/missing-product/price-history").json()
+    history_path = "/api/v1/products/missing-product/price-history"
+    history = client.get(
+        history_path,
+        headers=signed_headers("GET", history_path, b"", request_id="req-empty-history", idempotency_key=None),
+    ).json()
     assert history == {"product_id": "missing-product", "points": []}

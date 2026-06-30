@@ -66,6 +66,24 @@ def upgrade() -> None:
     op.create_index("ix_proxy_endpoints_pool_id", "proxy_endpoints", ["pool_id"])
     op.create_index("ix_proxy_endpoints_status", "proxy_endpoints", ["status"])
     op.create_index("ix_proxy_endpoints_tier", "proxy_endpoints", ["tier"])
+    op.create_table(
+        "fetch_attempts",
+        sa.Column("id", sa.String(length=36), nullable=False),
+        sa.Column("fetch_job_id", sa.String(length=36), nullable=True),
+        sa.Column("product_id", sa.String(length=36), nullable=False),
+        sa.Column("strategy", sa.String(length=32), nullable=False),
+        sa.Column("proxy_tier", sa.Integer(), nullable=True),
+        sa.Column("status", sa.String(length=32), nullable=False),
+        sa.Column("error_type", sa.String(length=64), nullable=True),
+        sa.Column("http_status", sa.Integer(), nullable=True),
+        sa.Column("response_ms", sa.Integer(), nullable=True),
+        sa.Column("product_data_found", sa.Boolean(), nullable=False),
+        sa.Column("reason", sa.String(length=255), nullable=True),
+        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False),
+        sa.PrimaryKeyConstraint("id"),
+    )
+    op.create_index("ix_fetch_attempts_fetch_job_id", "fetch_attempts", ["fetch_job_id"])
+    op.create_index("ix_fetch_attempts_product_id", "fetch_attempts", ["product_id"])
 
     with op.batch_alter_table("products") as batch_op:
         batch_op.add_column(sa.Column("image_url", sa.String(length=2048), nullable=True))
@@ -105,9 +123,19 @@ def upgrade() -> None:
         batch_op.create_unique_constraint(
             "uq_watchlist_items_active_identity_key", ["active_identity_key"]
         )
+    with op.batch_alter_table("price_points") as batch_op:
+        batch_op.add_column(sa.Column("fetch_attempt_id", sa.String(length=36), nullable=True))
+        batch_op.create_foreign_key(
+            "fk_price_points_fetch_attempt_id", "fetch_attempts", ["fetch_attempt_id"], ["id"]
+        )
+        batch_op.create_index("ix_price_points_fetch_attempt_id", ["fetch_attempt_id"])
 
 
 def downgrade() -> None:
+    with op.batch_alter_table("price_points") as batch_op:
+        batch_op.drop_index("ix_price_points_fetch_attempt_id")
+        batch_op.drop_constraint("fk_price_points_fetch_attempt_id", type_="foreignkey")
+        batch_op.drop_column("fetch_attempt_id")
     with op.batch_alter_table("watchlist_items") as batch_op:
         batch_op.drop_constraint("uq_watchlist_items_active_identity_key", type_="unique")
         batch_op.create_unique_constraint(
@@ -123,6 +151,9 @@ def downgrade() -> None:
         batch_op.drop_column("current_price_minor")
         batch_op.drop_column("rating_value")
         batch_op.drop_column("image_url")
+    op.drop_index("ix_fetch_attempts_product_id", table_name="fetch_attempts")
+    op.drop_index("ix_fetch_attempts_fetch_job_id", table_name="fetch_attempts")
+    op.drop_table("fetch_attempts")
     op.drop_index("ix_proxy_endpoints_tier", table_name="proxy_endpoints")
     op.drop_index("ix_proxy_endpoints_status", table_name="proxy_endpoints")
     op.drop_index("ix_proxy_endpoints_pool_id", table_name="proxy_endpoints")
