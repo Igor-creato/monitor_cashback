@@ -161,6 +161,23 @@ def test_compose_sets_resource_limits_and_low_noise_healthchecks() -> None:
         assert "      interval: 60s" in section
 
 
+def test_compose_hardens_rabbitmq_memory_and_logs_for_fresh_servers() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+    rabbitmq_conf = (ROOT / "deploy" / "rabbitmq" / "rabbitmq.conf").read_text(encoding="utf-8")
+
+    assert "x-json-logging: &json-logging" in compose
+    assert compose.count("    logging: *json-logging") == 5
+    assert compose.count('max-size: "10m"') == 1
+    assert compose.count('max-file: "3"') == 1
+
+    rabbitmq_section = _compose_service_section(compose, "rabbitmq")
+    assert "./deploy/rabbitmq/rabbitmq.conf:/etc/rabbitmq/conf.d/20-monitor.conf:ro" in (
+        rabbitmq_section
+    )
+    assert "vm_memory_high_watermark.absolute = 512MB" in rabbitmq_conf
+    assert "deprecated_features.permit.transient_nonexcl_queues" not in rabbitmq_conf
+
+
 def test_compose_worker_does_not_inherit_api_http_healthcheck() -> None:
     compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
 
@@ -168,3 +185,4 @@ def test_compose_worker_does_not_inherit_api_http_healthcheck() -> None:
 
     assert "healthcheck:" in worker_section
     assert "disable: true" in worker_section
+    assert "--without-heartbeat" in worker_section
