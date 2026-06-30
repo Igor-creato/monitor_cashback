@@ -8,7 +8,7 @@ from sqlalchemy.orm import Session
 
 from price_monitor.core.url_policy import ValidatedProductUrl, validate_public_product_url
 from price_monitor.domains.products.models import Product
-from price_monitor.domains.reliability.models import OutboxEvent
+from price_monitor.domains.reliability.models import FetchJob, OutboxEvent
 from price_monitor.domains.sources.service import SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
 
@@ -94,9 +94,9 @@ class WatchlistService:
         self._session.flush()
         return WatchlistAddResult(item=item, created=True)
 
-    def delete_item(self, *, item_id: str, request_id: str) -> bool:
+    def delete_item(self, *, item_id: str, user_id: str, request_id: str) -> bool:
         item = self._session.get(WatchlistItem, item_id)
-        if item is None or item.status == "deleted":
+        if item is None or item.user_id != user_id or item.status == "deleted":
             return False
 
         item.status = "deleted"
@@ -115,6 +115,21 @@ class WatchlistService:
         )
         self._session.flush()
         return True
+
+    def schedule_refresh(self, *, item_id: str, user_id: str, request_id: str) -> FetchJob:
+        item = self._session.get(WatchlistItem, item_id)
+        if item is None or item.user_id != user_id or item.status != "active":
+            raise LookupError(item_id)
+
+        job = FetchJob(
+            product_id=item.product_id,
+            logical_key=f"watchlist:{item.id}:refresh:{request_id}",
+            status="queued",
+            scheduled_for=datetime.now(UTC),
+        )
+        self._session.add(job)
+        self._session.flush()
+        return job
 
     def update_target_price(
         self,

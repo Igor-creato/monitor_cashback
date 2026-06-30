@@ -1,7 +1,7 @@
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from price_monitor.domains.reliability.models import OutboxEvent
+from price_monitor.domains.reliability.models import FetchJob, OutboxEvent
 from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
 from price_monitor.domains.watchlist.service import WatchlistService
@@ -122,7 +122,7 @@ def test_active_duplicate_returns_error_but_deleted_item_can_be_readded(session:
     assert first.created is True
     assert duplicate.error_code == "duplicate_watchlist_item"
 
-    service.delete_item(item_id=first.item.id, request_id="req-3")
+    service.delete_item(item_id=first.item.id, user_id="wp:savello.test:1", request_id="req-3")
     readded = service.add_item(
         user_id="wp:savello.test:1",
         product_url="https://example.com/item?id=42",
@@ -169,3 +169,85 @@ def test_max_tracked_products_limit_is_enforced(session: Session) -> None:
 
     assert first.created is True
     assert second.error_code == "limit_exceeded"
+
+
+def test_delete_item_requires_matching_owner(session: Session) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    service = WatchlistService(session)
+    created = service.add_item(
+        user_id="wp:savello.test:1",
+        product_url="https://example.com/delete-owner-service",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-service-delete-create",
+        max_tracked_products=10,
+    )
+
+    deleted = service.delete_item(
+        item_id=created.item.id,
+        user_id="wp:savello.test:2",
+        request_id="req-service-delete-wrong-owner",
+    )
+
+    assert deleted is False
+    item = session.get(WatchlistItem, created.item.id)
+    assert item is not None
+    assert item.status == "active"
+
+
+def test_schedule_refresh_requires_matching_owner_and_creates_fetch_job(session: Session) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    service = WatchlistService(session)
+    created = service.add_item(
+        user_id="wp:savello.test:1",
+        product_url="https://example.com/refresh-owner-service",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-service-refresh-create",
+        max_tracked_products=10,
+    )
+
+    try:
+        service.schedule_refresh(
+            item_id=created.item.id,
+            user_id="wp:savello.test:2",
+            request_id="req-service-refresh-wrong-owner",
+        )
+    except LookupError:
+        pass
+    else:
+        raise AssertionError("schedule_refresh must reject a different owner")
+
+    job = service.schedule_refresh(
+        item_id=created.item.id,
+        user_id="wp:savello.test:1",
+        request_id="req-service-refresh-owner",
+    )
+
+    assert job.product_id == created.item.product_id
+    assert job.status == "queued"
+    jobs = session.scalars(select(FetchJob)).all()
+    assert len(jobs) == 1
+    assert jobs[0].logical_key == f"watchlist:{created.item.id}:refresh:req-service-refresh-owner"
