@@ -4,7 +4,11 @@ Date: 2026-07-02
 
 ## Current Runtime Finding
 
-Direct backend HTTP fetch of `https://aliexpress.ru/item/1005010654381286.html` returns a small AliExpress punish/CAPTCHA page. The backend now classifies this as `captcha_detected` and must not bypass it with custom CAPTCHA or fingerprint logic.
+Direct backend HTTP fetch of `https://aliexpress.ru/item/1005010654381286.html`
+returns a small AliExpress punish/CAPTCHA page. The backend now classifies this
+as `captcha_detected`. A production AliExpress source should use either an
+official/partner API or an approved managed fetching strategy with explicit
+budgeting, source-level rate limits, diagnostics, and secret redaction.
 
 ## Option 1: Official AliExpress Affiliate API
 
@@ -39,7 +43,7 @@ Pros:
 
 - Official/partner route.
 - Returns structured product and price fields.
-- Avoids direct CAPTCHA handling.
+- Avoids direct challenge handling in the monitored-source adapter.
 
 Cons:
 

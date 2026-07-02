@@ -43,7 +43,12 @@ class FetchPipeline:
         self._browser_fetcher = browser_fetcher
         self._proxy_url_resolver = proxy_url_resolver
 
-    def run(self, product_id: str, now: datetime | None = None) -> ProductFetchResult:
+    def run(
+        self,
+        product_id: str,
+        now: datetime | None = None,
+        fetch_job_id: str | None = None,
+    ) -> ProductFetchResult:
         current_time = now or datetime.now(UTC)
         product = self._session.get(Product, product_id)
         if product is None:
@@ -73,7 +78,7 @@ class FetchPipeline:
         ):
             attempt_time = current_time + timedelta(microseconds=attempt_index)
             attempt = FetchAttempt(
-                fetch_job_id=None,
+                fetch_job_id=fetch_job_id,
                 product_id=product.id,
                 strategy=strategy,
                 proxy_tier=proxy_tier,

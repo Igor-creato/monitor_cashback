@@ -17,12 +17,20 @@ Product URL monitoring is fail-closed:
   removed before hashing;
 - future network fetchers must re-check redirects before making each request.
 
-## Marketplace Policy
+## Marketplace Fetching Policy
 
-The service must not store marketplace login/passwords, raw cookies, browser
-session captures, captcha bypass logic, fingerprint bypass logic, or proxy
-evasion logic. Cart and favorites monitoring requires official OAuth, partner
-API access, or another approved legal and secure design.
+The service may use source-specific public product-page fetching strategies,
+including managed unblocker APIs, browser rendering, proxy rotation, and
+challenge-aware adapters, when those strategies are configured for an approved
+monitored source. These fetchers must still preserve the security boundaries in
+this document: SSRF checks before network access, secret redaction, source-level
+rate limits, retry budgets, and auditable status reporting.
+
+The service must not store marketplace login/passwords, unapproved raw cookies,
+or raw browser session captures, and it must not log secrets, proxy credentials,
+provider tokens, or challenge tokens. Cart and favorites monitoring requires
+official OAuth, partner API access, explicit user consent, or another approved
+legal and secure design.
 
 ## Secrets
 

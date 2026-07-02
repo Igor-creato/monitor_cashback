@@ -116,20 +116,38 @@ class WatchlistService:
         self._session.flush()
         return True
 
-    def schedule_refresh(self, *, item_id: str, user_id: str, request_id: str) -> FetchJob:
+    def schedule_fetch(
+        self,
+        *,
+        item_id: str,
+        user_id: str,
+        request_id: str,
+        reason: str,
+    ) -> FetchJob:
+        if reason not in {"initial", "refresh"}:
+            raise ValueError("unsupported_fetch_reason")
+
         item = self._session.get(WatchlistItem, item_id)
         if item is None or item.user_id != user_id or item.status != "active":
             raise LookupError(item_id)
 
         job = FetchJob(
             product_id=item.product_id,
-            logical_key=f"watchlist:{item.id}:refresh:{request_id}",
+            logical_key=f"watchlist:{item.id}:{reason}:{request_id}",
             status="queued",
             scheduled_for=datetime.now(UTC),
         )
         self._session.add(job)
         self._session.flush()
         return job
+
+    def schedule_refresh(self, *, item_id: str, user_id: str, request_id: str) -> FetchJob:
+        return self.schedule_fetch(
+            item_id=item_id,
+            user_id=user_id,
+            request_id=request_id,
+            reason="refresh",
+        )
 
     def update_target_price(
         self,

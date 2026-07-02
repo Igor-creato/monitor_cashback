@@ -38,5 +38,9 @@ The first foundation keeps modules small:
 - `ProductMatcher.match_offer`: product search/comparison matching.
 - `MarketplaceOAuthProvider`: official marketplace authorization flows.
 
-Cart and favorites imports must plug into official OAuth or partner APIs; raw
-session capture and anti-bot bypass are explicitly out of scope.
+Source-specific public product-page monitoring may use managed unblocker APIs,
+browser rendering, proxy rotation, and challenge-aware adapters behind
+`ProductSourceAdapter.fetch_product`. Cart and favorites imports must plug into
+official OAuth, partner APIs, explicit user consent, or another approved secure
+integration; marketplace passwords, unapproved raw cookies, and raw browser
+session captures remain out of scope.

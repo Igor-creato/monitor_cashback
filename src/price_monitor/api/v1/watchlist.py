@@ -103,7 +103,8 @@ def create_watchlist_item(
     if isinstance(reserved, IdempotencyReplay):
         return JSONResponse(status_code=reserved.status_code, content=reserved.response_body)
 
-    result = WatchlistService(session).add_item(
+    watchlist_service = WatchlistService(session)
+    result = watchlist_service.add_item(
         user_id=payload.user_id,
         product_url=payload.url,
         target_price_minor=payload.target_price_minor,
@@ -124,6 +125,12 @@ def create_watchlist_item(
 
     response.status_code = status.HTTP_201_CREATED if result.created else status.HTTP_200_OK
     assert result.item is not None
+    job = watchlist_service.schedule_fetch(
+        item_id=result.item.id,
+        user_id=payload.user_id,
+        request_id=verified.request_id,
+        reason="initial",
+    )
     success_response = WatchlistCreateResponse(
         created=result.created, item=_serialize_item(result.item)
     )
@@ -134,6 +141,7 @@ def create_watchlist_item(
         response_body=_json_ready(response_dict),
     )
     session.commit()
+    enqueue_fetch_product(result.item.product_id, job.id)
     return success_response
 
 
@@ -323,7 +331,7 @@ def refresh_watchlist_item(
         response_body=_json_ready(response_dict),
     )
     session.commit()
-    enqueue_fetch_product(job.product_id)
+    enqueue_fetch_product(job.product_id, job.id)
     return JSONResponse(status_code=status.HTTP_202_ACCEPTED, content=response_dict)
 
 

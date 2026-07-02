@@ -14,7 +14,11 @@
 - Backend implementation branch starts from `develop` in `F:\cash-back\monitor_cashback`.
 - WordPress implementation branch starts from `main` in `F:\wamp64\www\kash-back\wp-content\plugins\cash-back`.
 - Use RED -> GREEN TDD for behavior changes.
-- Do not store marketplace passwords, raw cookies, raw browser sessions, captcha-bypass logic, or fingerprint-bypass logic.
+- Do not store marketplace passwords, unapproved raw cookies, raw browser
+  session captures, provider secrets, proxy credentials, or challenge tokens.
+  Source-specific public product fetching may use managed unblocker APIs,
+  browser rendering, proxy rotation, and challenge-aware adapters when approved
+  for the monitored source.
 - Browser requests go through WordPress REST endpoints; WordPress signs backend requests.
 - Mutating backend endpoints require HMAC and idempotency.
 - Browser-facing WordPress endpoints require REST nonce and user/capability checks.

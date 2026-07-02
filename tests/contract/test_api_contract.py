@@ -55,8 +55,17 @@ def test_product_detail_requires_hmac(client: TestClient) -> None:
 
 
 def test_watchlist_create_returns_stable_contract_and_deduplicates(
-    client: TestClient, session: Session
+    client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
+    watchlist_api = importlib.import_module("price_monitor.api.v1.watchlist")
+    enqueued_jobs: list[tuple[str, str | None]] = []
+    monkeypatch.setattr(
+        watchlist_api,
+        "enqueue_fetch_product",
+        lambda product_id, fetch_job_id=None: enqueued_jobs.append((product_id, fetch_job_id)),
+        raising=False,
+    )
+
     SourceService(session).upsert_source(
         MonitoredSourceInput(
             source_domain="example.com",
@@ -96,6 +105,11 @@ def test_watchlist_create_returns_stable_contract_and_deduplicates(
     assert first.status_code == 201
     assert first.json()["created"] is True
     assert first.json()["item"]["canonical_url"] == "https://example.com/item?id=42"
+    jobs = session.scalars(select(FetchJob)).all()
+    assert len(jobs) == 1
+    assert jobs[0].product_id == first.json()["item"]["product_id"]
+    assert jobs[0].status == "queued"
+    assert enqueued_jobs == [(first.json()["item"]["product_id"], jobs[0].id)]
     assert second.status_code == 409
     assert second.json()["error"]["code"] == "duplicate_watchlist_item"
 
@@ -557,11 +571,11 @@ def test_watchlist_refresh_requires_owner_and_idempotency_and_schedules_job(
     client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     watchlist_api = importlib.import_module("price_monitor.api.v1.watchlist")
-    enqueued_product_ids: list[str] = []
+    enqueued_jobs: list[tuple[str, str | None]] = []
     monkeypatch.setattr(
         watchlist_api,
         "enqueue_fetch_product",
-        enqueued_product_ids.append,
+        lambda product_id, fetch_job_id=None: enqueued_jobs.append((product_id, fetch_job_id)),
         raising=False,
     )
 
@@ -640,7 +654,7 @@ def test_watchlist_refresh_requires_owner_and_idempotency_and_schedules_job(
     assert len(jobs) == 1
     assert jobs[0].product_id == item.product_id
     assert jobs[0].status == "queued"
-    assert enqueued_product_ids == [item.product_id]
+    assert enqueued_jobs == [(item.product_id, jobs[0].id)]
 
 
 def test_health_and_read_endpoints_return_stable_empty_foundation_contract(

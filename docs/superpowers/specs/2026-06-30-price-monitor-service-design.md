@@ -290,7 +290,9 @@ The service keeps the existing security boundary:
 - no marketplace passwords;
 - no raw cookies;
 - no raw browser session captures;
-- no captcha-bypass or fingerprint-bypass logic;
+- source-specific public product fetching may use managed unblocker APIs,
+  browser rendering, proxy rotation, and challenge-aware adapters when approved
+  for the monitored source;
 - no browser-side exposure of backend or partner secrets;
 - fail-closed URL and redirect validation;
 - HMAC on server-to-server calls;
@@ -385,7 +387,9 @@ the smallest implementation that makes the tests green.
 ## Non-Goals
 
 - No raw marketplace login/cookie/session capture.
-- No captcha bypass or fingerprint evasion.
+- Managed unblocker, browser rendering, proxy rotation, and challenge-aware
+  adapters are allowed for approved public product-page sources when they keep
+  rate limits, cost accounting, diagnostics, and secret redaction.
 - No cart/favorites monitoring without official OAuth or separate approved
   legal/security design.
 - No broad rewrite of existing cashback activation logic.

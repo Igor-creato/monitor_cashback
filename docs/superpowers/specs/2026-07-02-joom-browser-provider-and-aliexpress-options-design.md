@@ -5,11 +5,14 @@ Status: Approved for implementation
 
 ## Goal
 
-Make `joom.ru` monitorable through a dedicated browser/provider path without adding CAPTCHA or fingerprint bypass logic, and document the allowed AliExpress data acquisition options before any paid or credentialed integration is selected.
+Make `joom.ru` monitorable through a dedicated browser/provider path with an
+approved managed unblocker, browser-plus-proxy provider, or source-specific
+adapter, and document the AliExpress data acquisition options before any paid
+or credentialed integration is selected.
 
 ## Context
 
-`citilink.ru` works through direct HTTP and JSON-LD extraction. `joom.ru` behaves differently by runtime location: local HTTP can receive SSR/OpenGraph product metadata, while the test server receives only a small SPA shell with `api.joom.ru` hints and no price. `aliexpress.ru` currently returns a CAPTCHA/punish page and must not be handled with bypass logic.
+`citilink.ru` works through direct HTTP and JSON-LD extraction. `joom.ru` behaves differently by runtime location: local HTTP can receive SSR/OpenGraph product metadata, while the test server receives only a small SPA shell with `api.joom.ru` hints and no price. `aliexpress.ru` currently returns a CAPTCHA/punish page and needs either an official/partner API or an approved managed fetching strategy with budgeting, rate limits, diagnostics, and secret redaction.
 
 ## Joom Design
 

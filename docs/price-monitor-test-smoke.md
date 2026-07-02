@@ -63,10 +63,11 @@ Notes:
   make Joom monitorable from the test server because Joom requires a
   bot-protection proof-of-work step before issuing the anonymous frontend API
   token.
-- Do not enable custom proof-of-work, CAPTCHA, fingerprint, or anti-bot bypass
-  logic in this code path. To make Joom production-ready, select an approved
-  data-provider/API contract or get explicit permission for a compliant Joom
-  API integration.
+- To make Joom production-ready, replace the current Browserless-only adapter
+  with an approved source-specific fetching strategy: managed unblocker API,
+  browser-plus-proxy provider, or explicit Joom/API integration. The adapter
+  must keep source-level rate limits, retry budgets, provider-cost accounting,
+  diagnostics, and secret redaction.
 
 ## 2026-07-02 Joom Browser Provider Adapter
 

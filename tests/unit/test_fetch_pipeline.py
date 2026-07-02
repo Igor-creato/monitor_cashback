@@ -13,7 +13,7 @@ from price_monitor.domains.fetching.ports import FetchPageResult
 from price_monitor.domains.fetching.service import FetchPipeline
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
-from price_monitor.domains.reliability.models import AlertEvent, FetchAttempt, OutboxEvent
+from price_monitor.domains.reliability.models import AlertEvent, FetchAttempt, FetchJob, OutboxEvent
 from price_monitor.domains.sources.models import ProxyEndpoint, ProxyPool
 from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
 from price_monitor.domains.watchlist.service import WatchlistService
@@ -51,13 +51,21 @@ def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetc
     proxy_fetcher = FakeFetcher(exc=AssertionError("proxy fetcher should not be used"))
     browser_fetcher = FakeFetcher(exc=AssertionError("browser fetcher should not be used"))
     now = datetime(2026, 6, 30, 10, 0, tzinfo=UTC)
+    job = FetchJob(
+        product_id=product.id,
+        logical_key="watchlist:item-1:initial:req-fetch-pipeline",
+        status="queued",
+        scheduled_for=now,
+    )
+    session.add(job)
+    session.flush()
 
     result = FetchPipeline(
         session,
         direct_fetcher=direct_fetcher,
         proxy_fetcher=proxy_fetcher,
         browser_fetcher=browser_fetcher,
-    ).run(product_id=product.id, now=now)
+    ).run(product_id=product.id, now=now, fetch_job_id=job.id)
 
     session.commit()
 
@@ -85,6 +93,7 @@ def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetc
     ).all()
     assert len(attempts) == 1
     assert attempts[0].strategy == "direct"
+    assert attempts[0].fetch_job_id == job.id
     assert attempts[0].status == "ok"
     assert attempts[0].proxy_tier is None
     assert attempts[0].product_data_found is True
@@ -426,6 +435,9 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     seen: dict[str, object] = {}
 
     class DummySession:
+        def __init__(self) -> None:
+            self.job = type("Job", (), {"status": "queued"})()
+
         def __enter__(self) -> DummySession:
             seen["entered"] = True
             return self
@@ -435,6 +447,15 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
 
         def commit(self) -> None:
             seen["committed"] = True
+
+        def flush(self) -> None:
+            seen["flushed"] = True
+
+        def get(self, model: object, key: str) -> object:
+            seen["job_model"] = model
+            seen["job_key"] = key
+            seen["job"] = self.job
+            return self.job
 
     class DummyFactory:
         def __call__(self) -> DummySession:
@@ -446,8 +467,9 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
             seen["direct_fetcher"] = kwargs.get("direct_fetcher")
             seen["browser_fetcher"] = kwargs.get("browser_fetcher")
 
-        def run(self, *, product_id: str) -> object:
+        def run(self, *, product_id: str, fetch_job_id: str | None = None) -> object:
             seen["product_id"] = product_id
+            seen["fetch_job_id"] = fetch_job_id
             return type("Result", (), {"status": "ok"})()
 
     class DummyHttpProductPageFetcher:
@@ -492,13 +514,16 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
         raising=False,
     )
 
-    result = fetch_product_module.fetch_product("product-123")
+    result = fetch_product_module.fetch_product("product-123", "job-123")
 
     assert result == {"product_id": "product-123", "status": "ok"}
     assert seen["entered"] is True
     assert seen["committed"] is True
     assert seen["exited"] is True
     assert seen["product_id"] == "product-123"
+    assert seen["fetch_job_id"] == "job-123"
+    assert seen["job_key"] == "job-123"
+    assert seen["job"].status == "ok"
     assert seen["source_service_session"] is seen["session"]
     assert isinstance(seen["direct_fetcher"], DummyHttpProductPageFetcher)
     assert seen["browser_fetcher"] is dummy_browser_fetcher

@@ -44,6 +44,18 @@ def client(session: Session) -> Iterator[TestClient]:
         yield test_client
 
 
+@pytest.fixture(autouse=True)
+def disable_celery_enqueue(monkeypatch: pytest.MonkeyPatch) -> None:
+    from price_monitor.api.v1 import watchlist as watchlist_api
+
+    monkeypatch.setattr(
+        watchlist_api,
+        "enqueue_fetch_product",
+        lambda product_id, fetch_job_id=None: None,
+        raising=False,
+    )
+
+
 def signed_headers(
     method: str,
     path: str,

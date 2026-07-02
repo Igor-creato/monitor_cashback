@@ -34,7 +34,10 @@ running.
 ## Boundaries
 
 The WordPress plugin owns UI, account flows, proxy signing, and cashback UX. The
-service does not store marketplace passwords, raw cookies, browser session
-captures, or captcha-bypass logic. Cart and favorites monitoring can only be
-added through official OAuth/partner access or another approved legal and secure
-integration.
+service may use source-specific public product-page fetching strategies,
+including managed unblocker APIs, browser rendering, proxy rotation, and
+challenge-aware adapters, when they are configured for an approved monitored
+source. The service must not store marketplace passwords, unapproved raw cookies,
+or raw browser session captures, and it must not log secrets. Cart and favorites
+monitoring still require official OAuth, partner access, explicit user consent,
+or another approved legal and secure integration.

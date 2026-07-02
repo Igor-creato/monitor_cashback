@@ -12,6 +12,7 @@ htmlcov/
 .env.*
 !.env.example
 .swarm/
+.claude-flow/
 .codex/
 .superpowers/
 ruvector.db
