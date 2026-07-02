@@ -211,6 +211,6 @@ def test_compose_includes_internal_browserless_renderer() -> None:
     assert "QUEUED: 2" in browserless_section
     assert 'shm_size: "2g"' in browserless_section
     assert 'ALLOW_FILE_PROTOCOL: "false"' in browserless_section
-    assert "http://127.0.0.1:3000/pressure" in browserless_section
+    assert "http://127.0.0.1:3000/pressure?token=$$TOKEN" in browserless_section
     assert "browserless:" in worker_section
     assert "condition: service_healthy" in worker_section
