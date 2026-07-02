@@ -11,8 +11,10 @@ from price_monitor.core.url_policy import validate_public_product_url
 from price_monitor.domains.sources.models import MonitoredSource, MonitorSetting
 
 ALLOWED_SOURCE_STATUSES = {"active", "paused", "disabled"}
+DEFAULT_PRICE_REFRESH_INTERVAL_HOURS = 8
 DEFAULT_MONITOR_SETTINGS = {
     "max_tracked_products_per_user": "10",
+    "price_refresh_interval_hours": str(DEFAULT_PRICE_REFRESH_INTERVAL_HOURS),
     "joom_browser_provider_url": "",
     "joom_browser_provider_token": "",
     "joom_browser_provider_timeout_seconds": "25.0",
@@ -128,6 +130,11 @@ class SourceService:
             self._session.add(setting)
         self._session.flush()
         return self.get_settings()
+
+    def effective_fetch_interval_hours(self, source: MonitoredSource) -> int:
+        if source.fetch_interval_hours >= 1:
+            return source.fetch_interval_hours
+        return max(1, int(self.get_settings()["price_refresh_interval_hours"]))
 
     @staticmethod
     def _normalize_domain(raw_domain: str) -> str:

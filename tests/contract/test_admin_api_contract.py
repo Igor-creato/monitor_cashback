@@ -56,6 +56,7 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     settings_path = "/api/v1/admin/settings"
     settings_body = {
         "max_tracked_products_per_user": 25,
+        "price_refresh_interval_hours": 12,
         "joom_browser_provider_url": "https://renderer.example/render",
         "joom_browser_provider_token": "secret-token",
         "joom_browser_provider_timeout_seconds": 12.5,
@@ -93,6 +94,7 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     }
     assert update_settings.status_code == 200
     assert update_settings.json()["settings"]["max_tracked_products_per_user"] == 25
+    assert update_settings.json()["settings"]["price_refresh_interval_hours"] == 12
     assert update_settings.json()["settings"]["joom_browser_provider_url"] == (
         "https://renderer.example/render"
     )
@@ -100,6 +102,7 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     assert "secret-token" not in json.dumps(update_settings.json())
     assert get_settings.status_code == 200
     assert get_settings.json()["settings"]["max_tracked_products_per_user"] == 25
+    assert get_settings.json()["settings"]["price_refresh_interval_hours"] == 12
     assert get_settings.json()["settings"]["joom_browser_provider_url"] == (
         "https://renderer.example/render"
     )

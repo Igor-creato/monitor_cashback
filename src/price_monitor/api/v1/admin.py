@@ -141,6 +141,7 @@ def _typed_settings(settings: dict[str, str]) -> dict[str, int | float | str | b
     wait_selector = settings["joom_browser_provider_wait_selector"].strip()
     return {
         "max_tracked_products_per_user": int(settings["max_tracked_products_per_user"]),
+        "price_refresh_interval_hours": int(settings["price_refresh_interval_hours"]),
         "joom_browser_provider_url": provider_url,
         "joom_browser_provider_timeout_seconds": float(
             settings["joom_browser_provider_timeout_seconds"]

@@ -115,3 +115,17 @@ def test_monitor_settings_include_joom_provider_defaults_and_updates(
     assert updated["joom_browser_provider_token"] == "secret-token"  # noqa: S105
     assert updated["joom_browser_provider_timeout_seconds"] == "12.5"
     assert updated["joom_browser_provider_wait_selector"] == "#price"
+
+
+def test_monitor_settings_include_price_refresh_interval_default_and_updates(
+    session: Session,
+) -> None:
+    service = SourceService(session)
+
+    defaults = service.get_settings()
+
+    assert defaults["price_refresh_interval_hours"] == "8"
+
+    updated = service.update_settings({"price_refresh_interval_hours": "12"})
+
+    assert updated["price_refresh_interval_hours"] == "12"

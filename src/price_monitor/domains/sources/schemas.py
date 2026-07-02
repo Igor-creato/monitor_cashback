@@ -55,6 +55,7 @@ class MonitoredSourceListResponse(BaseModel):
 
 class MonitorSettingsPatchRequest(BaseModel):
     max_tracked_products_per_user: int | None = Field(default=None, ge=1)
+    price_refresh_interval_hours: int | None = Field(default=None, ge=1)
     joom_browser_provider_url: str | None = Field(default=None, max_length=2048)
     joom_browser_provider_token: str | None = Field(default=None, max_length=4096)
     joom_browser_provider_timeout_seconds: float | None = Field(default=None, ge=1, le=120)
