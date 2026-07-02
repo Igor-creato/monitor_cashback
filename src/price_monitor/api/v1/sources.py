@@ -6,6 +6,10 @@ from sqlalchemy.orm import Session
 
 from price_monitor.api.dependencies import get_db_session, verify_wordpress_request
 from price_monitor.core.security import VerifiedRequest
+from price_monitor.domains.sources.classification import (
+    classify_product_url,
+    is_required_store_domain,
+)
 from price_monitor.domains.sources.models import SourceStatus
 from price_monitor.domains.sources.schemas import MonitoredSourceResponse
 from price_monitor.domains.sources.service import SourceService
@@ -45,6 +49,31 @@ def supported_source(
             detail="duplicate url query params are not allowed",
         )
     source_service = SourceService(session)
+    classification = classify_product_url(url)
+    if classification.error_code == "unsafe_url":
+        return {
+            "supported": False,
+            "error": {
+                "code": classification.error_code,
+                "message": classification.message,
+            },
+        }
+    if (
+        classification.error_code
+        in {
+            "not_product_url",
+            "source_product_id_missing",
+            "source_url_pattern_unsupported",
+        }
+        and is_required_store_domain(classification.source_domain)
+    ):
+        return {
+            "supported": False,
+            "error": {
+                "code": classification.error_code,
+                "message": classification.message,
+            },
+        }
     source = source_service.find_supported_source(url)
     if source is None:
         unavailable_source = source_service.find_source_for_url(url)

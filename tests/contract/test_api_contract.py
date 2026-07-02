@@ -1,6 +1,7 @@
 import importlib
 import json
 from hashlib import sha256
+from urllib.parse import urlencode
 
 import pytest
 from fastapi.testclient import TestClient
@@ -8,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from tests.conftest import signed_headers
 
+from price_monitor.core.security import build_signed_headers
 from price_monitor.domains.reliability.models import FetchJob, IdempotencyRecord, OutboxEvent
 from price_monitor.domains.sources.service import MonitoredSourceInput, SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
@@ -52,6 +54,43 @@ def test_product_detail_requires_hmac(client: TestClient) -> None:
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_failed"
+
+
+def test_supported_source_rejects_non_product_required_store_url(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="ozon.ru",
+            display_name="Ozon",
+            logo_url="https://ozon.ru/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    path = "/api/v1/sources/supported"
+    response = client.get(
+        path,
+        params={"url": "https://www.ozon.ru/category/smartfony-15502/"},
+        headers=_signed_query_headers(
+            path,
+            {"url": "https://www.ozon.ru/category/smartfony-15502/"},
+            request_id="req-ozon-non-product",
+        ),
+    )
+
+    assert response.status_code == 200
+    assert response.json() == {
+        "supported": False,
+        "error": {
+            "code": "not_product_url",
+            "message": "Укажите ссылку на карточку товара.",
+        },
+    }
 
 
 def test_watchlist_create_returns_stable_contract_and_deduplicates(
@@ -718,3 +757,19 @@ def test_health_and_read_endpoints_return_stable_empty_foundation_contract(
         "points": [],
         "summary": {"lowest_price_minor": None, "latest_price_minor": None},
     }
+
+
+def _signed_query_headers(
+    path: str,
+    params: dict[str, str],
+    *,
+    request_id: str,
+) -> dict[str, str]:
+    return build_signed_headers(
+        secret="test-secret",
+        method="GET",
+        path=path,
+        query=urlencode(params),
+        body=b"",
+        request_id=request_id,
+    )
