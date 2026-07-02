@@ -274,6 +274,24 @@ Backend admin read endpoints expose:
 Admin responses never include provider tokens, proxy credentials, raw cookies,
 raw sessions, challenge tokens, or raw marketplace bodies.
 
+### Admin Settings
+
+Add one global admin setting for the service request cadence:
+
+- key: `price_refresh_interval_hours`;
+- default: `8`;
+- type: integer hours, minimum `1`;
+- meaning: how often the service should request a fresh product price for
+  active monitored items when no source-specific override is set.
+
+The backend admin settings API exposes this value through
+`GET/PATCH /api/v1/admin/settings`. New monitored sources use this global value
+as their default fetch interval. Existing per-source `fetch_interval_hours`
+values remain valid overrides so current source policy contracts and existing
+admin edits are not broken. The scheduler and manual source-policy code resolve
+the effective cadence as source override first, then
+`price_refresh_interval_hours`.
+
 ## WordPress Architecture
 
 The existing plugin flow stays intact:
@@ -296,6 +314,10 @@ Required UI changes are narrow:
   fetch failure.
 - Render one loading state while product data is not available.
 - Render one initial chart state when price history is empty.
+- Add one numeric admin field, `Частота обновления цены, часов`, to the existing
+  Price Monitor settings form. It reads/writes backend
+  `price_refresh_interval_hours`, defaults to `8`, validates a minimum of `1`,
+  and is not exposed to account-page localized JS.
 - Show diagnostics only where useful for admin; do not expose secrets in
   localized JS or HTML.
 
@@ -387,7 +409,10 @@ Backend RED -> GREEN slices:
 - Adapter fixture tests for extraction fields and confidence.
 - Fetch pipeline tests for ladder order, metadata, low-confidence gating,
   price-history writes, and job lifecycle.
-- Admin API contract tests for diagnostics and redaction.
+- Admin API contract tests for diagnostics, redaction, and the
+  `price_refresh_interval_hours` default/update contract.
+- Scheduler/source-policy tests for the effective refresh interval: per-source
+  override first, then global default `8`.
 - Worker tests for terminal job statuses and dead-letter behavior.
 
 WordPress RED -> GREEN slices:
@@ -395,6 +420,8 @@ WordPress RED -> GREEN slices:
 - REST controller tests for new backend error mappings.
 - Account JS tests for one loading state, one empty chart state, and invalid URL
   copy.
+- Admin tests for displaying, validating, and saving the
+  `price_refresh_interval_hours` field with default `8`.
 - Admin tests for diagnostics display/redaction if backend diagnostics are
   surfaced in the plugin.
 
