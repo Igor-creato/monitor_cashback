@@ -191,6 +191,52 @@ def test_supported_source_rejects_duplicate_url_query_params(
     assert replayed.status_code == 422
 
 
+def test_supported_source_distinguishes_disabled_store_from_unknown_store(
+    client: TestClient,
+) -> None:
+    disabled_source = {
+        "source_domain": "disabled.test",
+        "display_name": "Disabled",
+        "logo_url": "https://disabled.test/logo.png",
+        "status": "disabled",
+        "fetch_interval_hours": 6,
+        "history_retention_days": 90,
+        "browser_fallback_allowed": False,
+        "proxy_pool_id": None,
+    }
+    body = json.dumps(disabled_source, separators=(",", ":")).encode()
+    create = client.post(
+        "/api/v1/admin/sources",
+        content=body,
+        headers=signed_headers(
+            "POST",
+            "/api/v1/admin/sources",
+            body,
+            request_id="req-admin-source-disabled",
+            idempotency_key="idem-disabled",
+        ),
+    )
+    response = client.get(
+        "/api/v1/sources/supported",
+        params={"url": "https://www.disabled.test/p/1"},
+        headers=_signed_query_headers(
+            "/api/v1/sources/supported",
+            {"url": "https://www.disabled.test/p/1"},
+            request_id="req-disabled-supported",
+        ),
+    )
+
+    assert create.status_code == 201
+    assert response.status_code == 200
+    assert response.json() == {
+        "supported": False,
+        "error": {
+            "code": "monitoring_unavailable",
+            "message": "Для данного магазина мониторинг временно недоступен.",
+        },
+    }
+
+
 def test_admin_source_contract_rejects_invalid_payloads(client: TestClient) -> None:
     invalid_cases = (
         (

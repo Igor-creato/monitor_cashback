@@ -50,6 +50,15 @@ def extract_product_data(html: str, *, fallback_currency: str) -> FetchedProduct
     return None
 
 
+def detect_fetch_block_reason(html: str) -> str | None:
+    normalized = html.lower()
+    if "_____tmd_____/punish" in normalized and '"action":"captcha"' in normalized:
+        return "captcha_detected"
+    if "x5secdata" in normalized and '"action":"captcha"' in normalized:
+        return "captcha_detected"
+    return None
+
+
 def _load_json(payload: str) -> Any:
     try:
         return json.loads(payload)
@@ -117,7 +126,7 @@ def _extract_offer_data(offers: Any, *, fallback_currency: str) -> tuple[int | N
             continue
         raw_price = offer.get("price", offer.get("lowPrice"))
         price_minor = _to_minor_units(raw_price)
-        if price_minor is None:
+        if price_minor is None or price_minor <= 0:
             continue
         raw_currency = offer.get("priceCurrency")
         currency = (

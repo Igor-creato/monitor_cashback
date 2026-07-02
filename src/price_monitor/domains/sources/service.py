@@ -72,15 +72,22 @@ class SourceService:
         return source
 
     def find_supported_source(self, raw_url: str) -> MonitoredSource | None:
+        source = self.find_source_for_url(raw_url, status="active")
+        return source
+
+    def find_source_for_url(
+        self, raw_url: str, *, status: str | None = None
+    ) -> MonitoredSource | None:
         validated = validate_public_product_url(raw_url)
         hostname = self._normalize_domain(validated.source_domain)
-        active_sources = self._session.scalars(
-            select(MonitoredSource).where(MonitoredSource.status == "active")
-        ).all()
+        query = select(MonitoredSource)
+        if status is not None:
+            query = query.where(MonitoredSource.status == status)
+        sources = self._session.scalars(query).all()
 
         matches = [
             source
-            for source in active_sources
+            for source in sources
             if hostname == source.source_domain or hostname.endswith(f".{source.source_domain}")
         ]
         if not matches:

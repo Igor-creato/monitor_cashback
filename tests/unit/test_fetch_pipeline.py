@@ -271,6 +271,44 @@ def test_fetch_pipeline_skips_browser_fallback_when_source_disallows_it(
     assert attempts[1].error_type == "RuntimeError"
 
 
+def test_fetch_pipeline_classifies_captcha_challenge_without_price_point(
+    session: Session,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=False)
+    direct_fetcher = FakeFetcher(
+        html="""
+        <script>
+        window._config_ = {"action":"captcha","url":"/_____tmd_____/punish?x5secdata=abc"};
+        </script>
+        """
+    )
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+    ).run(product_id=product.id, now=datetime(2026, 7, 2, 10, 0, tzinfo=UTC))
+
+    session.commit()
+
+    refreshed_product = session.get(Product, product.id)
+    attempts = session.scalars(
+        select(FetchAttempt).where(FetchAttempt.product_id == product.id)
+    ).all()
+    price_points = session.scalars(
+        select(PricePoint).where(PricePoint.product_id == product.id)
+    ).all()
+
+    assert result.status == "captcha_detected"
+    assert refreshed_product is not None
+    assert refreshed_product.last_fetch_status == "captcha_detected"
+    assert refreshed_product.current_price_minor is None
+    assert len(attempts) == 1
+    assert attempts[0].status == "failed"
+    assert attempts[0].reason == "captcha_detected"
+    assert attempts[0].product_data_found is False
+    assert price_points == []
+
+
 def test_fetch_product_task_uses_http_fetcher_to_update_product(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,

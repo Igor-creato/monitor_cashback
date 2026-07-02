@@ -7,7 +7,10 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from price_monitor.domains.fetching.extraction import extract_product_data
+from price_monitor.domains.fetching.extraction import (
+    detect_fetch_block_reason,
+    extract_product_data,
+)
 from price_monitor.domains.fetching.ports import ProductPageFetcher, ProxyUrlResolver
 from price_monitor.domains.notifications.service import NotificationService
 from price_monitor.domains.pricing.models import PricePoint
@@ -64,6 +67,7 @@ class FetchPipeline:
         if not strategies:
             return ProductFetchResult(product_id=product.id, status="not_configured")
 
+        terminal_status = "fetch_failed"
         for attempt_index, (strategy, proxy_tier, proxy_secret_ref, fetcher) in enumerate(
             strategies
         ):
@@ -98,9 +102,17 @@ class FetchPipeline:
 
             attempt.http_status = page.http_status
             attempt.response_ms = page.response_ms
+            block_reason = detect_fetch_block_reason(page.content)
+            if block_reason is not None:
+                attempt.reason = block_reason
+                terminal_status = block_reason
+                self._session.flush()
+                continue
+
             extracted = extract_product_data(page.content, fallback_currency=fallback_currency)
             if extracted is None:
                 attempt.reason = "product_data_not_found"
+                terminal_status = "fetch_failed"
                 self._session.flush()
                 continue
 
@@ -140,11 +152,11 @@ class FetchPipeline:
                 fetch_attempt_id=attempt.id,
             )
 
-        product.last_fetch_status = "fetch_failed"
+        product.last_fetch_status = terminal_status
         product.last_fetched_at = current_time
         product.updated_at = current_time
         self._session.flush()
-        return ProductFetchResult(product_id=product.id, status="fetch_failed")
+        return ProductFetchResult(product_id=product.id, status=terminal_status)
 
     def _proxy_strategies(
         self,

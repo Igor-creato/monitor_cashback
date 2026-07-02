@@ -44,8 +44,18 @@ def supported_source(
             status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             detail="duplicate url query params are not allowed",
         )
-    source = SourceService(session).find_supported_source(url)
+    source_service = SourceService(session)
+    source = source_service.find_supported_source(url)
     if source is None:
+        unavailable_source = source_service.find_source_for_url(url)
+        if unavailable_source is not None:
+            return {
+                "supported": False,
+                "error": {
+                    "code": "monitoring_unavailable",
+                    "message": "Для данного магазина мониторинг временно недоступен.",
+                },
+            }
         return {
             "supported": False,
             "error": {"code": "unsupported_store", "message": "Магазин не поддерживается"},

@@ -42,3 +42,15 @@ def test_extract_product_data_returns_none_when_price_or_title_missing() -> None
         extract_product_data("<html><title>No price</title></html>", fallback_currency="RUB")
         is None
     )
+
+
+def test_extract_product_data_returns_none_for_zero_price() -> None:
+    html = """
+    <html><head>
+    <script type="application/ld+json">
+    {"@type":"Product","name":"Sold out phone","offers":{"price":"0","priceCurrency":"RUB"}}
+    </script>
+    </head><body></body></html>
+    """
+
+    assert extract_product_data(html, fallback_currency="RUB") is None

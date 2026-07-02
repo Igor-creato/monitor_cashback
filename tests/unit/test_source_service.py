@@ -47,6 +47,29 @@ def test_find_supported_source_rejects_paused_source(session: Session) -> None:
     assert service.find_supported_source("https://paused.test/p/1") is None
 
 
+def test_find_source_for_url_returns_paused_source_for_unavailable_message(
+    session: Session,
+) -> None:
+    service = SourceService(session)
+    service.upsert_source(
+        MonitoredSourceInput(
+            source_domain="paused.test",
+            display_name="Paused",
+            logo_url="https://paused.test/logo.png",
+            status="paused",
+            fetch_interval_hours=12,
+            history_retention_days=30,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    source = service.find_source_for_url("https://shop.paused.test/p/1")
+
+    assert source.source_domain == "paused.test"
+    assert source.status == "paused"
+
+
 def test_upsert_source_rejects_public_suffix_like_domain(session: Session) -> None:
     service = SourceService(session)
 
