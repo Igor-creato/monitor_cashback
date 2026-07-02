@@ -2,6 +2,72 @@
 
 Date: 2026-06-30
 
+## 2026-07-02 Joom Admin Settings And Live Provider Smoke
+
+- GitHub Actions run: `28578507048`
+- Run URL: `https://github.com/Igor-creato/monitor_cashback/actions/runs/28578507048`
+- Deployed commit: `87c9aced2067b4e5e0ae3756d6004ea5eb9ea364`
+- Jobs passed: `secret-scan`, `quality`, `deploy-test`
+- Current release path:
+  - `/home/igor/monitor_cashback/releases/87c9aced2067b4e5e0ae3756d6004ea5eb9ea364`
+- Health after deploy:
+  - `curl -fsS http://127.0.0.1:8000/health/live` -> `{"status":"ok"}`
+  - `curl -fsS http://127.0.0.1:8000/health/ready` -> `{"status":"ok"}`
+- Runtime compose status: `api`, `browserless`, `postgres`, `rabbitmq`, and
+  `redis` are healthy; `worker` is running.
+
+Covered checks:
+
+- Backend admin settings now store the Joom provider URL, token, timeout, and
+  wait selector. WordPress admin renders and saves the same settings through the
+  existing backend settings form.
+- Internal Browserless renderer is configured at
+  `http://browserless:3000/chromium/content`; the token is stored separately in
+  backend settings and sent as `Authorization: Bearer`.
+- Browserless healthcheck is authorized with the container `TOKEN`; the first
+  deploy attempts proved the required fixes:
+  - `ghcr.io/browserless/chromium:2.26.1` -> manifest not found.
+  - `/pressure` without token -> Browserless returned `401 Unauthorized`.
+- `joom.ru` live pipeline smoke:
+  - test URL: `https://www.joom.ru/ru/products/636f5d5db4165e01cef187e5`
+  - watchlist add: created.
+  - direct fetch: HTTP `200`, `product_data_not_found`.
+  - browser fetch: provider request failed after waiting for
+    `meta[property="product:price:amount"]`.
+  - pipeline result: `fetch_failed`; no title or price extracted.
+  - direct frontend API probe:
+    `https://www.joom.ru/tokens/hydrate` returns
+    `bot.proof_of_work_required`, so the server cannot obtain the anonymous API
+    token without implementing Joom's bot-protection proof-of-work flow.
+  - final source status restored to `disabled`.
+- `citilink.ru` live pipeline smoke:
+  - test URL:
+    `https://www.citilink.ru/product/klyuch-aktivacii-movavika-maksimum-2026-dlya-mas-personalnaya-licenziy-2178432/`
+  - watchlist add: created.
+  - pipeline result: `ok`.
+  - extracted title:
+    `Ключ активации МОВАВИКА Максимум 2026 для Мас, персональная лицензия, годовая подписка [мм26мг]`
+  - extracted price: `661000` RUB minor units.
+  - cleanup: test watchlist item deleted.
+- `aliexpress.ru` smoke:
+  - source status remains `disabled`.
+  - watchlist add returns `unsupported_store`.
+  - direct fetch of `https://aliexpress.ru/item/1005010654381286.html`
+    returns HTTP `200`, `1889` bytes, and is classified as
+    `captcha_detected`.
+
+Notes:
+
+- Joom support is wired through admin settings and a dedicated source-aware
+  browser/provider adapter. The current self-hosted Browserless path does not
+  make Joom monitorable from the test server because Joom requires a
+  bot-protection proof-of-work step before issuing the anonymous frontend API
+  token.
+- Do not enable custom proof-of-work, CAPTCHA, fingerprint, or anti-bot bypass
+  logic in this code path. To make Joom production-ready, select an approved
+  data-provider/API contract or get explicit permission for a compliant Joom
+  API integration.
+
 ## 2026-07-02 Joom Browser Provider Adapter
 
 - GitHub Actions run: `28575449938`
