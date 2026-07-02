@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 from price_monitor.core.config import get_settings
 from price_monitor.db.session import get_session_factory
 from price_monitor.domains.fetching.http_fetcher import HttpProductPageFetcher
@@ -23,20 +25,36 @@ celery_app = create_celery_app(settings.rabbitmq_url, settings.redis_url)
 def fetch_product(product_id: str, fetch_job_id: str | None = None) -> dict[str, str]:
     with get_session_factory()() as session:
         job = session.get(FetchJob, fetch_job_id) if fetch_job_id is not None else None
-        if job is not None:
-            job.status = "running"
-            session.flush()
+        try:
+            if job is not None:
+                job.status = "running"
+                job.status_reason = None
+                job.started_at = datetime.now(UTC)
+                job.attempt_count += 1
+                session.flush()
 
-        stored_settings = SourceService(session).get_settings()
-        result = FetchPipeline(
-            session,
-            direct_fetcher=HttpProductPageFetcher(),
-            browser_fetcher=build_source_browser_fetcher(settings, stored_settings),
-        ).run(product_id=product_id, fetch_job_id=fetch_job_id)
-        if job is not None:
-            job.status = "ok" if result.status == "ok" else "failed"
-            session.flush()
-        session.commit()
+            stored_settings = SourceService(session).get_settings()
+            result = FetchPipeline(
+                session,
+                direct_fetcher=HttpProductPageFetcher(),
+                browser_fetcher=build_source_browser_fetcher(settings, stored_settings),
+            ).run(product_id=product_id, fetch_job_id=fetch_job_id)
+            if job is not None:
+                job.status = "ok" if result.status == "ok" else "failed"
+                job.status_reason = None if result.status == "ok" else result.status
+                job.finished_at = datetime.now(UTC)
+                session.flush()
+            session.commit()
+        except Exception as exc:
+            if job is not None:
+                if job.started_at is None:
+                    job.started_at = datetime.now(UTC)
+                job.status = "dead_letter"
+                job.status_reason = type(exc).__name__
+                job.finished_at = datetime.now(UTC)
+                session.flush()
+                session.commit()
+            raise
     return {"product_id": product_id, "status": result.status}
 
 

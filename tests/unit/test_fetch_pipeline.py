@@ -43,6 +43,20 @@ class FakeProxyUrlResolver:
         return self.values.get(secret_ref)
 
 
+class LowConfidenceFetcher:
+    def fetch(self, *, url: str, proxy_url: str | None) -> FetchPageResult:
+        return FetchPageResult(
+            content="""
+            <meta property="og:title" content="Weak">
+            <meta property="product:price:amount" content="1.00">
+            <meta property="product:price:currency" content="RUB">
+            """,
+            final_url=url,
+            http_status=200,
+            response_ms=5,
+        )
+
+
 def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetch(
     session: Session,
 ) -> None:
@@ -98,6 +112,9 @@ def test_fetch_pipeline_updates_product_and_records_price_point_from_direct_fetc
     assert attempts[0].proxy_tier is None
     assert attempts[0].product_data_found is True
     assert attempts[0].error_type is None
+    assert attempts[0].parser_version == "generic-html-v1"
+    assert attempts[0].parser_confidence == "0.90"
+    assert attempts[0].challenge_detected is False
     assert price_points[0].fetch_attempt_id == attempts[0].id
 
 
@@ -149,55 +166,23 @@ def test_fetch_pipeline_does_not_resolve_proxy_before_direct_success(
     assert attempts[0].strategy == "direct"
     assert attempts[0].status == "ok"
 
-def test_fetch_pipeline_keeps_legacy_extraction_without_adapter_registry(
+def test_fetch_pipeline_records_parser_metadata_and_blocks_low_confidence(
     session: Session,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     product = _create_product(session, browser_fallback_allowed=False)
-    direct_fetcher = FakeFetcher(html=_product_html(title="Legacy Phone", price="101.01"))
+    now = datetime(2026, 7, 2, 9, 0, tzinfo=UTC)
 
-    seen: dict[str, object] = {}
-
-    def _detect_fetch_block_reason(html: str) -> str | None:
-        seen["block_html"] = html
-        return None
-
-    def _extract_product_data(html: str, *, fallback_currency: str) -> object:
-        seen["extract_html"] = html
-        seen["fallback_currency"] = fallback_currency
-        return type(
-            "LegacyExtraction",
-            (),
-            {
-                "title": "Legacy Phone",
-                "image_url": "https://example.com/legacy.jpg",
-                "rating_value": "4.8",
-                "price_minor": 10101,
-                "currency": fallback_currency,
-            },
-        )()
-
-    monkeypatch.setattr(
-        "price_monitor.domains.fetching.service.detect_fetch_block_reason",
-        _detect_fetch_block_reason,
+    result = FetchPipeline(session, direct_fetcher=LowConfidenceFetcher()).run(
+        product.id,
+        now=now,
     )
-    monkeypatch.setattr(
-        "price_monitor.domains.fetching.service.extract_product_data",
-        _extract_product_data,
-    )
+    attempt = session.query(FetchAttempt).one()
 
-    result = FetchPipeline(
-        session,
-        direct_fetcher=direct_fetcher,
-    ).run(product_id=product.id, now=datetime(2026, 6, 30, 11, 5, tzinfo=UTC))
-
-    session.commit()
-
-    assert result.status == "ok"
-    assert direct_fetcher.calls == [(product.canonical_url, None)]
-    assert seen["block_html"] == _product_html(title="Legacy Phone", price="101.01")
-    assert seen["extract_html"] == _product_html(title="Legacy Phone", price="101.01")
-    assert seen["fallback_currency"] == "RUB"
+    assert result.status == "low_confidence"
+    assert attempt.reason == "low_confidence"
+    assert attempt.parser_version == "generic-html-v1"
+    assert attempt.parser_confidence == "0.40"
+    assert session.query(PricePoint).count() == 0
 
 
 def test_fetch_pipeline_creates_pending_alert_event_when_price_crosses_target(
@@ -486,7 +471,17 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
 
     class DummySession:
         def __init__(self) -> None:
-            self.job = type("Job", (), {"status": "queued"})()
+            self.job = type(
+                "Job",
+                (),
+                {
+                    "status": "queued",
+                    "status_reason": "stale",
+                    "started_at": None,
+                    "finished_at": None,
+                    "attempt_count": 0,
+                },
+            )()
 
         def __enter__(self) -> DummySession:
             seen["entered"] = True
@@ -574,11 +569,100 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     assert seen["fetch_job_id"] == "job-123"
     assert seen["job_key"] == "job-123"
     assert seen["job"].status == "ok"
+    assert seen["job"].status_reason is None
+    assert seen["job"].started_at is not None
+    assert seen["job"].finished_at is not None
+    assert seen["job"].attempt_count == 1
     assert seen["source_service_session"] is seen["session"]
     assert isinstance(seen["direct_fetcher"], DummyHttpProductPageFetcher)
     assert seen["browser_fetcher"] is dummy_browser_fetcher
     assert seen["stored_settings"] is dummy_stored_settings
     assert seen["stored_settings"]["joom_browser_provider_url"] == ""
+
+
+def test_fetch_product_task_marks_job_dead_letter_before_reraising_unexpected_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_product_module = importlib.import_module("price_monitor.workers.tasks.fetch_product")
+    seen: dict[str, object] = {}
+
+    class DummySession:
+        def __init__(self) -> None:
+            self.job = type(
+                "Job",
+                (),
+                {
+                    "status": "queued",
+                    "status_reason": None,
+                    "started_at": None,
+                    "finished_at": None,
+                    "attempt_count": 0,
+                },
+            )()
+
+        def __enter__(self) -> DummySession:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            del exc_type, exc, tb
+
+        def commit(self) -> None:
+            seen["committed"] = True
+
+        def flush(self) -> None:
+            seen["flushed"] = True
+
+        def get(self, model: object, key: str) -> object:
+            del model
+            seen["job_key"] = key
+            return self.job
+
+    class DummyFactory:
+        def __init__(self) -> None:
+            self.last_session: DummySession | None = None
+
+        def __call__(self) -> DummySession:
+            self.last_session = DummySession()
+            return self.last_session
+
+    class ExplodingPipeline:
+        def __init__(self, session: object, **kwargs: object) -> None:
+            del session, kwargs
+
+        def run(self, *, product_id: str, fetch_job_id: str | None = None) -> object:
+            del product_id, fetch_job_id
+            raise ValueError("boom")
+
+    class DummySourceService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        def get_settings(self) -> dict[str, str]:
+            return {}
+
+    factory = DummyFactory()
+    monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: factory)
+    monkeypatch.setattr(fetch_product_module, "FetchPipeline", ExplodingPipeline)
+    monkeypatch.setattr(fetch_product_module, "SourceService", DummySourceService)
+    monkeypatch.setattr(
+        fetch_product_module,
+        "build_source_browser_fetcher",
+        lambda settings, stored_settings: None,
+        raising=False,
+    )
+
+    with pytest.raises(ValueError, match="boom"):
+        fetch_product_module.fetch_product("product-123", "job-123")
+
+    assert factory.last_session is not None
+    job = factory.last_session.job
+    assert seen["job_key"] == "job-123"
+    assert job.status == "dead_letter"
+    assert job.status_reason == "ValueError"
+    assert job.started_at is not None
+    assert job.finished_at is not None
+    assert job.attempt_count == 1
+    assert seen["committed"] is True
 
 
 def _create_product(

@@ -84,7 +84,11 @@ class FetchJob(Base):
     product_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
     logical_key: Mapped[str] = mapped_column(String(255), nullable=False)
     status: Mapped[str] = mapped_column(String(32), nullable=False, default="queued", index=True)
+    status_reason: Mapped[str | None] = mapped_column(String(255))
     scheduled_for: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    attempt_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )
@@ -100,10 +104,18 @@ class FetchAttempt(Base):
     proxy_tier: Mapped[int | None] = mapped_column(Integer)
     status: Mapped[str] = mapped_column(String(32), nullable=False)
     error_type: Mapped[str | None] = mapped_column(String(64))
+    provider_name: Mapped[str | None] = mapped_column(String(64))
+    provider_request_id: Mapped[str | None] = mapped_column(String(128))
+    provider_cost_minor: Mapped[int | None] = mapped_column(Integer)
+    rendered: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     http_status: Mapped[int | None] = mapped_column(Integer)
     response_ms: Mapped[int | None] = mapped_column(Integer)
+    block_reason: Mapped[str | None] = mapped_column(String(255))
+    challenge_detected: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     product_data_found: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     reason: Mapped[str | None] = mapped_column(String(255))
+    parser_version: Mapped[str | None] = mapped_column(String(64))
+    parser_confidence: Mapped[str | None] = mapped_column(String(16))
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(UTC), nullable=False
     )

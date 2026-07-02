@@ -3,20 +3,21 @@ from __future__ import annotations
 from collections.abc import Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
+from decimal import Decimal
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from price_monitor.domains.fetching.extraction import (
-    detect_fetch_block_reason,
-    extract_product_data,
-)
 from price_monitor.domains.fetching.ports import ProductPageFetcher, ProxyUrlResolver
+from price_monitor.domains.fetching.sources.base import FetchContext
+from price_monitor.domains.fetching.sources.registry import get_adapter_for_source
 from price_monitor.domains.notifications.service import NotificationService
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
 from price_monitor.domains.reliability.models import FetchAttempt
 from price_monitor.domains.sources.models import MonitoredSource, ProxyEndpoint, ProxyPool
+
+MINIMUM_PARSER_CONFIDENCE = Decimal("0.70")
 
 
 @dataclass(frozen=True)
@@ -63,6 +64,7 @@ class FetchPipeline:
             return ProductFetchResult(product_id=product.id, status="unsupported_store")
 
         fallback_currency = product.currency or "RUB"
+        adapter = get_adapter_for_source(product.source_domain)
         strategies: list[tuple[str, int | None, str | None, ProductPageFetcher]] = []
         if self._direct_fetcher is not None:
             strategies.append(("direct", None, None, self._direct_fetcher))
@@ -83,6 +85,8 @@ class FetchPipeline:
                 strategy=strategy,
                 proxy_tier=proxy_tier,
                 status="failed",
+                rendered=strategy == "browser",
+                challenge_detected=False,
                 product_data_found=False,
                 created_at=attempt_time,
             )
@@ -95,9 +99,16 @@ class FetchPipeline:
                         attempt.reason = "proxy_url_unavailable"
                         self._session.flush()
                         continue
-                page = fetcher.fetch(
-                    url=product.canonical_url,
-                    proxy_url=proxy_url if strategy == "proxy" else None,
+                result = adapter.fetch_product(
+                    FetchContext(
+                        canonical_url=product.canonical_url,
+                        source_domain=product.source_domain,
+                        source_product_id=product.source_product_id,
+                        strategy=strategy,
+                        fetcher=fetcher,
+                        proxy_url=proxy_url if strategy == "proxy" else None,
+                        fallback_currency=fallback_currency,
+                    )
                 )
             except Exception as exc:
                 attempt.error_type = type(exc).__name__
@@ -105,24 +116,27 @@ class FetchPipeline:
                 self._session.flush()
                 continue
 
-            attempt.http_status = page.http_status
-            attempt.response_ms = page.response_ms
-            block_reason = detect_fetch_block_reason(page.content)
-            if block_reason is not None:
-                attempt.reason = block_reason
-                terminal_status = block_reason
+            attempt.http_status = result.http_status
+            attempt.response_ms = result.response_ms
+            attempt.block_reason = result.block_reason
+            attempt.challenge_detected = result.challenge_detected
+            attempt.parser_version = result.parser_version
+            attempt.parser_confidence = result.parser_confidence
+            if result.status != "ok" or result.extraction is None:
+                attempt.reason = result.reason or result.status
+                terminal_status = attempt.reason or "fetch_failed"
                 self._session.flush()
                 continue
 
-            extracted = extract_product_data(page.content, fallback_currency=fallback_currency)
-            if extracted is None:
-                attempt.reason = "product_data_not_found"
-                terminal_status = "fetch_failed"
+            extracted = result.extraction
+            attempt.product_data_found = True
+            if extracted.confidence < MINIMUM_PARSER_CONFIDENCE:
+                attempt.reason = "low_confidence"
+                terminal_status = "low_confidence"
                 self._session.flush()
                 continue
 
             attempt.status = "ok"
-            attempt.product_data_found = True
             attempt.reason = None
 
             product.title = extracted.title
@@ -130,6 +144,7 @@ class FetchPipeline:
             product.rating_value = extracted.rating_value
             product.current_price_minor = extracted.price_minor
             product.currency = extracted.currency
+            product.source_product_id = extracted.source_product_id
             product.last_fetch_status = "ok"
             product.last_fetched_at = current_time
             product.updated_at = current_time
