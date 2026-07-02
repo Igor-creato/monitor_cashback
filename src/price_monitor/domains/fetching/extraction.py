@@ -1,11 +1,18 @@
 from __future__ import annotations
 
 import json
+from dataclasses import dataclass
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from html.parser import HTMLParser
 from typing import Any
 
 from price_monitor.domains.fetching.ports import FetchedProductData
+
+
+@dataclass(frozen=True)
+class ExtractedProductData:
+    data: FetchedProductData
+    source: str
 
 
 class _JsonLdScriptParser(HTMLParser):
@@ -61,6 +68,13 @@ class _MetaTagParser(HTMLParser):
 
 
 def extract_product_data(html: str, *, fallback_currency: str) -> FetchedProductData | None:
+    extracted = extract_product_data_with_metadata(html, fallback_currency=fallback_currency)
+    return extracted.data if extracted is not None else None
+
+
+def extract_product_data_with_metadata(
+    html: str, *, fallback_currency: str
+) -> ExtractedProductData | None:
     parser = _JsonLdScriptParser()
     parser.feed(html)
 
@@ -68,8 +82,11 @@ def extract_product_data(html: str, *, fallback_currency: str) -> FetchedProduct
         for candidate in _iter_product_nodes(_load_json(script_content)):
             data = _build_product_data(candidate, fallback_currency=fallback_currency)
             if data is not None:
-                return data
-    return _extract_meta_product_data(html, fallback_currency=fallback_currency)
+                return ExtractedProductData(data=data, source="json-ld")
+    meta_data = _extract_meta_product_data(html, fallback_currency=fallback_currency)
+    if meta_data is not None:
+        return ExtractedProductData(data=meta_data, source="meta")
+    return None
 
 
 def detect_fetch_block_reason(html: str) -> str | None:

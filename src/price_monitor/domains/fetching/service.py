@@ -7,11 +7,9 @@ from datetime import UTC, date, datetime, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from price_monitor.domains.fetching.extraction import (
-    detect_fetch_block_reason,
-    extract_product_data,
-)
 from price_monitor.domains.fetching.ports import ProductPageFetcher, ProxyUrlResolver
+from price_monitor.domains.fetching.sources.base import FetchContext
+from price_monitor.domains.fetching.sources.registry import get_adapter_for_source
 from price_monitor.domains.notifications.service import NotificationService
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
@@ -62,6 +60,7 @@ class FetchPipeline:
             self._session.flush()
             return ProductFetchResult(product_id=product.id, status="unsupported_store")
 
+        adapter = get_adapter_for_source(source.source_domain)
         fallback_currency = product.currency or "RUB"
         strategies: list[tuple[str, int | None, str | None, ProductPageFetcher]] = []
         if self._direct_fetcher is not None:
@@ -95,9 +94,16 @@ class FetchPipeline:
                         attempt.reason = "proxy_url_unavailable"
                         self._session.flush()
                         continue
-                page = fetcher.fetch(
-                    url=product.canonical_url,
-                    proxy_url=proxy_url if strategy == "proxy" else None,
+                result = adapter.fetch_product(
+                    FetchContext(
+                        canonical_url=product.canonical_url,
+                        source_domain=product.source_domain,
+                        source_product_id=product.source_product_id,
+                        strategy=strategy,
+                        fetcher=fetcher,
+                        proxy_url=proxy_url if strategy == "proxy" else None,
+                        fallback_currency=fallback_currency,
+                    )
                 )
             except Exception as exc:
                 attempt.error_type = type(exc).__name__
@@ -105,18 +111,16 @@ class FetchPipeline:
                 self._session.flush()
                 continue
 
-            attempt.http_status = page.http_status
-            attempt.response_ms = page.response_ms
-            block_reason = detect_fetch_block_reason(page.content)
-            if block_reason is not None:
-                attempt.reason = block_reason
-                terminal_status = block_reason
+            attempt.http_status = result.http_status
+            attempt.response_ms = result.response_ms
+            if result.block_reason is not None or result.challenge_detected:
+                attempt.reason = result.block_reason or result.reason
+                terminal_status = result.block_reason or result.status
                 self._session.flush()
                 continue
 
-            extracted = extract_product_data(page.content, fallback_currency=fallback_currency)
-            if extracted is None:
-                attempt.reason = "product_data_not_found"
+            if result.extraction is None:
+                attempt.reason = result.reason or "product_data_not_found"
                 terminal_status = "fetch_failed"
                 self._session.flush()
                 continue
@@ -125,11 +129,11 @@ class FetchPipeline:
             attempt.product_data_found = True
             attempt.reason = None
 
-            product.title = extracted.title
-            product.image_url = extracted.image_url
-            product.rating_value = extracted.rating_value
-            product.current_price_minor = extracted.price_minor
-            product.currency = extracted.currency
+            product.title = result.extraction.title
+            product.image_url = result.extraction.image_url
+            product.rating_value = result.extraction.rating_value
+            product.current_price_minor = result.extraction.price_minor
+            product.currency = result.extraction.currency
             product.last_fetch_status = "ok"
             product.last_fetched_at = current_time
             product.updated_at = current_time
@@ -140,8 +144,8 @@ class FetchPipeline:
                 product_id=product.id,
                 fetch_attempt_id=attempt.id,
                 source_domain=product.source_domain,
-                price_minor=extracted.price_minor,
-                currency=extracted.currency,
+                price_minor=result.extraction.price_minor,
+                currency=result.extraction.currency,
                 observed_at=current_time,
             )
             self._session.add(price_point)

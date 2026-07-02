@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Protocol
 
 
@@ -11,6 +12,20 @@ class FetchedProductData:
     price_minor: int
     currency: str
     rating_value: str | None
+
+
+@dataclass(frozen=True)
+class ProductExtraction:
+    title: str
+    price_minor: int
+    currency: str
+    image_url: str | None
+    rating_value: str | None
+    availability: str | None
+    canonical_url: str
+    source_product_id: str | None
+    parser_version: str
+    confidence: Decimal
 
 
 @dataclass(frozen=True)
