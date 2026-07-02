@@ -477,6 +477,51 @@ def test_fetch_pipeline_preserves_browser_rendered_metadata_with_generic_adapter
     assert attempts[1].rendered is True
 
 
+def test_fetch_pipeline_clears_stale_reason_on_low_confidence_browser_fallback(
+    session: Session,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=True)
+    direct_fetcher = FakeFetcher(
+        html="""
+        <script>
+        window._config_ = {"action":"captcha","url":"/_____tmd_____/punish?x5secdata=abc"};
+        </script>
+        """
+    )
+    browser_fetcher = FakeFetcher(
+        html="""
+        <meta property="og:title" content="Rendered Weak">
+        <meta property="product:price:amount" content="1.00">
+        <meta property="product:price:currency" content="RUB">
+        """
+    )
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+        browser_fetcher=browser_fetcher,
+    ).run(product_id=product.id, now=datetime(2026, 7, 2, 10, 20, tzinfo=UTC))
+
+    session.commit()
+
+    refreshed_product = session.get(Product, product.id)
+    attempts = session.scalars(
+        select(FetchAttempt)
+        .where(FetchAttempt.product_id == product.id)
+        .order_by(FetchAttempt.created_at.asc())
+    ).all()
+
+    assert result.status == "low_confidence"
+    assert result.reason == "low_confidence"
+    assert refreshed_product is not None
+    assert refreshed_product.last_fetch_status == "low_confidence"
+    assert [attempt.strategy for attempt in attempts] == ["direct", "browser"]
+    assert attempts[0].reason == "captcha_detected"
+    assert attempts[1].reason == "low_confidence"
+    assert attempts[1].parser_version == "generic-html-v1"
+    assert attempts[1].parser_confidence == "0.40"
+
+
 def test_fetch_product_task_uses_http_fetcher_to_update_product(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,

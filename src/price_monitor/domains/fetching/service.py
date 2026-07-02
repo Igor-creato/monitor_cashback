@@ -141,6 +141,7 @@ class FetchPipeline:
             if extracted.confidence < MINIMUM_PARSER_CONFIDENCE:
                 attempt.reason = "low_confidence"
                 terminal_status = "low_confidence"
+                terminal_reason = "low_confidence"
                 self._session.flush()
                 continue
 
