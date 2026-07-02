@@ -122,7 +122,11 @@ def test_watchlist_create_rejects_non_product_required_store_url(
         path,
         content=raw_body,
         headers=signed_headers(
-            "POST", path, raw_body, request_id="req-ozon-watchlist-non-product", idempotency_key="idem-ozon-watchlist-non-product"
+            "POST",
+            path,
+            raw_body,
+            request_id="req-ozon-watchlist-non-product",
+            idempotency_key="idem-ozon-watchlist-non-product",
         ),
     )
 

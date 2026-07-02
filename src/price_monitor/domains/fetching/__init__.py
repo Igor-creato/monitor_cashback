@@ -10,7 +10,11 @@ from price_monitor.domains.fetching.service import (
     ProductFetchResult,
     summarize_price_chart,
 )
-from price_monitor.domains.fetching.sources.base import FetchContext, SourceAdapter, SourceFetchResult
+from price_monitor.domains.fetching.sources.base import (
+    FetchContext,
+    SourceAdapter,
+    SourceFetchResult,
+)
 from price_monitor.domains.fetching.sources.registry import get_adapter_for_source
 
 __all__ = [

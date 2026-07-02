@@ -58,15 +58,11 @@ def supported_source(
                 "message": classification.message,
             },
         }
-    if (
-        classification.error_code
-        in {
-            "not_product_url",
-            "source_product_id_missing",
-            "source_url_pattern_unsupported",
-        }
-        and is_required_store_domain(classification.source_domain)
-    ):
+    if classification.error_code in {
+        "not_product_url",
+        "source_product_id_missing",
+        "source_url_pattern_unsupported",
+    } and is_required_store_domain(classification.source_domain):
         return {
             "supported": False,
             "error": {

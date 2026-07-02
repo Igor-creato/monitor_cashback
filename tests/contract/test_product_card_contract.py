@@ -199,6 +199,7 @@ def test_product_detail_resolves_supported_subdomain_to_monitored_source(
     assert response.json()["source"]["source_domain"] == "example.com"
     assert response.json()["product"]["title"] == "Subdomain Product"
 
+
 def test_price_chart_returns_empty_state_without_currency_when_no_points(
     client: TestClient, session: Session
 ) -> None:

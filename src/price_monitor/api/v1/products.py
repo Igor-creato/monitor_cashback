@@ -7,8 +7,8 @@ from sqlalchemy.orm import Session
 
 from price_monitor.api.dependencies import get_db_session, verify_wordpress_request
 from price_monitor.core.security import VerifiedRequest
-from price_monitor.domains.reliability.models import FetchAttempt, FetchJob
 from price_monitor.domains.products.models import Product
+from price_monitor.domains.reliability.models import FetchAttempt, FetchJob
 from price_monitor.domains.sources.models import MonitoredSource
 
 router = APIRouter(prefix="/api/v1/products", tags=["products"])

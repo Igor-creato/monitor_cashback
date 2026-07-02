@@ -9,7 +9,10 @@ from sqlalchemy.orm import Session
 from price_monitor.core.url_policy import ValidatedProductUrl, validate_public_product_url
 from price_monitor.domains.products.models import Product
 from price_monitor.domains.reliability.models import FetchJob, OutboxEvent
-from price_monitor.domains.sources.classification import classify_product_url, is_required_store_domain
+from price_monitor.domains.sources.classification import (
+    classify_product_url,
+    is_required_store_domain,
+)
 from price_monitor.domains.sources.service import SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
 
@@ -43,7 +46,10 @@ class WatchlistService:
             return WatchlistAddResult(item=None, created=False, error_code="unsupported_store")
 
         classification = classify_product_url(product_url)
-        if is_required_store_domain(classification.source_domain) and not classification.is_product_url:
+        if (
+            is_required_store_domain(classification.source_domain)
+            and not classification.is_product_url
+        ):
             return WatchlistAddResult(
                 item=None,
                 created=False,
@@ -70,7 +76,11 @@ class WatchlistService:
             .where(WatchlistItem.user_id == user_id, WatchlistItem.status == "active")
         )
         if active_count is not None and active_count >= max_tracked_products:
-            return WatchlistAddResult(item=None, created=False, error_code="limit_exceeded")
+            return WatchlistAddResult(
+                item=None,
+                created=False,
+                error_code="limit_exceeded",
+            )
 
         product = self._get_or_create_product(
             validated,

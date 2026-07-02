@@ -11,8 +11,8 @@ from sqlalchemy.orm import Session
 from tests.conftest import signed_headers
 
 from price_monitor.domains.fetching.ports import FetchPageResult, ProductExtraction
-from price_monitor.domains.fetching.sources.base import SourceFetchResult
 from price_monitor.domains.fetching.service import FetchPipeline
+from price_monitor.domains.fetching.sources.base import SourceFetchResult
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
 from price_monitor.domains.reliability.models import AlertEvent, FetchAttempt, FetchJob, OutboxEvent
@@ -167,6 +167,7 @@ def test_fetch_pipeline_does_not_resolve_proxy_before_direct_success(
     assert len(attempts) == 1
     assert attempts[0].strategy == "direct"
     assert attempts[0].status == "ok"
+
 
 def test_fetch_pipeline_records_parser_metadata_and_blocks_low_confidence(
     session: Session,

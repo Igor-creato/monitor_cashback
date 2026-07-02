@@ -37,5 +37,4 @@ class SourceFetchResult:
 class SourceAdapter(Protocol):
     source_domain: str
 
-    def fetch_product(self, context: FetchContext) -> SourceFetchResult:
-        ...
+    def fetch_product(self, context: FetchContext) -> SourceFetchResult: ...

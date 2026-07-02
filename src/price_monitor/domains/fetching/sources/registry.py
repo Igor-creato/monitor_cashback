@@ -1,11 +1,11 @@
 from __future__ import annotations
 
 from price_monitor.domains.fetching.sources.aliexpress import AliExpressAdapter
+from price_monitor.domains.fetching.sources.base import SourceAdapter
 from price_monitor.domains.fetching.sources.citilink import CitilinkAdapter
+from price_monitor.domains.fetching.sources.generic_html import GenericHtmlAdapter
 from price_monitor.domains.fetching.sources.joom import JoomAdapter
 from price_monitor.domains.fetching.sources.ozon import OzonAdapter
-from price_monitor.domains.fetching.sources.base import SourceAdapter
-from price_monitor.domains.fetching.sources.generic_html import GenericHtmlAdapter
 from price_monitor.domains.fetching.sources.wildberries import WildberriesAdapter
 from price_monitor.domains.fetching.sources.yandex_market import YandexMarketAdapter
 

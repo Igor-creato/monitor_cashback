@@ -44,7 +44,9 @@ def fetch_product(product_id: str, fetch_job_id: str | None = None) -> dict[str,
                     job.status = result.status
                 else:
                     job.status = "failed"
-                job.status_reason = None if result.status == "ok" else (result.reason or result.status)
+                job.status_reason = (
+                    None if result.status == "ok" else (result.reason or result.status)
+                )
                 job.finished_at = datetime.now(UTC)
                 session.flush()
             session.commit()

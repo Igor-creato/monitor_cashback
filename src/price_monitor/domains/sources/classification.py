@@ -37,16 +37,12 @@ STORE_RULES: dict[str, StoreRule] = {
         "non_product_prefixes": ("/catalog/", "/search", "/promo", "/specials"),
     },
     "joom.com": {
-        "product_patterns": (
-            re.compile(r"^/(?:ru/)?products/([A-Za-z0-9_-]+)/?$", re.IGNORECASE),
-        ),
+        "product_patterns": (re.compile(r"^/(?:ru/)?products/([A-Za-z0-9_-]+)/?$", re.IGNORECASE),),
         "product_prefixes": ("/products/", "/ru/products/"),
         "non_product_prefixes": ("/search", "/ru/search", "/category", "/collections", "/help"),
     },
     "wildberries.ru": {
-        "product_patterns": (
-            re.compile(r"^/catalog/(\d+)/detail\.aspx/?$", re.IGNORECASE),
-        ),
+        "product_patterns": (re.compile(r"^/catalog/(\d+)/detail\.aspx/?$", re.IGNORECASE),),
         "product_prefixes": ("/catalog/",),
         "non_product_prefixes": (
             "/search",
@@ -156,9 +152,12 @@ def _classify_required_store_url(
                 STABLE_ERROR_MESSAGES["source_product_id_missing"],
             )
 
-    return None, False, "source_url_pattern_unsupported", STABLE_ERROR_MESSAGES[
-        "source_url_pattern_unsupported"
-    ]
+    return (
+        None,
+        False,
+        "source_url_pattern_unsupported",
+        STABLE_ERROR_MESSAGES["source_url_pattern_unsupported"],
+    )
 
 
 def _required_store_root(hostname: str) -> str | None:
