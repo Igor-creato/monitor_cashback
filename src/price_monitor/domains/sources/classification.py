@@ -31,6 +31,11 @@ STORE_RULES: dict[str, StoreRule] = {
         "product_prefixes": ("/item/",),
         "non_product_prefixes": ("/search", "/wholesale", "/category", "/store", "/help"),
     },
+    "aliexpress.ru": {
+        "product_patterns": (re.compile(r"^/item/(\d+)\.html/?$", re.IGNORECASE),),
+        "product_prefixes": ("/item/",),
+        "non_product_prefixes": ("/search", "/wholesale", "/category", "/store", "/help"),
+    },
     "citilink.ru": {
         "product_patterns": (re.compile(r"^/product/.+-(\d+)/?$", re.IGNORECASE),),
         "product_prefixes": ("/product/",),

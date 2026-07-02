@@ -14,6 +14,11 @@ from price_monitor.domains.sources.classification import (
             "aliexpress.com",
             "1005001112223334",
         ),
+        (
+            "https://aliexpress.ru/item/1005001112223334.html",
+            "aliexpress.ru",
+            "1005001112223334",
+        ),
         ("https://www.citilink.ru/product/router-wifi-123456/", "citilink.ru", "123456"),
         (
             "https://www.joom.com/ru/products/64f1abcd1234567890abcdef",
@@ -50,6 +55,7 @@ def test_required_store_product_urls_are_classified(
     ("url", "error_code"),
     (
         ("https://www.aliexpress.com/wholesale?SearchText=phone", "not_product_url"),
+        ("https://aliexpress.ru/wholesale?SearchText=phone", "not_product_url"),
         ("https://www.citilink.ru/catalog/smartfony/", "not_product_url"),
         ("https://www.joom.com/ru/search/q.phone", "not_product_url"),
         ("https://www.wildberries.ru/catalog/0/search.aspx?search=phone", "not_product_url"),
@@ -75,6 +81,7 @@ def test_non_product_and_unsafe_urls_get_stable_errors(
     ("source_domain", "expected"),
     (
         ("aliexpress.com", True),
+        ("aliexpress.ru", True),
         ("shop.ozon.ru", False),
         ("example.com", False),
         (None, False),

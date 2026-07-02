@@ -96,6 +96,7 @@ def test_generic_adapter_uses_low_confidence_for_meta_only_extraction() -> None:
     ("source_domain", "parser_version"),
     (
         ("aliexpress.com", "aliexpress-v1"),
+        ("aliexpress.ru", "aliexpress-v1"),
         ("citilink.ru", "citilink-v1"),
         ("joom.com", "joom-v1"),
         ("wildberries.ru", "wildberries-v1"),

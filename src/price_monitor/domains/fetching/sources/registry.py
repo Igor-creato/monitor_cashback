@@ -12,6 +12,7 @@ from price_monitor.domains.fetching.sources.yandex_market import YandexMarketAda
 _GENERIC = GenericHtmlAdapter()
 _ADAPTERS = {
     "aliexpress.com": AliExpressAdapter(),
+    "aliexpress.ru": AliExpressAdapter(),
     "citilink.ru": CitilinkAdapter(),
     "joom.com": JoomAdapter(),
     "wildberries.ru": WildberriesAdapter(),
