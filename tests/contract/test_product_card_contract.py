@@ -37,20 +37,20 @@ def test_product_detail_returns_card_contract(client: TestClient, session: Sessi
     product.current_price_minor = 12_345
     product.currency = "RUB"
     product.last_fetch_status = "ok"
-    job = FetchJob(
+    older_job = FetchJob(
         product_id=product.id,
-        logical_key="watchlist:item-1:fetch:req-card",
+        logical_key="watchlist:item-1:fetch:req-card-old",
         status="failed",
         status_reason="captcha_detected",
         scheduled_for=datetime(2026, 7, 2, 9, 0, tzinfo=UTC),
         started_at=datetime(2026, 7, 2, 9, 1, tzinfo=UTC),
         finished_at=datetime(2026, 7, 2, 9, 2, tzinfo=UTC),
     )
-    session.add(job)
+    session.add(older_job)
     session.flush()
     session.add(
         FetchAttempt(
-            fetch_job_id=job.id,
+            fetch_job_id=older_job.id,
             product_id=product.id,
             strategy="direct",
             status="failed",
@@ -66,6 +66,16 @@ def test_product_detail_returns_card_contract(client: TestClient, session: Sessi
             created_at=datetime(2026, 7, 2, 9, 1, 30, tzinfo=UTC),
         )
     )
+    newer_job = FetchJob(
+        product_id=product.id,
+        logical_key="watchlist:item-1:fetch:req-card-new",
+        status="quarantined",
+        status_reason="dead_letter",
+        scheduled_for=datetime(2026, 7, 2, 10, 0, tzinfo=UTC),
+        started_at=datetime(2026, 7, 2, 10, 1, tzinfo=UTC),
+        finished_at=datetime(2026, 7, 2, 10, 2, tzinfo=UTC),
+    )
+    session.add(newer_job)
     session.commit()
 
     path = f"/api/v1/products/{product.id}"
@@ -78,11 +88,11 @@ def test_product_detail_returns_card_contract(client: TestClient, session: Sessi
     assert response.json()["product"]["title"] == "Example Product"
     assert response.json()["source"]["logo_url"] == source.logo_url
     assert response.json()["actions"]["direct_url"] == product.canonical_url
-    assert response.json()["latest_fetch"]["status"] == "failed"
-    assert response.json()["latest_fetch"]["reason"] == "captcha_detected"
-    assert response.json()["latest_fetch"]["strategy"] == "direct_http"
-    assert response.json()["latest_fetch"]["parser_version"] == "citilink-v1"
-    assert response.json()["latest_fetch"]["parser_confidence"] == "0.90"
+    assert response.json()["latest_fetch"]["status"] == "quarantined"
+    assert response.json()["latest_fetch"]["reason"] == "dead_letter"
+    assert response.json()["latest_fetch"]["strategy"] is None
+    assert response.json()["latest_fetch"]["parser_version"] is None
+    assert response.json()["latest_fetch"]["parser_confidence"] is None
 
 
 def test_product_detail_resolves_supported_subdomain_to_monitored_source(

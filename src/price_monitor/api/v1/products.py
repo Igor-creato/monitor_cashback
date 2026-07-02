@@ -39,11 +39,37 @@ def product_detail(
         .where(FetchJob.product_id == product.id)
         .order_by(FetchJob.created_at.desc(), FetchJob.id.desc())
     )
-    latest_attempt = session.scalar(
-        select(FetchAttempt)
-        .where(FetchAttempt.product_id == product.id)
-        .order_by(FetchAttempt.created_at.desc(), FetchAttempt.id.desc())
-    )
+    latest_attempt = None
+    latest_status = product.last_fetch_status
+    latest_reason = None
+    latest_started_at = None
+    latest_finished_at = None
+
+    if latest_job is not None:
+        latest_status = latest_job.status
+        latest_reason = latest_job.status_reason
+        latest_started_at = (
+            latest_job.started_at.isoformat() if latest_job.started_at is not None else None
+        )
+        latest_finished_at = (
+            latest_job.finished_at.isoformat() if latest_job.finished_at is not None else None
+        )
+        latest_attempt = session.scalar(
+            select(FetchAttempt)
+            .where(FetchAttempt.fetch_job_id == latest_job.id)
+            .order_by(FetchAttempt.created_at.desc(), FetchAttempt.id.desc())
+        )
+    else:
+        latest_attempt = session.scalar(
+            select(FetchAttempt)
+            .where(FetchAttempt.product_id == product.id)
+            .order_by(FetchAttempt.created_at.desc(), FetchAttempt.id.desc())
+        )
+        if latest_attempt is not None:
+            latest_status = latest_attempt.status
+            latest_reason = latest_attempt.reason
+            latest_started_at = None
+            latest_finished_at = None
 
     return {
         "product": {
@@ -63,8 +89,8 @@ def product_detail(
         },
         "actions": {"direct_url": product.canonical_url},
         "latest_fetch": {
-            "status": latest_job.status if latest_job is not None else product.last_fetch_status,
-            "reason": latest_attempt.reason if latest_attempt is not None else None,
+            "status": latest_status,
+            "reason": latest_reason,
             "strategy": (
                 "direct_http"
                 if latest_attempt is not None and latest_attempt.strategy == "direct"
@@ -87,15 +113,7 @@ def product_detail(
             "parser_confidence": (
                 latest_attempt.parser_confidence if latest_attempt is not None else None
             ),
-            "started_at": (
-                latest_job.started_at.isoformat()
-                if latest_job is not None and latest_job.started_at is not None
-                else None
-            ),
-            "finished_at": (
-                latest_job.finished_at.isoformat()
-                if latest_job is not None and latest_job.finished_at is not None
-                else None
-            ),
+            "started_at": latest_started_at,
+            "finished_at": latest_finished_at,
         },
     }
