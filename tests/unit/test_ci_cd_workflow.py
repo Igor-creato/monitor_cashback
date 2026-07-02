@@ -51,6 +51,7 @@ def test_runtime_and_ci_versions_use_latest_compatible_stable_pins() -> None:
     assert "image: postgres:18.4-alpine" in compose
     assert "image: rabbitmq:4.3.2-management-alpine" in compose
     assert "image: redis:8.8.0-alpine" in compose
+    assert "image: ghcr.io/browserless/chromium:2.26.1" in compose
     assert 'requires = ["setuptools==82.0.1", "wheel==0.47.0"]' in pyproject
     assert '"fastapi==0.138.2"' in pyproject
     assert "actions/checkout@v7.0.0" in workflow
@@ -128,6 +129,9 @@ def test_compose_keeps_stateful_service_credentials_and_ports_server_safe() -> N
     assert "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:15672:15672" in compose
     assert "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:6379:6379" in compose
     assert "${PRICE_MONITOR_BIND_ADDRESS:-127.0.0.1}:8000:8000" in compose
+    assert "PRICE_MONITOR_BROWSERLESS_TOKEN=synthetic-local-browserless-token-change-me" in (
+        env_example
+    )
     assert "COMPOSE_PROJECT_NAME=monitor_cashback" in env_example
     assert "PRICE_MONITOR_BIND_ADDRESS=127.0.0.1" in env_example
     assert "POSTGRES_PASSWORD=synthetic-local-postgres-password" in env_example
@@ -149,6 +153,7 @@ def test_compose_sets_resource_limits_and_low_noise_healthchecks() -> None:
         "postgres": "1g",
         "rabbitmq": "768m",
         "redis": "256m",
+        "browserless": "2g",
         "api": "512m",
         "worker": "1536m",
     }
@@ -158,7 +163,7 @@ def test_compose_sets_resource_limits_and_low_noise_healthchecks() -> None:
         assert f"    mem_limit: {memory_limit}" in section
         assert f"    memswap_limit: {memory_limit}" in section
 
-    for service in ("postgres", "rabbitmq", "redis", "api"):
+    for service in ("postgres", "rabbitmq", "redis", "browserless", "api"):
         section = _compose_service_section(compose, service)
         assert "      interval: 60s" in section
 
@@ -168,7 +173,7 @@ def test_compose_hardens_rabbitmq_memory_and_logs_for_fresh_servers() -> None:
     rabbitmq_conf = (ROOT / "deploy" / "rabbitmq" / "rabbitmq.conf").read_text(encoding="utf-8")
 
     assert "x-json-logging: &json-logging" in compose
-    assert compose.count("    logging: *json-logging") == 5
+    assert compose.count("    logging: *json-logging") == 6
     assert compose.count('max-size: "10m"') == 1
     assert compose.count('max-file: "3"') == 1
 
@@ -189,3 +194,23 @@ def test_compose_worker_does_not_inherit_api_http_healthcheck() -> None:
     assert "healthcheck:" in worker_section
     assert "disable: true" in worker_section
     assert "--without-heartbeat" in worker_section
+
+
+def test_compose_includes_internal_browserless_renderer() -> None:
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    browserless_section = _compose_service_section(compose, "browserless")
+    worker_section = _compose_service_section(compose, "worker")
+
+    assert "image: ghcr.io/browserless/chromium:2.26.1" in browserless_section
+    assert "TOKEN: ${PRICE_MONITOR_BROWSERLESS_TOKEN:-price-monitor-renderer}" in (
+        browserless_section
+    )
+    assert "HOST: 0.0.0.0" in browserless_section
+    assert "CONCURRENT: 1" in browserless_section
+    assert "QUEUED: 2" in browserless_section
+    assert 'shm_size: "2g"' in browserless_section
+    assert 'ALLOW_FILE_PROTOCOL: "false"' in browserless_section
+    assert "http://127.0.0.1:3000/pressure" in browserless_section
+    assert "browserless:" in worker_section
+    assert "condition: service_healthy" in worker_section

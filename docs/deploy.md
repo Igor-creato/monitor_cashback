@@ -77,11 +77,17 @@ PRICE_MONITOR_RABBITMQ_URL=amqp://price_monitor:<server-managed-rabbitmq-passwor
 PRICE_MONITOR_HMAC_SECRETS=<server-managed-secret>
 PRICE_MONITOR_HMAC_REPLAY_WINDOW_SECONDS=300
 PRICE_MONITOR_DB_POOL_RECYCLE_SECONDS=3600
+PRICE_MONITOR_BROWSERLESS_TOKEN=<server-managed-browserless-token>
 ```
 
 `PRICE_MONITOR_BIND_ADDRESS=127.0.0.1` keeps the API and backing services bound
 to localhost on the test server unless a reviewed proxy/public exposure change
 sets a different value.
+
+`PRICE_MONITOR_BROWSERLESS_TOKEN` protects the internal Browserless renderer
+used by source-specific browser fallback such as `joom.ru`. The renderer is not
+published to a host port; the worker reaches it over the private compose
+network.
 
 The deployment job fails closed if SSH settings are missing or
 `/home/igor/monitor_cashback/shared/.env` does not exist.

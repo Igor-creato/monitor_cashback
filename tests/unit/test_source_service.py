@@ -86,3 +86,32 @@ def test_upsert_source_rejects_public_suffix_like_domain(session: Session) -> No
                 proxy_pool_id=None,
             )
         )
+
+
+def test_monitor_settings_include_joom_provider_defaults_and_updates(
+    session: Session,
+) -> None:
+    service = SourceService(session)
+
+    defaults = service.get_settings()
+
+    assert defaults["joom_browser_provider_url"] == ""
+    assert defaults["joom_browser_provider_token"] == ""
+    assert defaults["joom_browser_provider_timeout_seconds"] == "25.0"
+    assert (
+        defaults["joom_browser_provider_wait_selector"] == 'meta[property="product:price:amount"]'
+    )
+
+    updated = service.update_settings(
+        {
+            "joom_browser_provider_url": "https://renderer.example/render",
+            "joom_browser_provider_token": "secret-token",
+            "joom_browser_provider_timeout_seconds": "12.5",
+            "joom_browser_provider_wait_selector": "#price",
+        }
+    )
+
+    assert updated["joom_browser_provider_url"] == "https://renderer.example/render"
+    assert updated["joom_browser_provider_token"] == "secret-token"  # noqa: S105
+    assert updated["joom_browser_provider_timeout_seconds"] == "12.5"
+    assert updated["joom_browser_provider_wait_selector"] == "#price"

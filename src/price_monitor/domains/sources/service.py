@@ -11,7 +11,13 @@ from price_monitor.core.url_policy import validate_public_product_url
 from price_monitor.domains.sources.models import MonitoredSource, MonitorSetting
 
 ALLOWED_SOURCE_STATUSES = {"active", "paused", "disabled"}
-DEFAULT_MONITOR_SETTINGS = {"max_tracked_products_per_user": "10"}
+DEFAULT_MONITOR_SETTINGS = {
+    "max_tracked_products_per_user": "10",
+    "joom_browser_provider_url": "",
+    "joom_browser_provider_token": "",
+    "joom_browser_provider_timeout_seconds": "25.0",
+    "joom_browser_provider_wait_selector": 'meta[property="product:price:amount"]',
+}
 SECOND_LEVEL_PUBLIC_SUFFIXES = {"ac", "co", "com", "edu", "gov", "mil", "net", "org"}
 DOMAIN_LABEL_PATTERN = re.compile(r"^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?$")
 

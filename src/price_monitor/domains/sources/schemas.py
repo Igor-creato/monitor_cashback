@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from urllib.parse import urlparse
+
 from pydantic import BaseModel, Field, field_validator
 
 from price_monitor.domains.sources.service import (
@@ -52,8 +54,32 @@ class MonitoredSourceListResponse(BaseModel):
 
 
 class MonitorSettingsPatchRequest(BaseModel):
-    max_tracked_products_per_user: int = Field(ge=1)
+    max_tracked_products_per_user: int | None = Field(default=None, ge=1)
+    joom_browser_provider_url: str | None = Field(default=None, max_length=2048)
+    joom_browser_provider_token: str | None = Field(default=None, max_length=4096)
+    joom_browser_provider_timeout_seconds: float | None = Field(default=None, ge=1, le=120)
+    joom_browser_provider_wait_selector: str | None = Field(default=None, max_length=255)
+
+    @field_validator("joom_browser_provider_url")
+    @classmethod
+    def validate_provider_url(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        if not normalized:
+            return ""
+        parsed = urlparse(normalized)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError("joom_browser_provider_url must be an http(s) URL")
+        return normalized
+
+    @field_validator("joom_browser_provider_token", "joom_browser_provider_wait_selector")
+    @classmethod
+    def trim_optional_string(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        return value.strip()
 
 
 class MonitorSettingsResponse(BaseModel):
-    settings: dict[str, int]
+    settings: dict[str, int | float | str | bool]

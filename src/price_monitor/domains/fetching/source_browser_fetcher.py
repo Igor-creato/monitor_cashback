@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass
 from time import perf_counter
 from typing import Protocol
+from urllib.parse import urlparse
 
 import httpx
 
@@ -13,6 +15,14 @@ from price_monitor.domains.fetching.ports import FetchPageResult, ProductPageFet
 
 class BrowserProviderUnavailableError(RuntimeError):
     """Raised when no approved browser/provider adapter is configured for a URL."""
+
+
+@dataclass(frozen=True)
+class SourceBrowserFetcherConfig:
+    joom_browser_provider_url: str
+    joom_browser_provider_token: str
+    joom_browser_provider_timeout_seconds: float
+    joom_browser_provider_wait_selector: str
 
 
 class RenderedHtmlProvider(Protocol):
@@ -54,12 +64,12 @@ class HttpRenderedHtmlProvider:
         if self._bearer_token:
             headers["Authorization"] = f"Bearer {self._bearer_token}"
 
-        payload = {
-            "url": url,
-            "source_domain": source_domain,
-            "wait_selector": wait_selector,
-            "proxy_url": proxy_url,
-        }
+        payload = self._request_payload(
+            url=url,
+            source_domain=source_domain,
+            wait_selector=wait_selector,
+            proxy_url=proxy_url,
+        )
         try:
             with httpx.Client(
                 timeout=self._timeout_seconds,
@@ -69,6 +79,14 @@ class HttpRenderedHtmlProvider:
                 response.raise_for_status()
         except httpx.HTTPError as exc:
             raise RuntimeError("rendered HTML provider request failed") from exc
+
+        if self._returns_html_content():
+            return FetchPageResult(
+                content=response.text,
+                final_url=response.headers.get("x-response-url") or url,
+                http_status=_int_header(response, "x-response-code") or response.status_code,
+                response_ms=max(0, int((perf_counter() - started) * 1000)),
+            )
 
         body = _json_object(response)
         content = _string_field(body, "content") or _string_field(body, "html")
@@ -85,6 +103,41 @@ class HttpRenderedHtmlProvider:
             http_status=_int_field(body, "http_status") or response.status_code,
             response_ms=response_ms,
         )
+
+    def _request_payload(
+        self,
+        *,
+        url: str,
+        source_domain: str,
+        wait_selector: str | None,
+        proxy_url: str | None,
+    ) -> dict[str, object]:
+        if self._is_browserless_content_endpoint():
+            timeout_ms = max(1000, int(self._timeout_seconds * 1000))
+            payload: dict[str, object] = {
+                "url": url,
+                "bestAttempt": True,
+                "gotoOptions": {"waitUntil": "networkidle2", "timeout": timeout_ms},
+            }
+            if wait_selector:
+                payload["waitForSelector"] = {
+                    "selector": wait_selector,
+                    "timeout": timeout_ms,
+                }
+            return payload
+
+        return {
+            "url": url,
+            "source_domain": source_domain,
+            "wait_selector": wait_selector,
+            "proxy_url": proxy_url,
+        }
+
+    def _is_browserless_content_endpoint(self) -> bool:
+        return urlparse(self._endpoint_url).path.rstrip("/").endswith("/content")
+
+    def _returns_html_content(self) -> bool:
+        return self._is_browserless_content_endpoint()
 
 
 class JoomBrowserProviderFetcher:
@@ -130,22 +183,54 @@ class SourceAwareBrowserFetcher:
         return max(matches, key=lambda match: len(match[0]))[1]
 
 
-def build_source_browser_fetcher(settings: Settings) -> ProductPageFetcher | None:
-    if not settings.joom_browser_provider_url.strip():
+def build_source_browser_fetcher(
+    settings: Settings,
+    stored_settings: Mapping[str, str] | None = None,
+) -> ProductPageFetcher | None:
+    config = resolve_source_browser_fetcher_config(settings, stored_settings)
+    if not config.joom_browser_provider_url.strip():
         return None
 
     provider = HttpRenderedHtmlProvider(
-        endpoint_url=settings.joom_browser_provider_url,
-        bearer_token=settings.joom_browser_provider_token,
-        timeout_seconds=settings.joom_browser_provider_timeout_seconds,
+        endpoint_url=config.joom_browser_provider_url,
+        bearer_token=config.joom_browser_provider_token,
+        timeout_seconds=config.joom_browser_provider_timeout_seconds,
     )
     return SourceAwareBrowserFetcher(
         {
             "joom.ru": JoomBrowserProviderFetcher(
                 provider=provider,
-                wait_selector=settings.joom_browser_provider_wait_selector,
+                wait_selector=config.joom_browser_provider_wait_selector,
             )
         }
+    )
+
+
+def resolve_source_browser_fetcher_config(
+    settings: Settings,
+    stored_settings: Mapping[str, str] | None = None,
+) -> SourceBrowserFetcherConfig:
+    return SourceBrowserFetcherConfig(
+        joom_browser_provider_url=_setting_string(
+            stored_settings,
+            "joom_browser_provider_url",
+            settings.joom_browser_provider_url,
+        ),
+        joom_browser_provider_token=_setting_string(
+            stored_settings,
+            "joom_browser_provider_token",
+            settings.joom_browser_provider_token,
+        ),
+        joom_browser_provider_timeout_seconds=_setting_float(
+            stored_settings,
+            "joom_browser_provider_timeout_seconds",
+            settings.joom_browser_provider_timeout_seconds,
+        ),
+        joom_browser_provider_wait_selector=_setting_string(
+            stored_settings,
+            "joom_browser_provider_wait_selector",
+            settings.joom_browser_provider_wait_selector,
+        ),
     )
 
 
@@ -171,3 +256,42 @@ def _int_field(payload: dict[str, object], key: str) -> int | None:
     if isinstance(value, int):
         return value
     return None
+
+
+def _int_header(response: httpx.Response, key: str) -> int | None:
+    value = response.headers.get(key)
+    if value is None:
+        return None
+    try:
+        return int(value)
+    except ValueError:
+        return None
+
+
+def _setting_string(
+    stored_settings: Mapping[str, str] | None,
+    key: str,
+    fallback: str,
+) -> str:
+    if stored_settings is not None:
+        value = stored_settings.get(key)
+        if value is not None and value.strip():
+            return value.strip()
+    return fallback.strip()
+
+
+def _setting_float(
+    stored_settings: Mapping[str, str] | None,
+    key: str,
+    fallback: float,
+) -> float:
+    if stored_settings is not None:
+        value = stored_settings.get(key)
+        if value is not None and value.strip():
+            try:
+                parsed = float(value)
+            except ValueError:
+                return fallback
+            if parsed > 0:
+                return parsed
+    return fallback

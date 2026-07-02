@@ -10,7 +10,9 @@ from price_monitor.domains.fetching.source_browser_fetcher import (
     HttpRenderedHtmlProvider,
     JoomBrowserProviderFetcher,
     SourceAwareBrowserFetcher,
+    SourceBrowserFetcherConfig,
     build_source_browser_fetcher,
+    resolve_source_browser_fetcher_config,
 )
 
 
@@ -70,6 +72,53 @@ def test_http_rendered_html_provider_posts_payload_and_maps_response() -> None:
         "source_domain": "joom.ru",
         "wait_selector": 'meta[property="product:price:amount"]',
         "proxy_url": None,
+    }
+
+
+def test_http_rendered_html_provider_supports_browserless_content_endpoint() -> None:
+    captured: dict[str, object] = {}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["url"] = str(request.url)
+        captured["authorization"] = request.headers.get("Authorization")
+        captured["payload"] = json.loads(request.content.decode())
+        return httpx.Response(
+            200,
+            text="<html><meta property='product:price:amount' content='990'></html>",
+            headers={
+                "content-type": "text/html; charset=utf-8",
+                "x-response-code": "200",
+                "x-response-url": "https://www.joom.ru/ru/products/636f5d5db4165e01cef187e5",
+            },
+        )
+
+    provider = HttpRenderedHtmlProvider(
+        endpoint_url="http://browserless.test:3000/chromium/content?token=browser-token",
+        bearer_token="",
+        timeout_seconds=12.5,
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = provider.render(
+        url="https://www.joom.ru/ru/products/636f5d5db4165e01cef187e5",
+        source_domain="joom.ru",
+        wait_selector='meta[property="product:price:amount"]',
+        proxy_url=None,
+    )
+
+    assert result.content.startswith("<html>")
+    assert result.final_url == "https://www.joom.ru/ru/products/636f5d5db4165e01cef187e5"
+    assert result.http_status == 200
+    assert captured["url"] == "http://browserless.test:3000/chromium/content?token=browser-token"
+    assert captured["authorization"] is None
+    assert captured["payload"] == {
+        "url": "https://www.joom.ru/ru/products/636f5d5db4165e01cef187e5",
+        "bestAttempt": True,
+        "gotoOptions": {"waitUntil": "networkidle2", "timeout": 12500},
+        "waitForSelector": {
+            "selector": 'meta[property="product:price:amount"]',
+            "timeout": 12500,
+        },
     }
 
 
@@ -149,3 +198,29 @@ def test_build_source_browser_fetcher_returns_fetcher_when_joom_provider_is_conf
     )
 
     assert isinstance(build_source_browser_fetcher(settings), SourceAwareBrowserFetcher)
+
+
+def test_source_browser_fetcher_config_uses_admin_settings_before_env() -> None:
+    settings = Settings(
+        joom_browser_provider_url="https://env-renderer.test/render",
+        joom_browser_provider_token="env-secret",
+        joom_browser_provider_timeout_seconds=25.0,
+        joom_browser_provider_wait_selector='meta[property="product:price:amount"]',
+    )
+
+    config = resolve_source_browser_fetcher_config(
+        settings,
+        {
+            "joom_browser_provider_url": "https://admin-renderer.test/render",
+            "joom_browser_provider_token": "admin-secret",
+            "joom_browser_provider_timeout_seconds": "7.5",
+            "joom_browser_provider_wait_selector": "#price",
+        },
+    )
+
+    assert config == SourceBrowserFetcherConfig(
+        joom_browser_provider_url="https://admin-renderer.test/render",
+        joom_browser_provider_token="admin-secret",
+        joom_browser_provider_timeout_seconds=7.5,
+        joom_browser_provider_wait_selector="#price",
+    )

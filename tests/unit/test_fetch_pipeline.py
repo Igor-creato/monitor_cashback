@@ -457,19 +457,38 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
         pass
 
     dummy_browser_fetcher = DummyBrowserFetcher()
+    dummy_stored_settings = {
+        "joom_browser_provider_url": "",
+        "joom_browser_provider_token": "",
+        "joom_browser_provider_timeout_seconds": "25.0",
+        "joom_browser_provider_wait_selector": 'meta[property="product:price:amount"]',
+    }
+
+    class DummySourceService:
+        def __init__(self, session: object) -> None:
+            seen["source_service_session"] = session
+
+        def get_settings(self) -> dict[str, str]:
+            return dummy_stored_settings
 
     monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: DummyFactory())
     monkeypatch.setattr(fetch_product_module, "FetchPipeline", DummyPipeline)
+    monkeypatch.setattr(fetch_product_module, "SourceService", DummySourceService)
     monkeypatch.setattr(
         fetch_product_module,
         "HttpProductPageFetcher",
         DummyHttpProductPageFetcher,
         raising=False,
     )
+
+    def build_dummy_browser_fetcher(settings: object, stored_settings: object) -> object:
+        seen["stored_settings"] = stored_settings
+        return dummy_browser_fetcher
+
     monkeypatch.setattr(
         fetch_product_module,
         "build_source_browser_fetcher",
-        lambda settings: dummy_browser_fetcher,
+        build_dummy_browser_fetcher,
         raising=False,
     )
 
@@ -480,8 +499,11 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     assert seen["committed"] is True
     assert seen["exited"] is True
     assert seen["product_id"] == "product-123"
+    assert seen["source_service_session"] is seen["session"]
     assert isinstance(seen["direct_fetcher"], DummyHttpProductPageFetcher)
     assert seen["browser_fetcher"] is dummy_browser_fetcher
+    assert seen["stored_settings"] is dummy_stored_settings
+    assert seen["stored_settings"]["joom_browser_provider_url"] == ""
 
 
 def _create_product(

@@ -54,7 +54,13 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     )
 
     settings_path = "/api/v1/admin/settings"
-    settings_body = {"max_tracked_products_per_user": 25}
+    settings_body = {
+        "max_tracked_products_per_user": 25,
+        "joom_browser_provider_url": "https://renderer.example/render",
+        "joom_browser_provider_token": "secret-token",
+        "joom_browser_provider_timeout_seconds": 12.5,
+        "joom_browser_provider_wait_selector": "#price",
+    }
     settings_raw = json.dumps(settings_body, separators=(",", ":")).encode()
     update_settings = client.patch(
         settings_path,
@@ -87,8 +93,21 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     }
     assert update_settings.status_code == 200
     assert update_settings.json()["settings"]["max_tracked_products_per_user"] == 25
+    assert update_settings.json()["settings"]["joom_browser_provider_url"] == (
+        "https://renderer.example/render"
+    )
+    assert update_settings.json()["settings"]["joom_browser_provider_token_set"] is True
+    assert "secret-token" not in json.dumps(update_settings.json())
     assert get_settings.status_code == 200
     assert get_settings.json()["settings"]["max_tracked_products_per_user"] == 25
+    assert get_settings.json()["settings"]["joom_browser_provider_url"] == (
+        "https://renderer.example/render"
+    )
+    assert get_settings.json()["settings"]["joom_browser_provider_timeout_seconds"] == 12.5
+    assert get_settings.json()["settings"]["joom_browser_provider_wait_selector"] == "#price"
+    assert get_settings.json()["settings"]["joom_browser_provider_configured"] is True
+    assert get_settings.json()["settings"]["joom_browser_provider_token_set"] is True
+    assert "secret-token" not in json.dumps(get_settings.json())
 
 
 def test_supported_source_signature_cannot_be_reused_for_different_url(

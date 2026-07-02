@@ -95,9 +95,7 @@ def update_settings(
     if isinstance(reserved, IdempotencyReplay):
         return JSONResponse(status_code=reserved.status_code, content=reserved.response_body)
 
-    settings = SourceService(session).update_settings(
-        {"max_tracked_products_per_user": str(payload.max_tracked_products_per_user)}
-    )
+    settings = SourceService(session).update_settings(_settings_payload_values(payload))
     response_body = MonitorSettingsResponse(settings=_typed_settings(settings)).model_dump()
     complete_idempotency_record(
         record=reserved,
@@ -130,8 +128,27 @@ def _serialize_source(source: Any) -> MonitoredSourceResponse:
     )
 
 
-def _typed_settings(settings: dict[str, str]) -> dict[str, int]:
-    return {"max_tracked_products_per_user": int(settings["max_tracked_products_per_user"])}
+def _settings_payload_values(payload: MonitorSettingsPatchRequest) -> dict[str, str]:
+    values: dict[str, str] = {}
+    for key, value in payload.model_dump(exclude_none=True).items():
+        values[key] = str(value)
+    return values
+
+
+def _typed_settings(settings: dict[str, str]) -> dict[str, int | float | str | bool]:
+    provider_url = settings["joom_browser_provider_url"].strip()
+    provider_token = settings["joom_browser_provider_token"].strip()
+    wait_selector = settings["joom_browser_provider_wait_selector"].strip()
+    return {
+        "max_tracked_products_per_user": int(settings["max_tracked_products_per_user"]),
+        "joom_browser_provider_url": provider_url,
+        "joom_browser_provider_timeout_seconds": float(
+            settings["joom_browser_provider_timeout_seconds"]
+        ),
+        "joom_browser_provider_wait_selector": wait_selector,
+        "joom_browser_provider_configured": bool(provider_url),
+        "joom_browser_provider_token_set": bool(provider_token),
+    }
 
 
 def _idempotency_required() -> JSONResponse:
