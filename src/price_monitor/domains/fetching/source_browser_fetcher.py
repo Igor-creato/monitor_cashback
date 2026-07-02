@@ -145,15 +145,17 @@ class JoomBrowserProviderFetcher:
         self,
         *,
         provider: RenderedHtmlProvider,
+        source_domain: str = "joom.ru",
         wait_selector: str = 'meta[property="product:price:amount"]',
     ) -> None:
         self._provider = provider
+        self._source_domain = source_domain
         self._wait_selector = wait_selector
 
     def fetch(self, *, url: str, proxy_url: str | None) -> FetchPageResult:
         return self._provider.render(
             url=url,
-            source_domain="joom.ru",
+            source_domain=self._source_domain,
             wait_selector=self._wait_selector,
             proxy_url=proxy_url,
         )
@@ -200,8 +202,14 @@ def build_source_browser_fetcher(
         {
             "joom.ru": JoomBrowserProviderFetcher(
                 provider=provider,
+                source_domain="joom.ru",
                 wait_selector=config.joom_browser_provider_wait_selector,
-            )
+            ),
+            "joom.com": JoomBrowserProviderFetcher(
+                provider=provider,
+                source_domain="joom.com",
+                wait_selector=config.joom_browser_provider_wait_selector,
+            ),
         }
     )
 

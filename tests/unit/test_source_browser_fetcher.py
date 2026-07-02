@@ -4,6 +4,7 @@ import httpx
 import pytest
 
 from price_monitor.core.config import Settings
+from price_monitor.domains.fetching import source_browser_fetcher as source_browser_fetcher_module
 from price_monitor.domains.fetching.ports import FetchPageResult
 from price_monitor.domains.fetching.source_browser_fetcher import (
     BrowserProviderUnavailableError,
@@ -178,6 +179,19 @@ def test_source_aware_browser_fetcher_dispatches_joom_urls() -> None:
     assert fake.calls == [("https://www.joom.ru/ru/products/636f5d5db4165e01cef187e5", None)]
 
 
+def test_source_aware_browser_fetcher_dispatches_joom_com_urls() -> None:
+    fake = FakeFetcher()
+    fetcher = SourceAwareBrowserFetcher({"joom.com": fake})
+
+    result = fetcher.fetch(
+        url="https://www.joom.com/ru/products/60c584170413d901a6c20102",
+        proxy_url=None,
+    )
+
+    assert result.content == "<html>rendered</html>"
+    assert fake.calls == [("https://www.joom.com/ru/products/60c584170413d901a6c20102", None)]
+
+
 def test_source_aware_browser_fetcher_fails_closed_for_unknown_source() -> None:
     fetcher = SourceAwareBrowserFetcher({"joom.ru": FakeFetcher()})
 
@@ -198,6 +212,71 @@ def test_build_source_browser_fetcher_returns_fetcher_when_joom_provider_is_conf
     )
 
     assert isinstance(build_source_browser_fetcher(settings), SourceAwareBrowserFetcher)
+
+
+def test_build_source_browser_fetcher_dispatches_joom_com_urls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeProvider:
+        def __init__(
+            self,
+            *,
+            endpoint_url: str,
+            bearer_token: str,
+            timeout_seconds: float,
+        ) -> None:
+            captured["endpoint_url"] = endpoint_url
+            captured["bearer_token"] = bearer_token
+            captured["timeout_seconds"] = timeout_seconds
+
+        def render(
+            self,
+            *,
+            url: str,
+            source_domain: str,
+            wait_selector: str | None,
+            proxy_url: str | None,
+        ) -> FetchPageResult:
+            captured.update(
+                {
+                    "url": url,
+                    "source_domain": source_domain,
+                    "wait_selector": wait_selector,
+                    "proxy_url": proxy_url,
+                }
+            )
+            return FetchPageResult(
+                content="<html>joom</html>",
+                final_url=url,
+                http_status=200,
+                response_ms=5,
+            )
+
+    monkeypatch.setattr(source_browser_fetcher_module, "HttpRenderedHtmlProvider", FakeProvider)
+    settings = Settings(
+        joom_browser_provider_url="https://renderer.test/render",
+        joom_browser_provider_token="provider-secret",
+    )
+
+    fetcher = build_source_browser_fetcher(settings)
+    assert fetcher is not None
+    result = fetcher.fetch(
+        url="https://www.joom.com/ru/products/60c584170413d901a6c20102",
+        proxy_url=None,
+    )
+
+    assert result.content == "<html>joom</html>"
+    assert captured == {
+        "endpoint_url": "https://renderer.test/render",
+        "bearer_token": "provider-secret",
+        "timeout_seconds": 25.0,
+        "url": "https://www.joom.com/ru/products/60c584170413d901a6c20102",
+        "source_domain": "joom.com",
+        "wait_selector": 'meta[property="product:price:amount"]',
+        "proxy_url": None,
+    }
 
 
 def test_source_browser_fetcher_config_uses_admin_settings_before_env() -> None:
