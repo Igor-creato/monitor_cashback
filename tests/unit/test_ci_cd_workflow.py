@@ -51,7 +51,7 @@ def test_runtime_and_ci_versions_use_latest_compatible_stable_pins() -> None:
     assert "image: postgres:18.4-alpine" in compose
     assert "image: rabbitmq:4.3.2-management-alpine" in compose
     assert "image: redis:8.8.0-alpine" in compose
-    assert "image: ghcr.io/browserless/chromium:2.26.1" in compose
+    assert "image: ghcr.io/browserless/chromium:v2.26.1" in compose
     assert 'requires = ["setuptools==82.0.1", "wheel==0.47.0"]' in pyproject
     assert '"fastapi==0.138.2"' in pyproject
     assert "actions/checkout@v7.0.0" in workflow
@@ -202,7 +202,7 @@ def test_compose_includes_internal_browserless_renderer() -> None:
     browserless_section = _compose_service_section(compose, "browserless")
     worker_section = _compose_service_section(compose, "worker")
 
-    assert "image: ghcr.io/browserless/chromium:2.26.1" in browserless_section
+    assert "image: ghcr.io/browserless/chromium:v2.26.1" in browserless_section
     assert "TOKEN: ${PRICE_MONITOR_BROWSERLESS_TOKEN:-price-monitor-renderer}" in (
         browserless_section
     )
