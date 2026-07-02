@@ -38,6 +38,28 @@ class _JsonLdScriptParser(HTMLParser):
         self._buffer = []
 
 
+class _MetaTagParser(HTMLParser):
+    def __init__(self) -> None:
+        super().__init__()
+        self.values: dict[str, str] = {}
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        if tag.lower() != "meta":
+            return
+
+        attr_map = {
+            name.lower(): value.strip()
+            for name, value in attrs
+            if value is not None and value.strip()
+        }
+        key = attr_map.get("property") or attr_map.get("name")
+        content = attr_map.get("content")
+        if key is None or content is None:
+            return
+
+        self.values.setdefault(key.lower(), content)
+
+
 def extract_product_data(html: str, *, fallback_currency: str) -> FetchedProductData | None:
     parser = _JsonLdScriptParser()
     parser.feed(html)
@@ -47,7 +69,7 @@ def extract_product_data(html: str, *, fallback_currency: str) -> FetchedProduct
             data = _build_product_data(candidate, fallback_currency=fallback_currency)
             if data is not None:
                 return data
-    return None
+    return _extract_meta_product_data(html, fallback_currency=fallback_currency)
 
 
 def detect_fetch_block_reason(html: str) -> str | None:
@@ -116,6 +138,36 @@ def _build_product_data(
         price_minor=price_minor,
         currency=currency,
         rating_value=_extract_rating_value(product_node.get("aggregateRating")),
+    )
+
+
+def _extract_meta_product_data(html: str, *, fallback_currency: str) -> FetchedProductData | None:
+    parser = _MetaTagParser()
+    parser.feed(html)
+    values = parser.values
+
+    title = values.get("og:title") or values.get("twitter:title")
+    if title is None or not title.strip():
+        return None
+
+    raw_price = (
+        values.get("product:price:amount") or values.get("og:price:amount") or values.get("price")
+    )
+    price_minor = _to_minor_units(raw_price)
+    if price_minor is None or price_minor <= 0:
+        return None
+
+    raw_currency = (
+        values.get("product:price:currency") or values.get("og:price:currency") or fallback_currency
+    )
+    currency = raw_currency.strip() if raw_currency.strip() else fallback_currency
+
+    return FetchedProductData(
+        title=title.strip(),
+        image_url=values.get("og:image") or values.get("twitter:image"),
+        price_minor=price_minor,
+        currency=currency.upper(),
+        rating_value=None,
     )
 
 

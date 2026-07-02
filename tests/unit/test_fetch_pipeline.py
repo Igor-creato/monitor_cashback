@@ -444,6 +444,7 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
         def __init__(self, session: object, **kwargs: object) -> None:
             seen["session"] = session
             seen["direct_fetcher"] = kwargs.get("direct_fetcher")
+            seen["browser_fetcher"] = kwargs.get("browser_fetcher")
 
         def run(self, *, product_id: str) -> object:
             seen["product_id"] = product_id
@@ -452,12 +453,23 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     class DummyHttpProductPageFetcher:
         pass
 
+    class DummyBrowserFetcher:
+        pass
+
+    dummy_browser_fetcher = DummyBrowserFetcher()
+
     monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: DummyFactory())
     monkeypatch.setattr(fetch_product_module, "FetchPipeline", DummyPipeline)
     monkeypatch.setattr(
         fetch_product_module,
         "HttpProductPageFetcher",
         DummyHttpProductPageFetcher,
+        raising=False,
+    )
+    monkeypatch.setattr(
+        fetch_product_module,
+        "build_source_browser_fetcher",
+        lambda settings: dummy_browser_fetcher,
         raising=False,
     )
 
@@ -469,6 +481,7 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     assert seen["exited"] is True
     assert seen["product_id"] == "product-123"
     assert isinstance(seen["direct_fetcher"], DummyHttpProductPageFetcher)
+    assert seen["browser_fetcher"] is dummy_browser_fetcher
 
 
 def _create_product(

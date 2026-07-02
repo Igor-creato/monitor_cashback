@@ -37,6 +37,25 @@ def test_extract_product_data_from_json_ld_graph_with_low_price() -> None:
     assert data.rating_value == "4.6"
 
 
+def test_extract_product_data_from_open_graph_product_meta() -> None:
+    html = """
+    <html><head>
+    <meta property="og:title" content="Joom Smart Watch">
+    <meta property="og:image" content="https://img.example.test/watch.jpg">
+    <meta property="product:price:amount" content="990">
+    <meta property="product:price:currency" content="RUB">
+    </head><body></body></html>
+    """
+
+    data = extract_product_data(html, fallback_currency="RUB")
+
+    assert data.title == "Joom Smart Watch"
+    assert data.image_url == "https://img.example.test/watch.jpg"
+    assert data.price_minor == 99000
+    assert data.currency == "RUB"
+    assert data.rating_value is None
+
+
 def test_extract_product_data_returns_none_when_price_or_title_missing() -> None:
     assert (
         extract_product_data("<html><title>No price</title></html>", fallback_currency="RUB")

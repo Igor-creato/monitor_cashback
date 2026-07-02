@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     hmac_secrets: str = Field(default="", description="Comma-separated HMAC shared secrets.")
     hmac_replay_window_seconds: int = 300
     db_pool_recycle_seconds: int = 3600
+    joom_browser_provider_url: str = ""
+    joom_browser_provider_token: str = Field(
+        default="", description="Bearer token for an approved Joom rendered HTML provider."
+    )
+    joom_browser_provider_timeout_seconds: float = 25.0
+    joom_browser_provider_wait_selector: str = 'meta[property="product:price:amount"]'
 
     @property
     def hmac_secret_list(self) -> list[str]:
