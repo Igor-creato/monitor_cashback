@@ -40,8 +40,15 @@ def fetch_product(product_id: str, fetch_job_id: str | None = None) -> dict[str,
                 browser_fetcher=build_source_browser_fetcher(settings, stored_settings),
             ).run(product_id=product_id, fetch_job_id=fetch_job_id)
             if job is not None:
-                job.status = "ok" if result.status == "ok" else "failed"
-                job.status_reason = None if result.status == "ok" else result.status
+                if result.status == "ok":
+                    job.status = "ok"
+                    job.status_reason = None
+                elif result.status == "quarantined":
+                    job.status = "quarantined"
+                    job.status_reason = result.reason or "quarantined"
+                else:
+                    job.status = "failed"
+                    job.status_reason = result.reason or result.status
                 job.finished_at = datetime.now(UTC)
                 session.flush()
             session.commit()

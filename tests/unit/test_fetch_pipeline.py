@@ -353,6 +353,33 @@ def test_fetch_pipeline_classifies_captcha_challenge_without_price_point(
     assert price_points == []
 
 
+def test_fetch_pipeline_preserves_fetch_failed_when_extraction_finds_no_product_data(
+    session: Session,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=False)
+    direct_fetcher = FakeFetcher(html="<html><body><div>No product data here</div></body></html>")
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+    ).run(product_id=product.id, now=datetime(2026, 7, 2, 10, 5, tzinfo=UTC))
+
+    session.commit()
+
+    refreshed_product = session.get(Product, product.id)
+    attempts = session.scalars(
+        select(FetchAttempt).where(FetchAttempt.product_id == product.id)
+    ).all()
+
+    assert result.status == "fetch_failed"
+    assert refreshed_product is not None
+    assert refreshed_product.last_fetch_status == "fetch_failed"
+    assert len(attempts) == 1
+    assert attempts[0].status == "failed"
+    assert attempts[0].reason == "product_data_not_found"
+    assert attempts[0].product_data_found is False
+
+
 def test_fetch_product_task_uses_http_fetcher_to_update_product(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -578,6 +605,91 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     assert seen["browser_fetcher"] is dummy_browser_fetcher
     assert seen["stored_settings"] is dummy_stored_settings
     assert seen["stored_settings"]["joom_browser_provider_url"] == ""
+
+
+def test_fetch_product_task_marks_quarantined_pipeline_result_on_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_product_module = importlib.import_module("price_monitor.workers.tasks.fetch_product")
+    seen: dict[str, object] = {}
+
+    class DummySession:
+        def __init__(self) -> None:
+            self.job = type(
+                "Job",
+                (),
+                {
+                    "status": "queued",
+                    "status_reason": "stale",
+                    "started_at": None,
+                    "finished_at": None,
+                    "attempt_count": 0,
+                },
+            )()
+
+        def __enter__(self) -> DummySession:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            del exc_type, exc, tb
+
+        def commit(self) -> None:
+            seen["committed"] = True
+
+        def flush(self) -> None:
+            seen["flushed"] = True
+
+        def get(self, model: object, key: str) -> object:
+            del model
+            seen["job_key"] = key
+            return self.job
+
+    class DummyFactory:
+        def __init__(self) -> None:
+            self.last_session: DummySession | None = None
+
+        def __call__(self) -> DummySession:
+            self.last_session = DummySession()
+            return self.last_session
+
+    class DummyPipeline:
+        def __init__(self, session: object, **kwargs: object) -> None:
+            del session, kwargs
+
+        def run(self, *, product_id: str, fetch_job_id: str | None = None) -> object:
+            del product_id, fetch_job_id
+            return type("Result", (), {"status": "quarantined", "reason": None})()
+
+    class DummySourceService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        def get_settings(self) -> dict[str, str]:
+            return {}
+
+    factory = DummyFactory()
+    monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: factory)
+    monkeypatch.setattr(fetch_product_module, "FetchPipeline", DummyPipeline)
+    monkeypatch.setattr(fetch_product_module, "SourceService", DummySourceService)
+    monkeypatch.setattr(
+        fetch_product_module,
+        "build_source_browser_fetcher",
+        lambda settings, stored_settings: None,
+        raising=False,
+    )
+
+    result = fetch_product_module.fetch_product("product-123", "job-123")
+
+    assert result == {"product_id": "product-123", "status": "quarantined"}
+    assert factory.last_session is not None
+    job = factory.last_session.job
+    assert seen["job_key"] == "job-123"
+    assert job.status == "quarantined"
+    assert job.status_reason == "quarantined"
+    assert job.started_at is not None
+    assert job.finished_at is not None
+    assert job.attempt_count == 1
+    assert seen["committed"] is True
 
 
 def test_fetch_product_task_marks_job_dead_letter_before_reraising_unexpected_exception(

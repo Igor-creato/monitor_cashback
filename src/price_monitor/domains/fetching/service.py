@@ -24,6 +24,7 @@ MINIMUM_PARSER_CONFIDENCE = Decimal("0.70")
 class ProductFetchResult:
     product_id: str
     status: str
+    reason: str | None = None
     price_point_id: str | None = None
     fetch_attempt_id: str | None = None
 
@@ -75,6 +76,7 @@ class FetchPipeline:
             return ProductFetchResult(product_id=product.id, status="not_configured")
 
         terminal_status = "fetch_failed"
+        terminal_reason: str | None = None
         for attempt_index, (strategy, proxy_tier, proxy_secret_ref, fetcher) in enumerate(
             strategies
         ):
@@ -124,7 +126,9 @@ class FetchPipeline:
             attempt.parser_confidence = result.parser_confidence
             if result.status != "ok" or result.extraction is None:
                 attempt.reason = result.reason or result.status
-                terminal_status = attempt.reason or "fetch_failed"
+                terminal_reason = attempt.reason
+                if attempt.reason != "product_data_not_found":
+                    terminal_status = attempt.reason or "fetch_failed"
                 self._session.flush()
                 continue
 
@@ -168,6 +172,7 @@ class FetchPipeline:
             return ProductFetchResult(
                 product_id=product.id,
                 status="ok",
+                reason=None,
                 price_point_id=price_point.id,
                 fetch_attempt_id=attempt.id,
             )
@@ -176,7 +181,11 @@ class FetchPipeline:
         product.last_fetched_at = current_time
         product.updated_at = current_time
         self._session.flush()
-        return ProductFetchResult(product_id=product.id, status=terminal_status)
+        return ProductFetchResult(
+            product_id=product.id,
+            status=terminal_status,
+            reason=terminal_reason,
+        )
 
     def _proxy_strategies(
         self,
