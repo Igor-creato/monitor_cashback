@@ -102,3 +102,7 @@ def test_build_managed_unblocker_fetcher_uses_decodo_token_from_env_settings() -
     )
 
     assert isinstance(fetcher, DecodoWebScrapingApiFetcher)
+
+
+def test_decodo_default_timeout_allows_js_rendering_latency() -> None:
+    assert Settings().decodo_web_scraping_timeout_seconds == 60.0
