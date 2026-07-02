@@ -54,6 +54,79 @@ def test_schedule_due_fetch_jobs_uses_global_default_when_source_has_default_zer
     assert jobs[0].logical_key.startswith(f"scheduler:{product.id}:")
 
 
+def test_schedule_due_fetch_jobs_limit_applies_to_unique_products(
+    session: Session,
+) -> None:
+    now = datetime(2026, 7, 2, 9, 0, tzinfo=UTC)
+    source = SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="example.com",
+            display_name="Example",
+            logo_url="https://example.com/logo.png",
+            status="active",
+            fetch_interval_hours=1,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+    product_a = Product(
+        source_domain="example.com",
+        canonical_url="https://example.com/p/a",
+        canonical_url_hash="hash-a",
+        last_fetched_at=now - timedelta(hours=2),
+    )
+    product_b = Product(
+        source_domain="example.com",
+        canonical_url="https://example.com/p/b",
+        canonical_url_hash="hash-b",
+        last_fetched_at=now - timedelta(hours=2),
+    )
+    session.add_all([product_a, product_b])
+    session.flush()
+    session.add_all(
+        [
+            WatchlistItem(
+                user_id="wp:test:a1",
+                product_id=product_a.id,
+                canonical_url_hash=product_a.canonical_url_hash,
+                active_identity_key="wp:test:a1:hash-a",
+                target_price_minor=None,
+                currency="RUB",
+                status="active",
+                updated_at=now - timedelta(hours=3),
+            ),
+            WatchlistItem(
+                user_id="wp:test:a2",
+                product_id=product_a.id,
+                canonical_url_hash=product_a.canonical_url_hash,
+                active_identity_key="wp:test:a2:hash-a",
+                target_price_minor=None,
+                currency="RUB",
+                status="active",
+                updated_at=now - timedelta(hours=2, minutes=30),
+            ),
+            WatchlistItem(
+                user_id="wp:test:b1",
+                product_id=product_b.id,
+                canonical_url_hash=product_b.canonical_url_hash,
+                active_identity_key="wp:test:b1:hash-b",
+                target_price_minor=None,
+                currency="RUB",
+                status="active",
+                updated_at=now - timedelta(hours=1),
+            ),
+        ]
+    )
+    session.flush()
+
+    jobs = schedule_due_fetch_jobs(session, now=now, limit=2)
+
+    assert source.fetch_interval_hours == 1
+    assert {job.product_id for job in jobs} == {product_a.id, product_b.id}
+    assert len(jobs) == 2
+
+
 def test_schedule_due_fetch_jobs_uses_explicit_source_override(
     session: Session,
 ) -> None:

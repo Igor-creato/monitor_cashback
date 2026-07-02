@@ -18,6 +18,9 @@ def schedule_due_fetch_jobs(
     now: datetime,
     limit: int = 100,
 ) -> list[FetchJob]:
+    if limit <= 0:
+        return []
+
     source_service = SourceService(session)
     rows = session.execute(
         select(WatchlistItem, Product, MonitoredSource)
@@ -25,7 +28,6 @@ def schedule_due_fetch_jobs(
         .join(MonitoredSource, Product.source_domain == MonitoredSource.source_domain)
         .where(WatchlistItem.status == "active", MonitoredSource.status == "active")
         .order_by(WatchlistItem.updated_at.asc(), WatchlistItem.id.asc())
-        .limit(limit)
     ).all()
 
     jobs: list[FetchJob] = []
@@ -54,6 +56,8 @@ def schedule_due_fetch_jobs(
         )
         session.add(job)
         jobs.append(job)
+        if len(jobs) >= limit:
+            break
 
     session.flush()
     return jobs
