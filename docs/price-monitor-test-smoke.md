@@ -2,6 +2,41 @@
 
 Date: 2026-06-30
 
+## 2026-07-02 Joom Browser Provider Adapter
+
+- GitHub Actions run: `28575449938`
+- Run URL: `https://github.com/Igor-creato/monitor_cashback/actions/runs/28575449938`
+- Deployed commit: `bae5519a3f1d9fdb718e4ecca449d8407f54f46f`
+- Jobs passed: `secret-scan`, `quality`, `deploy-test`
+- Health after deploy:
+  - `curl -fsS http://127.0.0.1:8000/health/live` -> `{"status":"ok"}`
+  - `curl -fsS http://127.0.0.1:8000/health/ready` -> `{"status":"ok"}`
+- Current release path:
+  - `/home/igor/monitor_cashback/releases/bae5519a3f1d9fdb718e4ecca449d8407f54f46f`
+
+Covered checks:
+
+- `joom.ru` source remains `disabled` on the test server because
+  `PRICE_MONITOR_JOOM_BROWSER_PROVIDER_URL` is not configured.
+- `joom.ru` direct server fetch still returns only the small SPA shell:
+  HTTP `200`, `7434` bytes, no extracted price.
+- `aliexpress.ru` remains `disabled`; direct fetch is classified as
+  `captcha_detected`.
+- `citilink.ru` remains `active`; direct fetch extracted price `612000` RUB minor
+  units.
+- Citilink watchlist smoke created a test item, ran `FetchPipeline`, returned
+  `pipeline_status=ok`, returned price chart HTTP `200` with latest price
+  `612000`, and deleted the test item.
+- Active test watchlist items with prefix `joom-adapter-%`: `0`.
+
+Notes:
+
+- Joom support in this commit is a source-aware browser/provider adapter and
+  OpenGraph metadata extraction fallback. Enabling Joom on the server requires
+  configuring an approved rendered HTML provider URL/token first.
+- AliExpress live integration was not added. Provider/API options are recorded
+  in `docs/aliexpress-provider-options.md`.
+
 ## Backend Deploy
 
 - GitHub Actions run: `28466837579`
