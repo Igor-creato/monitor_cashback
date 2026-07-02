@@ -63,7 +63,7 @@ def price_chart(
     chart_points, summary, currency = summarize_price_chart(points, days=days)
     return {
         "product_id": product_id,
-        "currency": currency or product.currency,
+        "currency": currency if currency is not None else None,
         "points": chart_points,
         "summary": summary,
     }
