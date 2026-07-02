@@ -59,17 +59,6 @@ def product_detail(
             .where(FetchAttempt.fetch_job_id == latest_job.id)
             .order_by(FetchAttempt.created_at.desc(), FetchAttempt.id.desc())
         )
-    else:
-        latest_attempt = session.scalar(
-            select(FetchAttempt)
-            .where(FetchAttempt.product_id == product.id)
-            .order_by(FetchAttempt.created_at.desc(), FetchAttempt.id.desc())
-        )
-        if latest_attempt is not None:
-            latest_status = latest_attempt.status
-            latest_reason = latest_attempt.reason
-            latest_started_at = None
-            latest_finished_at = None
 
     return {
         "product": {
