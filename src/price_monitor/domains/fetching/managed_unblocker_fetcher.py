@@ -51,8 +51,7 @@ class DecodoWebScrapingApiFetcher:
                     json=payload,
                     headers={"Authorization": self._authorization_header},
                 )
-                response.raise_for_status()
-        except httpx.HTTPError as exc:
+        except httpx.RequestError as exc:
             raise RuntimeError("managed unblocker request failed") from exc
 
         result = _first_result(response)
