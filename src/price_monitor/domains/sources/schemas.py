@@ -16,7 +16,7 @@ class MonitoredSourceRequest(BaseModel):
     display_name: str = Field(min_length=1, max_length=255)
     logo_url: str = Field(min_length=1, max_length=2048)
     status: str = Field(min_length=1, max_length=32)
-    fetch_interval_hours: int = Field(ge=1)
+    fetch_interval_hours: int | None = Field(default=None, ge=1)
     history_retention_days: int = Field(ge=1, le=365)
     browser_fallback_allowed: bool = False
     proxy_pool_id: str | None = Field(default=None, max_length=36)

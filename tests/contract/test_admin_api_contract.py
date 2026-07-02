@@ -14,7 +14,6 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
         "display_name": "Example",
         "logo_url": "https://example.com/logo.png",
         "status": "active",
-        "fetch_interval_hours": 6,
         "history_retention_days": 90,
         "browser_fallback_allowed": False,
         "proxy_pool_id": None,
@@ -84,6 +83,7 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     assert create.status_code == 201
     assert listed.status_code == 200
     assert listed.json()["sources"][0]["source_domain"] == "example.com"
+    assert listed.json()["sources"][0]["fetch_interval_hours"] == 8
     assert supported.status_code == 200
     assert supported.json()["supported"] is True
     assert supported.json()["source"]["source_domain"] == "example.com"
@@ -111,6 +111,56 @@ def test_admin_source_and_settings_contract(client: TestClient) -> None:
     assert get_settings.json()["settings"]["joom_browser_provider_configured"] is True
     assert get_settings.json()["settings"]["joom_browser_provider_token_set"] is True
     assert "secret-token" not in json.dumps(get_settings.json())
+
+    refreshed_body = {
+        "source_domain": "fresh.test",
+        "display_name": "Fresh",
+        "logo_url": "https://fresh.test/logo.png",
+        "status": "active",
+        "history_retention_days": 90,
+        "browser_fallback_allowed": False,
+        "proxy_pool_id": None,
+    }
+    refreshed_raw = json.dumps(refreshed_body, separators=(",", ":")).encode()
+    refreshed = client.post(
+        create_path,
+        content=refreshed_raw,
+        headers=signed_headers(
+            "POST",
+            create_path,
+            refreshed_raw,
+            request_id="req-admin-source-refresh",
+            idempotency_key="idem-3",
+        ),
+    )
+
+    explicit_body = {
+        "source_domain": "override.test",
+        "display_name": "Override",
+        "logo_url": "https://override.test/logo.png",
+        "status": "active",
+        "fetch_interval_hours": 4,
+        "history_retention_days": 90,
+        "browser_fallback_allowed": False,
+        "proxy_pool_id": None,
+    }
+    explicit_raw = json.dumps(explicit_body, separators=(",", ":")).encode()
+    explicit = client.post(
+        create_path,
+        content=explicit_raw,
+        headers=signed_headers(
+            "POST",
+            create_path,
+            explicit_raw,
+            request_id="req-admin-source-explicit",
+            idempotency_key="idem-4",
+        ),
+    )
+
+    assert refreshed.status_code == 201
+    assert refreshed.json()["source"]["fetch_interval_hours"] == 12
+    assert explicit.status_code == 201
+    assert explicit.json()["source"]["fetch_interval_hours"] == 4
 
 
 def test_supported_source_signature_cannot_be_reused_for_different_url(

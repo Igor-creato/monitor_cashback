@@ -34,7 +34,7 @@ class MonitoredSourceInput:
     display_name: str
     logo_url: str
     status: str
-    fetch_interval_hours: int
+    fetch_interval_hours: int | None
     history_retention_days: int
     browser_fallback_allowed: bool
     proxy_pool_id: str | None
@@ -57,7 +57,7 @@ class SourceService:
             raise InvalidMonitoredSourceError("logo_url is required")
         if status not in ALLOWED_SOURCE_STATUSES:
             raise InvalidMonitoredSourceError("status is invalid")
-        if payload.fetch_interval_hours < 1:
+        if payload.fetch_interval_hours is not None and payload.fetch_interval_hours < 1:
             raise InvalidMonitoredSourceError("fetch_interval_hours must be at least 1")
         if payload.history_retention_days < 1 or payload.history_retention_days > 365:
             raise InvalidMonitoredSourceError("history_retention_days must be between 1 and 365")
@@ -69,7 +69,7 @@ class SourceService:
         source.display_name = display_name
         source.logo_url = logo_url
         source.status = status
-        source.fetch_interval_hours = payload.fetch_interval_hours
+        source.fetch_interval_hours = self._effective_fetch_interval_hours(payload)
         source.history_retention_days = payload.history_retention_days
         source.browser_fallback_allowed = payload.browser_fallback_allowed
         source.proxy_pool_id = payload.proxy_pool_id
@@ -121,6 +121,8 @@ class SourceService:
     def update_settings(self, values: dict[str, str]) -> dict[str, str]:
         now = datetime.now(UTC)
         for key, value in values.items():
+            if key == "price_refresh_interval_hours":
+                value = str(max(1, int(value)))
             setting = self._session.get(MonitorSetting, key)
             if setting is None:
                 setting = MonitorSetting(key=key, value=value, updated_at=now)
@@ -134,6 +136,11 @@ class SourceService:
     def effective_fetch_interval_hours(self, source: MonitoredSource) -> int:
         if source.fetch_interval_hours >= 1:
             return source.fetch_interval_hours
+        return max(1, int(self.get_settings()["price_refresh_interval_hours"]))
+
+    def _effective_fetch_interval_hours(self, payload: MonitoredSourceInput) -> int:
+        if payload.fetch_interval_hours is not None:
+            return payload.fetch_interval_hours
         return max(1, int(self.get_settings()["price_refresh_interval_hours"]))
 
     @staticmethod

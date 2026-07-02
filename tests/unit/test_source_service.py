@@ -129,3 +129,75 @@ def test_monitor_settings_include_price_refresh_interval_default_and_updates(
     updated = service.update_settings({"price_refresh_interval_hours": "12"})
 
     assert updated["price_refresh_interval_hours"] == "12"
+
+
+def test_upsert_source_uses_global_refresh_interval_when_source_override_is_missing(
+    session: Session,
+) -> None:
+    service = SourceService(session)
+
+    default_source = service.upsert_source(
+        MonitoredSourceInput(
+            source_domain="default.test",
+            display_name="Default",
+            logo_url="https://default.test/logo.png",
+            status="active",
+            fetch_interval_hours=None,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    assert default_source.fetch_interval_hours == 8
+
+    coerced_settings = service.update_settings({"price_refresh_interval_hours": "0"})
+
+    assert coerced_settings["price_refresh_interval_hours"] == "1"
+
+    coerced_source = service.upsert_source(
+        MonitoredSourceInput(
+            source_domain="coerced.test",
+            display_name="Coerced",
+            logo_url="https://coerced.test/logo.png",
+            status="active",
+            fetch_interval_hours=None,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    assert coerced_source.fetch_interval_hours == 1
+
+    service.update_settings({"price_refresh_interval_hours": "12"})
+
+    updated_source = service.upsert_source(
+        MonitoredSourceInput(
+            source_domain="updated.test",
+            display_name="Updated",
+            logo_url="https://updated.test/logo.png",
+            status="active",
+            fetch_interval_hours=None,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    assert updated_source.fetch_interval_hours == 12
+
+    override_source = service.upsert_source(
+        MonitoredSourceInput(
+            source_domain="override.test",
+            display_name="Override",
+            logo_url="https://override.test/logo.png",
+            status="active",
+            fetch_interval_hours=4,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    assert override_source.fetch_interval_hours == 4
