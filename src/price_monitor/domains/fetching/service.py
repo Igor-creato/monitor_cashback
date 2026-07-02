@@ -37,12 +37,14 @@ class FetchPipeline:
         direct_fetcher: ProductPageFetcher | None = None,
         proxy_fetcher: ProductPageFetcher | None = None,
         browser_fetcher: ProductPageFetcher | None = None,
+        managed_unblocker_fetcher: ProductPageFetcher | None = None,
         proxy_url_resolver: ProxyUrlResolver | None = None,
     ) -> None:
         self._session = session
         self._direct_fetcher = direct_fetcher
         self._proxy_fetcher = proxy_fetcher
         self._browser_fetcher = browser_fetcher
+        self._managed_unblocker_fetcher = managed_unblocker_fetcher
         self._proxy_url_resolver = proxy_url_resolver
 
     def run(
@@ -72,6 +74,8 @@ class FetchPipeline:
         strategies.extend(self._proxy_strategies(source))
         if source.browser_fallback_allowed and self._browser_fetcher is not None:
             strategies.append(("browser", None, None, self._browser_fetcher))
+        if source.browser_fallback_allowed and self._managed_unblocker_fetcher is not None:
+            strategies.append(("managed_unblocker", None, None, self._managed_unblocker_fetcher))
         if not strategies:
             return ProductFetchResult(product_id=product.id, status="not_configured")
 

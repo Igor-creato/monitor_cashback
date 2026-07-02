@@ -78,6 +78,12 @@ PRICE_MONITOR_HMAC_SECRETS=<server-managed-secret>
 PRICE_MONITOR_HMAC_REPLAY_WINDOW_SECONDS=300
 PRICE_MONITOR_DB_POOL_RECYCLE_SECONDS=3600
 PRICE_MONITOR_BROWSERLESS_TOKEN=<server-managed-browserless-token>
+PRICE_MONITOR_DECODO_WEB_SCRAPING_API_URL=https://scraper-api.decodo.com/v2/scrape
+PRICE_MONITOR_DECODO_WEB_SCRAPING_API_TOKEN=<server-managed-decodo-web-scraping-api-token>
+PRICE_MONITOR_DECODO_WEB_SCRAPING_TIMEOUT_SECONDS=25
+PRICE_MONITOR_DECODO_WEB_SCRAPING_PROXY_POOL=premium
+PRICE_MONITOR_DECODO_WEB_SCRAPING_HEADLESS=html
+PRICE_MONITOR_DECODO_WEB_SCRAPING_GEO=
 ```
 
 `PRICE_MONITOR_BIND_ADDRESS=127.0.0.1` keeps the API and backing services bound
@@ -88,6 +94,11 @@ sets a different value.
 used by source-specific browser fallback such as `joom.ru`. The renderer is not
 published to a host port; the worker reaches it over the private compose
 network.
+
+`PRICE_MONITOR_DECODO_WEB_SCRAPING_API_TOKEN` enables the managed unblocker
+fallback for protected public product pages. Keep it only in the server-managed
+environment file; do not store it in admin settings, database rows, logs, docs,
+or Git.
 
 The deployment job fails closed if SSH settings are missing or
 `/home/igor/monitor_cashback/shared/.env` does not exist.

@@ -30,6 +30,23 @@ class Settings(BaseSettings):
     )
     joom_browser_provider_timeout_seconds: float = 25.0
     joom_browser_provider_wait_selector: str = 'meta[property="product:price:amount"]'
+    decodo_web_scraping_api_url: str = "https://scraper-api.decodo.com/v2/scrape"
+    decodo_web_scraping_api_token: str = Field(
+        default="",
+        description="Basic auth token for Decodo Web Scraping API, stored only in env.",
+    )
+    decodo_web_scraping_username: str = Field(
+        default="",
+        description="Decodo username fallback when token auth is not used.",
+    )
+    decodo_web_scraping_password: str = Field(
+        default="",
+        description="Decodo password fallback when token auth is not used.",
+    )
+    decodo_web_scraping_timeout_seconds: float = 25.0
+    decodo_web_scraping_proxy_pool: str = "premium"
+    decodo_web_scraping_headless: str = "html"
+    decodo_web_scraping_geo: str = ""
 
     @property
     def hmac_secret_list(self) -> list[str]:

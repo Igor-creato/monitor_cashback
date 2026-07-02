@@ -34,6 +34,10 @@ class FetchPageResult:
     final_url: str
     http_status: int
     response_ms: int
+    provider_name: str | None = None
+    provider_request_id: str | None = None
+    provider_cost_minor: int | None = None
+    rendered: bool = False
 
 
 class ProductPageFetcher(Protocol):

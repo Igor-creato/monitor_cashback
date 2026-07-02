@@ -35,6 +35,24 @@ class FakeFetcher:
         return FetchPageResult(content=self.html, final_url=url, http_status=200, response_ms=7)
 
 
+class ManagedUnblockerFetcher:
+    def __init__(self, *, html: str) -> None:
+        self.calls: list[tuple[str, str | None]] = []
+        self.html = html
+
+    def fetch(self, *, url: str, proxy_url: str | None) -> FetchPageResult:
+        self.calls.append((url, proxy_url))
+        return FetchPageResult(
+            content=self.html,
+            final_url=url,
+            http_status=200,
+            response_ms=47,
+            provider_name="decodo-web-scraping-api",
+            provider_request_id="decodo-task-456",
+            rendered=True,
+        )
+
+
 class FakeProxyUrlResolver:
     def __init__(self, values: dict[str, str | None]) -> None:
         self.values = values
@@ -523,6 +541,49 @@ def test_fetch_pipeline_clears_stale_reason_on_low_confidence_browser_fallback(
     assert attempts[1].parser_confidence == "0.40"
 
 
+def test_fetch_pipeline_uses_managed_unblocker_after_browser_failure(
+    session: Session,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=True)
+    direct_fetcher = FakeFetcher(exc=TimeoutError("direct timed out"))
+    browser_fetcher = FakeFetcher(exc=RuntimeError("browser provider failed"))
+    managed_unblocker_fetcher = ManagedUnblockerFetcher(
+        html=_product_html(title="Decodo Phone", price="333.44")
+    )
+    now = datetime(2026, 7, 2, 10, 25, tzinfo=UTC)
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+        browser_fetcher=browser_fetcher,
+        managed_unblocker_fetcher=managed_unblocker_fetcher,
+    ).run(product_id=product.id, now=now)
+
+    session.commit()
+
+    refreshed_product = session.get(Product, product.id)
+    attempts = session.scalars(
+        select(FetchAttempt)
+        .where(FetchAttempt.product_id == product.id)
+        .order_by(FetchAttempt.created_at.asc())
+    ).all()
+
+    assert result.status == "ok"
+    assert refreshed_product is not None
+    assert refreshed_product.title == "Decodo Phone"
+    assert refreshed_product.current_price_minor == 33344
+    assert managed_unblocker_fetcher.calls == [(product.canonical_url, None)]
+    assert [attempt.strategy for attempt in attempts] == [
+        "direct",
+        "browser",
+        "managed_unblocker",
+    ]
+    assert attempts[2].status == "ok"
+    assert attempts[2].provider_name == "decodo-web-scraping-api"
+    assert attempts[2].provider_request_id == "decodo-task-456"
+    assert attempts[2].rendered is True
+
+
 def test_fetch_product_task_uses_http_fetcher_to_update_product(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -681,6 +742,7 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
             seen["session"] = session
             seen["direct_fetcher"] = kwargs.get("direct_fetcher")
             seen["browser_fetcher"] = kwargs.get("browser_fetcher")
+            seen["managed_unblocker_fetcher"] = kwargs.get("managed_unblocker_fetcher")
 
         def run(self, *, product_id: str, fetch_job_id: str | None = None) -> object:
             seen["product_id"] = product_id
@@ -693,7 +755,11 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     class DummyBrowserFetcher:
         pass
 
+    class DummyManagedUnblockerFetcher:
+        pass
+
     dummy_browser_fetcher = DummyBrowserFetcher()
+    dummy_managed_unblocker_fetcher = DummyManagedUnblockerFetcher()
     dummy_stored_settings = {
         "joom_browser_provider_url": "",
         "joom_browser_provider_token": "",
@@ -728,6 +794,12 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
         build_dummy_browser_fetcher,
         raising=False,
     )
+    monkeypatch.setattr(
+        fetch_product_module,
+        "build_managed_unblocker_fetcher",
+        lambda settings: dummy_managed_unblocker_fetcher,
+        raising=False,
+    )
 
     result = fetch_product_module.fetch_product("product-123", "job-123")
 
@@ -746,6 +818,7 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
     assert seen["source_service_session"] is seen["session"]
     assert isinstance(seen["direct_fetcher"], DummyHttpProductPageFetcher)
     assert seen["browser_fetcher"] is dummy_browser_fetcher
+    assert seen["managed_unblocker_fetcher"] is dummy_managed_unblocker_fetcher
     assert seen["stored_settings"] is dummy_stored_settings
     assert seen["stored_settings"]["joom_browser_provider_url"] == ""
 

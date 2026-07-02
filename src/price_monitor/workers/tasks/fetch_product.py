@@ -3,6 +3,9 @@ from datetime import UTC, datetime
 from price_monitor.core.config import get_settings
 from price_monitor.db.session import get_session_factory
 from price_monitor.domains.fetching.http_fetcher import HttpProductPageFetcher
+from price_monitor.domains.fetching.managed_unblocker_fetcher import (
+    build_managed_unblocker_fetcher,
+)
 from price_monitor.domains.fetching.service import FetchPipeline
 from price_monitor.domains.fetching.source_browser_fetcher import build_source_browser_fetcher
 from price_monitor.domains.reliability.models import FetchJob
@@ -38,6 +41,7 @@ def fetch_product(product_id: str, fetch_job_id: str | None = None) -> dict[str,
                 session,
                 direct_fetcher=HttpProductPageFetcher(),
                 browser_fetcher=build_source_browser_fetcher(settings, stored_settings),
+                managed_unblocker_fetcher=build_managed_unblocker_fetcher(settings),
             ).run(product_id=product_id, fetch_job_id=fetch_job_id)
             if job is not None:
                 if result.status in {"ok", "quarantined", "dead_letter"}:
