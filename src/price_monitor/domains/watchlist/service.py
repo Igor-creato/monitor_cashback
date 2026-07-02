@@ -9,6 +9,7 @@ from sqlalchemy.orm import Session
 from price_monitor.core.url_policy import ValidatedProductUrl, validate_public_product_url
 from price_monitor.domains.products.models import Product
 from price_monitor.domains.reliability.models import FetchJob, OutboxEvent
+from price_monitor.domains.sources.classification import classify_product_url, is_required_store_domain
 from price_monitor.domains.sources.service import SourceService
 from price_monitor.domains.watchlist.models import WatchlistItem
 
@@ -41,6 +42,14 @@ class WatchlistService:
         if source is None:
             return WatchlistAddResult(item=None, created=False, error_code="unsupported_store")
 
+        classification = classify_product_url(product_url)
+        if is_required_store_domain(classification.source_domain) and not classification.is_product_url:
+            return WatchlistAddResult(
+                item=None,
+                created=False,
+                error_code=classification.error_code or "not_product_url",
+            )
+
         validated = validate_public_product_url(product_url)
         active_identity_key = self._build_active_identity_key(
             user_id=user_id, canonical_url_hash=validated.canonical_url_hash
@@ -63,7 +72,13 @@ class WatchlistService:
         if active_count is not None and active_count >= max_tracked_products:
             return WatchlistAddResult(item=None, created=False, error_code="limit_exceeded")
 
-        product = self._get_or_create_product(validated, matched_source_domain=source.source_domain)
+        product = self._get_or_create_product(
+            validated,
+            matched_source_domain=source.source_domain,
+            source_product_id=classification.source_product_id
+            if is_required_store_domain(classification.source_domain)
+            else None,
+        )
         now = datetime.now(UTC)
         item = WatchlistItem(
             user_id=user_id,
@@ -171,7 +186,11 @@ class WatchlistService:
         return item
 
     def _get_or_create_product(
-        self, validated: ValidatedProductUrl, *, matched_source_domain: str
+        self,
+        validated: ValidatedProductUrl,
+        *,
+        matched_source_domain: str,
+        source_product_id: str | None,
     ) -> Product:
         source_domain = matched_source_domain
         canonical_url_hash = validated.canonical_url_hash
@@ -182,6 +201,8 @@ class WatchlistService:
             )
         )
         if product is not None:
+            if source_product_id is not None and product.source_product_id != source_product_id:
+                product.source_product_id = source_product_id
             return product
 
         now = datetime.now(UTC)
@@ -189,6 +210,7 @@ class WatchlistService:
             source_domain=source_domain,
             canonical_url=validated.canonical_url,
             canonical_url_hash=canonical_url_hash,
+            source_product_id=source_product_id,
             updated_at=now,
         )
         self._session.add(product)

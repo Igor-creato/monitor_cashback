@@ -93,6 +93,48 @@ def test_supported_source_rejects_non_product_required_store_url(
     }
 
 
+def test_watchlist_create_rejects_non_product_required_store_url(
+    client: TestClient, session: Session
+) -> None:
+    SourceService(session).upsert_source(
+        MonitoredSourceInput(
+            source_domain="ozon.ru",
+            display_name="Ozon",
+            logo_url="https://ozon.ru/logo.png",
+            status="active",
+            fetch_interval_hours=6,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    path = "/api/v1/watchlist/items"
+    body = {
+        "user_id": "wp-user-1",
+        "url": "https://www.ozon.ru/category/smartfony-15502/",
+        "target_price_minor": None,
+        "currency": "RUB",
+    }
+    raw_body = json.dumps(body, separators=(",", ":")).encode()
+
+    response = client.post(
+        path,
+        content=raw_body,
+        headers=signed_headers(
+            "POST", path, raw_body, request_id="req-ozon-watchlist-non-product", idempotency_key="idem-ozon-watchlist-non-product"
+        ),
+    )
+
+    assert response.status_code == 422
+    assert response.json() == {
+        "error": {
+            "code": "not_product_url",
+            "message": "Укажите ссылку на карточку товара.",
+        }
+    }
+
+
 def test_watchlist_create_returns_stable_contract_and_deduplicates(
     client: TestClient, session: Session, monkeypatch: pytest.MonkeyPatch
 ) -> None:

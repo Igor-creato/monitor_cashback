@@ -23,6 +23,7 @@ class Product(Base):
     source_domain: Mapped[str] = mapped_column(String(255), nullable=False, index=True)
     canonical_url: Mapped[str] = mapped_column(String(2048), nullable=False)
     canonical_url_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_product_id: Mapped[str | None] = mapped_column(String(128), index=True)
     title: Mapped[str | None] = mapped_column(String(512))
     image_url: Mapped[str | None] = mapped_column(String(2048))
     rating_value: Mapped[str | None] = mapped_column(String(32))

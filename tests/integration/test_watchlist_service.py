@@ -88,6 +88,33 @@ def test_add_watchlist_item_rejects_unsupported_source(session: Session) -> None
     assert result.error_code == "unsupported_store"
 
 
+def test_add_item_rejects_supported_store_non_product_url(session: Session) -> None:
+    service = SourceService(session)
+    service.upsert_source(
+        MonitoredSourceInput(
+            source_domain="ozon.ru",
+            display_name="Ozon",
+            logo_url="https://ozon.ru/logo.png",
+            status="active",
+            fetch_interval_hours=8,
+            history_retention_days=90,
+            browser_fallback_allowed=False,
+            proxy_pool_id=None,
+        )
+    )
+
+    result = WatchlistService(session).add_item(
+        user_id="wp:test:1",
+        product_url="https://www.ozon.ru/category/smartfony-15502/",
+        target_price_minor=None,
+        currency="RUB",
+        request_id="req-non-product",
+    )
+
+    assert result.item is None
+    assert result.error_code == "not_product_url"
+
+
 def test_active_duplicate_returns_error_but_deleted_item_can_be_readded(session: Session) -> None:
     SourceService(session).upsert_source(
         MonitoredSourceInput(

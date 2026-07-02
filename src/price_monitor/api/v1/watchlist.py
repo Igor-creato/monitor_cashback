@@ -247,12 +247,12 @@ def update_watchlist_item(
         error_response = _watchlist_error("invalid_target_price")
         complete_idempotency_record(
             record=reserved,
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             response_body=error_response,
         )
         session.commit()
         return JSONResponse(
-            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
             content=error_response,
         )
     except LookupError:
@@ -353,7 +353,7 @@ def _status_for_watchlist_error(error_code: str) -> int:
         return status.HTTP_409_CONFLICT
     if error_code == "watchlist_item_not_found":
         return status.HTTP_404_NOT_FOUND
-    return status.HTTP_422_UNPROCESSABLE_ENTITY
+    return status.HTTP_422_UNPROCESSABLE_CONTENT
 
 
 def _watchlist_error(error_code: str) -> dict[str, dict[str, str]]:
@@ -361,6 +361,7 @@ def _watchlist_error(error_code: str) -> dict[str, dict[str, str]]:
         "duplicate_watchlist_item": "Товар уже в списке отслеживания",
         "invalid_target_price": "Некорректная целевая цена",
         "limit_exceeded": "Достигнут лимит отслеживаемых товаров",
+        "not_product_url": "Укажите ссылку на карточку товара.",
         "unsupported_store": "Магазин не поддерживается",
         "watchlist_item_not_found": "Товар не найден",
     }
