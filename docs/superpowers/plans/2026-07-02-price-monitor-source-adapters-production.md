@@ -362,7 +362,7 @@ rtk git commit -m "feat: schedule due price refresh jobs"
 - Test: `tests/contract/test_api_contract.py`
 
 **Interfaces:**
-- Produces: `ProductUrlClassification` dataclass and `classify_product_url(raw_url: str) -> ProductUrlClassification`.
+- Produces: `ProductUrlClassification` dataclass, `classify_product_url(raw_url: str) -> ProductUrlClassification`, and `is_required_store_domain(source_domain: str | None) -> bool`.
 - Produces stable error codes: `unsupported_store`, `monitoring_unavailable`, `not_product_url`, `unsafe_url`, `source_product_id_missing`, `source_url_pattern_unsupported`.
 
 - [ ] **Step 1: Write classifier tests**
@@ -512,6 +512,10 @@ def _store_root(hostname: str) -> str | None:
         if hostname == root or hostname.endswith(f".{root}"):
             return root
     return None
+
+
+def is_required_store_domain(source_domain: str | None) -> bool:
+    return source_domain in STORE_ROOTS
 ```
 
 - [ ] **Step 4: Run GREEN**
@@ -524,9 +528,24 @@ rtk py -m pytest tests/unit/test_product_url_classifier.py -q
 
 Expected: classifier tests pass.
 
-- [ ] **Step 5: Integrate supported-source API**
+- [ ] **Step 5: Integrate supported-source API without breaking generic sources**
 
-Modify `src/price_monitor/api/v1/sources.py` so `supported_source()` calls `classify_product_url(url)` first. Return the classifier error payload for `unsafe_url` and `not_product_url`, then keep existing paused/disabled source handling.
+Modify `src/price_monitor/api/v1/sources.py` so `supported_source()` calls
+`classify_product_url(url)` before returning a supported source. Return the
+classifier error payload for `unsafe_url`. For `not_product_url`,
+`source_product_id_missing`, and `source_url_pattern_unsupported`, return the
+classifier error only when `is_required_store_domain(classification.source_domain)`
+is true. If an admin configured a generic non-required source such as
+`example.com`, keep the existing domain-based support contract.
+
+Add this contract assertion to `tests/contract/test_admin_api_contract.py` by
+keeping the existing `example.com` supported-source check green:
+
+```python
+assert supported.status_code == 200
+assert supported.json()["supported"] is True
+assert supported.json()["source"]["source_domain"] == "example.com"
+```
 
 Run:
 
@@ -556,7 +575,7 @@ rtk git commit -m "feat: classify marketplace product urls"
 - Test: `tests/contract/test_api_contract.py`
 
 **Interfaces:**
-- Consumes: `classify_product_url(raw_url: str) -> ProductUrlClassification`.
+- Consumes: `classify_product_url(raw_url: str) -> ProductUrlClassification` and `is_required_store_domain(source_domain: str | None) -> bool`.
 - Produces: `Product.source_product_id: str | None`.
 
 - [ ] **Step 1: Write failing watchlist test**
@@ -613,7 +632,7 @@ In `src/price_monitor/domains/watchlist/service.py`, before duplicate checks:
 
 ```python
         classification = classify_product_url(product_url)
-        if not classification.is_product_url:
+        if is_required_store_domain(classification.source_domain) and not classification.is_product_url:
             return WatchlistAddResult(
                 item=None,
                 created=False,
@@ -788,7 +807,12 @@ class SourceAdapter(Protocol):
 
 - [ ] **Step 4: Implement generic adapter and registry**
 
-Create `src/price_monitor/domains/fetching/sources/generic_html.py` with a `GenericHtmlAdapter` that calls `context.fetcher.fetch()` and converts `extract_product_data()` into `ProductExtraction` with parser version `generic-html-v1` and confidence `Decimal("0.90")`.
+Create `src/price_monitor/domains/fetching/sources/generic_html.py` with a
+`GenericHtmlAdapter` that calls `context.fetcher.fetch()` and converts
+`extract_product_data()` into `ProductExtraction` with parser version
+`generic-html-v1`. JSON-LD Product extraction has confidence `Decimal("0.90")`.
+OpenGraph/meta-only extraction has confidence `Decimal("0.40")`, so Task 6 can
+prove low-confidence gating without inventing a second parser path.
 
 Create `src/price_monitor/domains/fetching/sources/registry.py`:
 
@@ -1283,6 +1307,13 @@ In `class-cashback-price-monitor-admin.php`, read remote setting near `$user_lim
 $price_refresh_interval_hours = isset( $remote_settings['price_refresh_interval_hours'] )
     ? (int) $remote_settings['price_refresh_interval_hours']
     : 8;
+```
+
+Use this value as the default in the source form too, replacing the existing
+hard-coded source interval value `6`:
+
+```php
+<input id="cashback-price-monitor-source-interval" type="number" min="1" name="fetch_interval_hours" class="small-text" value="<?php echo esc_attr( (string) $price_refresh_interval_hours ); ?>" />
 ```
 
 Render a row in the backend settings form:
