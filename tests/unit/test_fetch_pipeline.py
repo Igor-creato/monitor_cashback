@@ -149,6 +149,56 @@ def test_fetch_pipeline_does_not_resolve_proxy_before_direct_success(
     assert attempts[0].strategy == "direct"
     assert attempts[0].status == "ok"
 
+def test_fetch_pipeline_keeps_legacy_extraction_without_adapter_registry(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=False)
+    direct_fetcher = FakeFetcher(html=_product_html(title="Legacy Phone", price="101.01"))
+
+    seen: dict[str, object] = {}
+
+    def _detect_fetch_block_reason(html: str) -> str | None:
+        seen["block_html"] = html
+        return None
+
+    def _extract_product_data(html: str, *, fallback_currency: str) -> object:
+        seen["extract_html"] = html
+        seen["fallback_currency"] = fallback_currency
+        return type(
+            "LegacyExtraction",
+            (),
+            {
+                "title": "Legacy Phone",
+                "image_url": "https://example.com/legacy.jpg",
+                "rating_value": "4.8",
+                "price_minor": 10101,
+                "currency": fallback_currency,
+            },
+        )()
+
+    monkeypatch.setattr(
+        "price_monitor.domains.fetching.service.detect_fetch_block_reason",
+        _detect_fetch_block_reason,
+    )
+    monkeypatch.setattr(
+        "price_monitor.domains.fetching.service.extract_product_data",
+        _extract_product_data,
+    )
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=direct_fetcher,
+    ).run(product_id=product.id, now=datetime(2026, 6, 30, 11, 5, tzinfo=UTC))
+
+    session.commit()
+
+    assert result.status == "ok"
+    assert direct_fetcher.calls == [(product.canonical_url, None)]
+    assert seen["block_html"] == _product_html(title="Legacy Phone", price="101.01")
+    assert seen["extract_html"] == _product_html(title="Legacy Phone", price="101.01")
+    assert seen["fallback_currency"] == "RUB"
+
 
 def test_fetch_pipeline_creates_pending_alert_event_when_price_crosses_target(
     session: Session,

@@ -50,7 +50,7 @@ def test_generic_adapter_returns_confident_extraction() -> None:
     assert result.extraction.source_product_id is None
     assert result.extraction.confidence == Decimal("0.90")
     assert result.parser_version == "generic-html-v1"
-    assert result.parser_confidence == Decimal("0.90")
+    assert result.parser_confidence == "0.90"
 
 
 def test_generic_adapter_uses_low_confidence_for_meta_only_extraction() -> None:
@@ -79,4 +79,4 @@ def test_generic_adapter_uses_low_confidence_for_meta_only_extraction() -> None:
     assert result.extraction.source_product_id == "sku-2"
     assert result.extraction.confidence == Decimal("0.40")
     assert result.parser_version == "generic-html-v1"
-    assert result.parser_confidence == Decimal("0.40")
+    assert result.parser_confidence == "0.40"

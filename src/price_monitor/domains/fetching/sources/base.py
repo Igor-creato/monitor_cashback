@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from decimal import Decimal
 from typing import Protocol
 
 from price_monitor.domains.fetching.ports import ProductExtraction, ProductPageFetcher
@@ -28,7 +27,7 @@ class SourceFetchResult:
     block_reason: str | None
     challenge_detected: bool
     parser_version: str | None
-    parser_confidence: Decimal | None
+    parser_confidence: str | None
 
 
 class SourceAdapter(Protocol):

@@ -48,6 +48,7 @@ class GenericHtmlAdapter:
             )
 
         confidence = Decimal("0.90") if extracted.source == "json-ld" else Decimal("0.40")
+        parser_confidence = str(confidence)
         product_extraction = ProductExtraction(
             title=extracted.data.title,
             price_minor=extracted.data.price_minor,
@@ -69,5 +70,5 @@ class GenericHtmlAdapter:
             block_reason=None,
             challenge_detected=False,
             parser_version=self.parser_version,
-            parser_confidence=confidence,
+            parser_confidence=parser_confidence,
         )
