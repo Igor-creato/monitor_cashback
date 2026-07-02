@@ -28,6 +28,10 @@ class GenericHtmlAdapter:
                 challenge_detected=True,
                 parser_version=self.parser_version,
                 parser_confidence=None,
+                provider_name=None,
+                provider_request_id=None,
+                provider_cost_minor=None,
+                rendered=False,
             )
 
         extracted = extract_product_data_with_metadata(
@@ -45,6 +49,10 @@ class GenericHtmlAdapter:
                 challenge_detected=False,
                 parser_version=self.parser_version,
                 parser_confidence=None,
+                provider_name=None,
+                provider_request_id=None,
+                provider_cost_minor=None,
+                rendered=False,
             )
 
         confidence = Decimal("0.90") if extracted.source == "json-ld" else Decimal("0.40")
@@ -71,4 +79,8 @@ class GenericHtmlAdapter:
             challenge_detected=False,
             parser_version=self.parser_version,
             parser_confidence=parser_confidence,
+            provider_name=None,
+            provider_request_id=None,
+            provider_cost_minor=None,
+            rendered=False,
         )

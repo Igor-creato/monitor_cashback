@@ -120,6 +120,10 @@ class FetchPipeline:
 
             attempt.http_status = result.http_status
             attempt.response_ms = result.response_ms
+            attempt.provider_name = result.provider_name
+            attempt.provider_request_id = result.provider_request_id
+            attempt.provider_cost_minor = result.provider_cost_minor
+            attempt.rendered = result.rendered
             attempt.block_reason = result.block_reason
             attempt.challenge_detected = result.challenge_detected
             attempt.parser_version = result.parser_version

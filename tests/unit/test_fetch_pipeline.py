@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import importlib
 from datetime import UTC, datetime
+from decimal import Decimal
 
 import pytest
 from fastapi.testclient import TestClient
@@ -9,7 +10,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 from tests.conftest import signed_headers
 
-from price_monitor.domains.fetching.ports import FetchPageResult
+from price_monitor.domains.fetching.ports import FetchPageResult, ProductExtraction
+from price_monitor.domains.fetching.sources.base import SourceFetchResult
 from price_monitor.domains.fetching.service import FetchPipeline
 from price_monitor.domains.pricing.models import PricePoint
 from price_monitor.domains.products.models import Product
@@ -380,6 +382,66 @@ def test_fetch_pipeline_preserves_fetch_failed_when_extraction_finds_no_product_
     assert attempts[0].product_data_found is False
 
 
+def test_fetch_pipeline_records_provider_metadata_on_attempt(
+    session: Session,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    product = _create_product(session, browser_fallback_allowed=False)
+
+    class ProviderMetadataAdapter:
+        def fetch_product(self, context: object) -> SourceFetchResult:
+            del context
+            return SourceFetchResult(
+                status="ok",
+                extraction=ProductExtraction(
+                    title="Rendered Phone",
+                    price_minor=54321,
+                    currency="RUB",
+                    image_url="https://example.com/rendered.jpg",
+                    rating_value="4.9",
+                    availability=None,
+                    canonical_url=product.canonical_url,
+                    source_product_id="provider-sku-1",
+                    parser_version="provider-html-v1",
+                    confidence=Decimal("0.95"),
+                ),
+                http_status=200,
+                response_ms=321,
+                reason=None,
+                block_reason=None,
+                challenge_detected=False,
+                parser_version="provider-html-v1",
+                parser_confidence="0.95",
+                provider_name="browser-provider",
+                provider_request_id="req-provider-123",
+                provider_cost_minor=17,
+                rendered=True,
+            )
+
+    monkeypatch.setattr(
+        "price_monitor.domains.fetching.service.get_adapter_for_source",
+        lambda source_domain: ProviderMetadataAdapter(),
+    )
+
+    result = FetchPipeline(
+        session,
+        direct_fetcher=FakeFetcher(html=_product_html(title="ignored", price="1.00")),
+    ).run(product_id=product.id, now=datetime(2026, 7, 2, 10, 10, tzinfo=UTC))
+
+    session.commit()
+
+    attempt = session.scalars(
+        select(FetchAttempt).where(FetchAttempt.product_id == product.id)
+    ).one()
+
+    assert result.status == "ok"
+    assert attempt.status == "ok"
+    assert attempt.provider_name == "browser-provider"
+    assert attempt.provider_request_id == "req-provider-123"
+    assert attempt.provider_cost_minor == 17
+    assert attempt.rendered is True
+
+
 def test_fetch_product_task_uses_http_fetcher_to_update_product(
     session: Session,
     monkeypatch: pytest.MonkeyPatch,
@@ -687,6 +749,90 @@ def test_fetch_product_task_marks_quarantined_pipeline_result_on_job(
     assert job.status == "quarantined"
     assert job.status_reason == "quarantined"
     assert job.started_at is not None
+    assert job.finished_at is not None
+    assert job.attempt_count == 1
+    assert seen["committed"] is True
+
+
+def test_fetch_product_task_preserves_dead_letter_pipeline_status_on_job(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    fetch_product_module = importlib.import_module("price_monitor.workers.tasks.fetch_product")
+    seen: dict[str, object] = {}
+
+    class DummySession:
+        def __init__(self) -> None:
+            self.job = type(
+                "Job",
+                (),
+                {
+                    "status": "queued",
+                    "status_reason": "stale",
+                    "started_at": None,
+                    "finished_at": None,
+                    "attempt_count": 0,
+                },
+            )()
+
+        def __enter__(self) -> DummySession:
+            return self
+
+        def __exit__(self, exc_type: object, exc: object, tb: object) -> None:
+            del exc_type, exc, tb
+
+        def commit(self) -> None:
+            seen["committed"] = True
+
+        def flush(self) -> None:
+            seen["flushed"] = True
+
+        def get(self, model: object, key: str) -> object:
+            del model
+            seen["job_key"] = key
+            return self.job
+
+    class DummyFactory:
+        def __init__(self) -> None:
+            self.last_session: DummySession | None = None
+
+        def __call__(self) -> DummySession:
+            self.last_session = DummySession()
+            return self.last_session
+
+    class DummyPipeline:
+        def __init__(self, session: object, **kwargs: object) -> None:
+            del session, kwargs
+
+        def run(self, *, product_id: str, fetch_job_id: str | None = None) -> object:
+            del product_id, fetch_job_id
+            return type("Result", (), {"status": "dead_letter", "reason": None})()
+
+    class DummySourceService:
+        def __init__(self, session: object) -> None:
+            del session
+
+        def get_settings(self) -> dict[str, str]:
+            return {}
+
+    factory = DummyFactory()
+    monkeypatch.setattr(fetch_product_module, "get_session_factory", lambda: factory)
+    monkeypatch.setattr(fetch_product_module, "FetchPipeline", DummyPipeline)
+    monkeypatch.setattr(fetch_product_module, "SourceService", DummySourceService)
+    monkeypatch.setattr(
+        fetch_product_module,
+        "build_source_browser_fetcher",
+        lambda settings, stored_settings: None,
+        raising=False,
+    )
+
+    result = fetch_product_module.fetch_product("product-123", "job-123")
+
+    assert result == {"product_id": "product-123", "status": "dead_letter"}
+    assert factory.last_session is not None
+    job = factory.last_session.job
+    assert seen["job_key"] == "job-123"
+    assert job.status == "dead_letter"
+    assert job.status_reason == "dead_letter"
     assert job.finished_at is not None
     assert job.attempt_count == 1
     assert seen["committed"] is True

@@ -51,6 +51,10 @@ def test_generic_adapter_returns_confident_extraction() -> None:
     assert result.extraction.confidence == Decimal("0.90")
     assert result.parser_version == "generic-html-v1"
     assert result.parser_confidence == "0.90"
+    assert result.provider_name is None
+    assert result.provider_request_id is None
+    assert result.provider_cost_minor is None
+    assert result.rendered is False
 
 
 def test_generic_adapter_uses_low_confidence_for_meta_only_extraction() -> None:
@@ -80,3 +84,7 @@ def test_generic_adapter_uses_low_confidence_for_meta_only_extraction() -> None:
     assert result.extraction.confidence == Decimal("0.40")
     assert result.parser_version == "generic-html-v1"
     assert result.parser_confidence == "0.40"
+    assert result.provider_name is None
+    assert result.provider_request_id is None
+    assert result.provider_cost_minor is None
+    assert result.rendered is False
