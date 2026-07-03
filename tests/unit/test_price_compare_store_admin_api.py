@@ -133,3 +133,24 @@ def test_store_admin_api_rejects_private_logo_url() -> None:
     payload = response.json()
     assert payload["status"] == "error"
     assert payload["error_code"] == "INVALID_LOGO_URL"
+
+
+def test_store_admin_api_accepts_live_search_source_type() -> None:
+    client = _client_with_session(_engine())
+
+    response = client.post(
+        "/api/v1/stores",
+        json={
+            "domain": "fixture.test",
+            "display_name": "Fixture",
+            "source_type": "direct_http",
+            "source_config": {
+                "live_search_url_template": "https://fixture.test/search?q={query}&city={city}"
+            },
+        },
+    )
+
+    assert response.status_code == 201
+    payload = response.json()
+    assert payload["source_type"] == "direct_http"
+    assert payload["source_config"]["live_search_url_template"].startswith("https://fixture.test")

@@ -17,7 +17,15 @@ class SearchRequest(BaseModel):
     offset: int = Field(default=0, ge=0)
 
 
-SourceType = Literal["admitad", "advcake", "custom", "disabled"]
+SourceType = Literal[
+    "admitad",
+    "advcake",
+    "custom",
+    "live_fixture",
+    "direct_http",
+    "managed_provider",
+    "disabled",
+]
 FallbackBehavior = Literal["status_only", "skip", "custom_api"]
 
 
