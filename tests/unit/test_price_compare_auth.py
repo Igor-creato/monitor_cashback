@@ -40,8 +40,9 @@ def test_search_accepts_valid_hmac_signature_when_secret_configured() -> None:
 
     response = client.post("/api/v1/search", content=body, headers=headers)
 
-    assert response.status_code == 200
-    assert response.json()["status"] == "ok"
+    assert response.status_code == 503
+    assert response.json()["status"] == "error"
+    assert response.json()["error_code"] == "SOURCE_UNAVAILABLE"
 
 
 def _app_with_empty_index(settings: Settings):

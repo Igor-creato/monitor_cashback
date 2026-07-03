@@ -44,7 +44,22 @@ def search(
         )
 
     try:
-        results = OfferRepository(session).search(
+        repository = OfferRepository(session)
+        index_state = repository.index_state(stores=request.stores)
+        if index_state.active_store_count == 0:
+            return _safe_error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "SOURCE_UNAVAILABLE",
+                "Источники поиска не настроены.",
+            )
+        if index_state.active_offer_count == 0:
+            return _safe_error(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                "SEARCH_INDEX_EMPTY",
+                "Индекс поиска пуст. Запустите импорт товаров.",
+            )
+
+        results = repository.search(
             query=query,
             city=city,
             stores=request.stores,
@@ -76,6 +91,18 @@ def search(
                 "warnings": warnings,
             },
         }
+    )
+
+
+def _safe_error(status_code: int, error_code: str, message: str) -> JSONResponse:
+    return JSONResponse(
+        status_code=status_code,
+        content={
+            "status": "error",
+            "error_code": error_code,
+            "message": message,
+            "request_id": "",
+        },
     )
 
 

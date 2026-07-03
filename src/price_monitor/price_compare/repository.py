@@ -16,6 +16,12 @@ class OfferSearchResults:
     total: int
 
 
+@dataclass(frozen=True, slots=True)
+class SearchIndexState:
+    active_store_count: int
+    active_offer_count: int
+
+
 class OfferRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -40,6 +46,30 @@ class OfferRepository:
         offers = list(self._session.scalars(stmt).all())
         sorted_offers = sorted(offers, key=_offer_sort_key)
         return OfferSearchResults(items=sorted_offers[offset : offset + limit], total=total)
+
+    def index_state(self, *, stores: list[str]) -> SearchIndexState:
+        normalized_stores = [_normalize_domain(store) for store in stores if store.strip()]
+        store_stmt = select(StoreSource.domain).where(StoreSource.active.is_(True))
+        if normalized_stores:
+            store_stmt = store_stmt.where(StoreSource.domain.in_(normalized_stores))
+
+        active_domains = list(self._session.scalars(store_stmt).all())
+        if not active_domains:
+            return SearchIndexState(active_store_count=0, active_offer_count=0)
+
+        offer_count = (
+            self._session.scalar(
+                select(func.count())
+                .select_from(Offer)
+                .where(Offer.store_domain.in_(active_domains))
+            )
+            or 0
+        )
+
+        return SearchIndexState(
+            active_store_count=len(active_domains),
+            active_offer_count=offer_count,
+        )
 
     def _count(self, stmt: Select[tuple[Offer]]) -> int:
         count_stmt = select(func.count()).select_from(stmt.subquery())
