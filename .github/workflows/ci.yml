@@ -48,7 +48,7 @@ jobs:
         run: docker compose config --quiet
 
       - name: Docker build
-        run: docker build -t price-monitor:${{ github.sha }} .
+        run: docker build -t monitor-cashback-service:${{ github.sha }} .
 
       - name: Trivy filesystem scan
         uses: aquasecurity/trivy-action@v0.36.0

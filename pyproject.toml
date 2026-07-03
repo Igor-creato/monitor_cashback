@@ -3,9 +3,9 @@ requires = ["setuptools==82.0.1", "wheel==0.47.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "price-monitor"
+name = "monitor-cashback-service"
 version = "0.1.0"
-description = "Backend microservice foundation for product price monitoring."
+description = "Reusable backend service infrastructure shell."
 readme = "README.md"
 requires-python = ">=3.11"
 license = { text = "Proprietary" }

@@ -1,23 +1,22 @@
 from pathlib import Path
 
+ROOT = Path(__file__).resolve().parents[2]
 
-def test_source_of_truth_docs_and_runtime_files_exist() -> None:
-    root = Path(__file__).resolve().parents[2]
-    required = [
-        "README.md",
-        ".env.example",
-        "docs/architecture.md",
-        "docs/api-contract.md",
-        "docs/security.md",
-        "docs/development.md",
-        "docs/deploy.md",
-        "Dockerfile",
-        "docker-compose.yml",
-        ".github/workflows/ci.yml",
-        "migrations/env.py",
-        "migrations/versions/20260629_0001_service_foundation.py",
+
+def test_product_link_monitoring_modules_are_removed():
+    removed_paths = [
+        ROOT / "src" / "price_monitor" / "domains",
+        ROOT / "src" / "price_monitor" / "api" / "v1" / "watchlist.py",
+        ROOT / "src" / "price_monitor" / "api" / "v1" / "price_history.py",
+        ROOT / "src" / "price_monitor" / "workers" / "tasks" / "fetch_product.py",
     ]
 
-    missing = [path for path in required if not (root / path).exists()]
+    for path in removed_paths:
+        assert not path.exists()
 
-    assert missing == []
+
+def test_compose_no_longer_runs_browser_renderer():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "browserless" not in compose
+    assert "decodo" not in compose.lower()

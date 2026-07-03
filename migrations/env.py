@@ -5,7 +5,6 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
-import price_monitor.db.models  # noqa: F401
 from price_monitor.core.config import Settings
 from price_monitor.db.base import Base
 

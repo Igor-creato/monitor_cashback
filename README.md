@@ -1,24 +1,18 @@
-# Price Monitor Service
+# Monitor Cashback Service Shell
 
-Backend microservice foundation for product price monitoring. The service is
-separate from the `cash-back` WordPress plugin and owns product URL intake,
-watchlist state, product records, price history, source health, scheduling, and
-worker orchestration.
+Reusable backend infrastructure for future cashback-adjacent services.
 
-## What v1 Provides
+The product-link price monitoring implementation has been removed. The repo now
+keeps only the deployable service shell that can later host a product search,
+comparison, or another approved backend workflow.
 
-- FastAPI application with live/readiness health endpoints.
-- WordPress-facing watchlist API protected by HMAC request signatures and
-  idempotency keys.
-- PostgreSQL-owned domain tables for products, watchlist items, price points,
-  source status, idempotency records, outbox events, inbox messages, and fetch
-  jobs.
-- RabbitMQ/Celery worker foundation with late acknowledgements, low prefetch,
-  durable publish settings, and retry backoff.
-- Transactional outbox and inbox primitives for at-least-once delivery with
-  duplicate-safe consumers.
-- Interfaces for future modules: product search/comparison, official
-  marketplace OAuth, cart import, and favorites import.
+## What Remains
+
+- FastAPI application with `/health/live` and `/health/ready`.
+- PostgreSQL, Redis, RabbitMQ, Celery, Alembic, Docker Compose, and GitHub
+  Actions deployment wiring.
+- HMAC request-signing helpers for a future WordPress-to-service API.
+- A migration path that drops the old price-monitor domain tables on upgrade.
 
 ## Local Quick Start
 
@@ -33,11 +27,7 @@ running.
 
 ## Boundaries
 
-The WordPress plugin owns UI, account flows, proxy signing, and cashback UX. The
-service may use source-specific public product-page fetching strategies,
-including managed unblocker APIs, browser rendering, proxy rotation, and
-challenge-aware adapters, when they are configured for an approved monitored
-source. The service must not store marketplace passwords, unapproved raw cookies,
-or raw browser session captures, and it must not log secrets. Cart and favorites
-monitoring still require official OAuth, partner access, explicit user consent,
-or another approved legal and secure integration.
+No marketplace product fetching, source adapters, Decodo/Browserless integration,
+watchlist API, price history API, or alert dispatch code remains in this shell.
+New search/comparison behavior should be designed and implemented as a separate
+feature on top of this infrastructure.

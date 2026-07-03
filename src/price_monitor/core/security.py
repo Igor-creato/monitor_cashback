@@ -9,7 +9,7 @@ from urllib.parse import parse_qsl, urlencode
 
 
 class AuthenticationError(Exception):
-    """Raised when a WordPress proxy request cannot be authenticated."""
+    """Raised when a signed service request cannot be authenticated."""
 
 
 @dataclass(frozen=True)
@@ -23,21 +23,6 @@ def hash_body(body: bytes) -> str:
     return sha256(body).hexdigest()
 
 
-def _canonical_message(
-    *, method: str, path: str, timestamp: int, request_id: str, body_sha256: str
-) -> bytes:
-    normalized = "\n".join(
-        [
-            method.upper(),
-            path,
-            str(timestamp),
-            request_id,
-            body_sha256,
-        ]
-    )
-    return normalized.encode("utf-8")
-
-
 def _canonical_request_target(path: str, query: str | None = None) -> str:
     if query is None:
         return path
@@ -46,6 +31,20 @@ def _canonical_request_target(path: str, query: str | None = None) -> str:
     if not normalized_query:
         return path
     return f"{path}?{normalized_query}"
+
+
+def _canonical_message(
+    *, method: str, path: str, timestamp: int, request_id: str, body_sha256: str
+) -> bytes:
+    return "\n".join(
+        [
+            method.upper(),
+            path,
+            str(timestamp),
+            request_id,
+            body_sha256,
+        ]
+    ).encode("utf-8")
 
 
 def _signature(
