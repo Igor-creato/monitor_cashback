@@ -15,6 +15,7 @@ def test_decodo_web_scraping_fetcher_posts_premium_headless_request_and_maps_res
     def handler(request: httpx.Request) -> httpx.Response:
         captured["url"] = str(request.url)
         captured["authorization"] = request.headers.get("Authorization")
+        captured["accept"] = request.headers.get("Accept")
         captured["payload"] = json.loads(request.content.decode())
         return httpx.Response(
             200,
@@ -50,6 +51,7 @@ def test_decodo_web_scraping_fetcher_posts_premium_headless_request_and_maps_res
     assert captured == {
         "url": "https://scraper-api.decodo.com/v2/scrape",
         "authorization": "Basic decodo-token",
+        "accept": "application/json",
         "payload": {
             "url": "https://www.ozon.ru/product/123",
             "proxy_pool": "premium",
@@ -105,4 +107,4 @@ def test_build_managed_unblocker_fetcher_uses_decodo_token_from_env_settings() -
 
 
 def test_decodo_default_timeout_allows_js_rendering_latency() -> None:
-    assert Settings().decodo_web_scraping_timeout_seconds == 60.0
+    assert Settings().decodo_web_scraping_timeout_seconds >= 155.0

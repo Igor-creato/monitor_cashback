@@ -43,7 +43,7 @@ class Settings(BaseSettings):
         default="",
         description="Decodo password fallback when token auth is not used.",
     )
-    decodo_web_scraping_timeout_seconds: float = 60.0
+    decodo_web_scraping_timeout_seconds: float = 155.0
     decodo_web_scraping_proxy_pool: str = "premium"
     decodo_web_scraping_headless: str = "html"
     decodo_web_scraping_geo: str = ""

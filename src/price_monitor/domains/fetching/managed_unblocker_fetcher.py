@@ -49,7 +49,10 @@ class DecodoWebScrapingApiFetcher:
                 response = client.post(
                     self._endpoint_url,
                     json=payload,
-                    headers={"Authorization": self._authorization_header},
+                    headers={
+                        "Accept": "application/json",
+                        "Authorization": self._authorization_header,
+                    },
                 )
         except httpx.RequestError as exc:
             raise RuntimeError("managed unblocker request failed") from exc

@@ -22,8 +22,8 @@ celery_app = create_celery_app(settings.rabbitmq_url, settings.redis_url)
     retry_backoff=True,
     retry_jitter=True,
     max_retries=5,
-    soft_time_limit=90,
-    time_limit=120,
+    soft_time_limit=180,
+    time_limit=210,
 )
 def fetch_product(product_id: str, fetch_job_id: str | None = None) -> dict[str, str]:
     with get_session_factory()() as session:

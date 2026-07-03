@@ -826,8 +826,8 @@ def test_fetch_product_task_runs_pipeline_and_returns_status(
 def test_fetch_product_task_time_limits_allow_managed_unblocker_latency() -> None:
     fetch_product_module = importlib.import_module("price_monitor.workers.tasks.fetch_product")
 
-    assert fetch_product_module.fetch_product.soft_time_limit == 90
-    assert fetch_product_module.fetch_product.time_limit == 120
+    assert fetch_product_module.fetch_product.soft_time_limit == 180
+    assert fetch_product_module.fetch_product.time_limit == 210
 
 
 def test_fetch_product_task_marks_quarantined_pipeline_result_on_job(
