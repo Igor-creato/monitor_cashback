@@ -74,7 +74,7 @@ class NodeMavenProxySearchAdapter:
                 store_domain=self._domain,
                 status=STORE_STATUS_BLOCKED_BY_ANTIBOT,
                 items=[],
-                warnings=antibot_warnings(response.status_code),
+                warnings=antibot_warnings(response.status_code, "nodemaven"),
                 message="Магазин ограничил автоматический доступ",
             )
         if response.status_code >= 400:
