@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, status
@@ -10,7 +11,7 @@ from sqlalchemy.orm import Session
 from price_monitor.db.session import get_session
 from price_monitor.price_compare.auth import require_signed_request
 from price_monitor.price_compare.models import Offer
-from price_monitor.price_compare.repository import OfferRepository
+from price_monitor.price_compare.repository import OfferFeedFreshness, OfferRepository
 from price_monitor.price_compare.schemas import SearchRequest
 
 router = APIRouter(prefix="/api/v1", tags=["price-comparison"])
@@ -66,6 +67,7 @@ def search(
             limit=request.limit,
             offset=request.offset,
         )
+        feed_freshness = repository.feed_freshness_for_offers(results.items)
         store_statuses = repository.store_statuses(stores=request.stores)
     except SQLAlchemyError:
         return JSONResponse(
@@ -84,7 +86,13 @@ def search(
             "status": "ok",
             "query": query,
             "city": city,
-            "items": [_serialize_offer(offer) for offer in results.items],
+            "items": [
+                _serialize_offer(
+                    offer,
+                    feed_freshness.get((offer.store_domain, offer.source)),
+                )
+                for offer in results.items
+            ],
             "meta": {
                 "total": results.total,
                 "limit": request.limit,
@@ -116,7 +124,14 @@ def _safe_error(status_code: int, error_code: str, message: str) -> JSONResponse
     )
 
 
-def _serialize_offer(offer: Offer) -> dict[str, object]:
+def _serialize_offer(
+    offer: Offer, feed_freshness: OfferFeedFreshness | None = None
+) -> dict[str, object]:
+    feed_updated_at = (
+        feed_freshness.feed_updated_at
+        if feed_freshness is not None and feed_freshness.feed_updated_at is not None
+        else offer.updated_at
+    )
     return {
         "id": str(offer.id),
         "source": offer.source,
@@ -133,7 +148,46 @@ def _serialize_offer(offer: Offer) -> dict[str, object]:
         "category": offer.category,
         "brand": offer.brand,
         "external_id": offer.external_id,
-        "updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
-        "price_updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
-        "feed_updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
+        "updated_at": _iso_datetime(offer.updated_at),
+        "price_updated_at": _iso_datetime(offer.updated_at),
+        "feed_updated_at": _iso_datetime(feed_updated_at),
+        "freshness": _serialize_freshness(offer, feed_freshness),
     }
+
+
+def _serialize_freshness(
+    offer: Offer, feed_freshness: OfferFeedFreshness | None
+) -> dict[str, object]:
+    if feed_freshness is None:
+        return {
+            "mode": "index_snapshot",
+            "realtime": False,
+            "coverage": "store_index",
+            "feed_updated_at": None,
+            "import_finished_at": None,
+            "import_status": None,
+            "warnings": [],
+        }
+
+    warnings = ["FEED_NOT_REALTIME"]
+    if not offer.region_supported:
+        warnings.append("REGION_NOT_GUARANTEED")
+    if feed_freshness.import_status and feed_freshness.import_status != "success":
+        warnings.append("FEED_IMPORT_NOT_SUCCESSFUL")
+
+    return {
+        "mode": "affiliate_feed",
+        "realtime": False,
+        "coverage": "partner_feed",
+        "feed_updated_at": _iso_datetime(feed_freshness.feed_updated_at),
+        "import_finished_at": _iso_datetime(feed_freshness.import_finished_at),
+        "import_status": feed_freshness.import_status,
+        "warnings": warnings,
+    }
+
+
+def _iso_datetime(value: datetime | None) -> str | None:
+    if value is None:
+        return None
+    value = value.replace(tzinfo=UTC) if value.tzinfo is None else value.astimezone(UTC)
+    return value.isoformat().replace("+00:00", "Z")
