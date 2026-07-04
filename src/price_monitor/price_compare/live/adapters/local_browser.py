@@ -71,7 +71,7 @@ class LocalBrowserSearchAdapter:
                 store_domain=self._domain,
                 status=STORE_STATUS_BLOCKED_BY_ANTIBOT,
                 items=[],
-                warnings=antibot_warnings(snapshot.status_code),
+                warnings=antibot_warnings(snapshot.status_code, "local_browser"),
                 message="Магазин ограничил автоматический доступ",
             )
         if snapshot.status_code is not None and snapshot.status_code >= 400:

@@ -95,7 +95,11 @@ def test_local_browser_adapter_marks_antibot_status_with_safe_evidence() -> None
 
     assert result.status == "BLOCKED_BY_ANTIBOT"
     assert result.items == []
-    assert result.warnings == ["blocked_by_antibot", "antibot_http_status_403"]
+    assert result.warnings == [
+        "blocked_by_antibot",
+        "local_browser_blocked_by_antibot",
+        "antibot_http_status_403",
+    ]
     assert result.message == "Магазин ограничил автоматический доступ"
 
 
