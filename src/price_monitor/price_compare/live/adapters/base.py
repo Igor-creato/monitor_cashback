@@ -52,3 +52,10 @@ class LiveStoreResult:
 class SearchAdapter(Protocol):
     def search(self, query: LiveSearchQuery) -> LiveStoreResult:
         """Search a store and return safe normalized items."""
+
+
+def antibot_warnings(status_code: int | None) -> list[str]:
+    warnings = ["blocked_by_antibot"]
+    if status_code is not None:
+        warnings.append(f"antibot_http_status_{status_code}")
+    return warnings

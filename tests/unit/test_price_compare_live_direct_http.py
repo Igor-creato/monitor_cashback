@@ -18,3 +18,4 @@ def test_direct_http_adapter_stops_on_servicepipe_captcha() -> None:
 
     assert result.status == "BLOCKED_BY_ANTIBOT"
     assert result.items == []
+    assert result.warnings == ["blocked_by_antibot", "antibot_http_status_403"]
