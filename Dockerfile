@@ -1,7 +1,8 @@
 FROM python:3.14.6-slim-bookworm AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONUNBUFFERED=1
+    PYTHONUNBUFFERED=1 \
+    PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
 WORKDIR /app
 
@@ -13,7 +14,9 @@ COPY migrations ./migrations
 COPY alembic.ini ./
 
 RUN python -m pip install --no-cache-dir --upgrade pip==26.1.2 \
-    && python -m pip install --no-cache-dir .
+    && python -m pip install --no-cache-dir . \
+    && python -m playwright install --with-deps chromium \
+    && chmod -R a+rX /ms-playwright
 
 USER app
 

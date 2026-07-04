@@ -4,9 +4,11 @@ from typing import Any
 
 from price_monitor.core.config import get_settings
 from price_monitor.price_compare.live.adapters.base import SearchAdapter
+from price_monitor.price_compare.live.adapters.chain import ProviderChainSearchAdapter
 from price_monitor.price_compare.live.adapters.decodo import DecodoWebSearchAdapter
 from price_monitor.price_compare.live.adapters.direct_http import DirectHttpSearchAdapter
 from price_monitor.price_compare.live.adapters.fixture import FixtureSearchAdapter
+from price_monitor.price_compare.live.adapters.local_browser import LocalBrowserSearchAdapter
 from price_monitor.price_compare.live.adapters.nodemaven import (
     NodeMavenProxySearchAdapter,
     build_proxy_url,
@@ -21,6 +23,10 @@ def get_adapter_for_store(domain: str, config: dict[str, Any]) -> SearchAdapter 
     normalized_domain = normalize_domain(domain)
     source_type = str(config.get("source_type", "custom"))
     source_config = _source_config(config)
+    provider = str(source_config.get("provider", "")).strip().lower()
+    if provider == "chain":
+        return _build_provider_chain(normalized_domain, source_type, source_config)
+
     fixture_items = source_config.get("live_fixture_items")
     if source_type in {"custom", "live_fixture"} and isinstance(fixture_items, list):
         return FixtureSearchAdapter(domain=normalized_domain, items=_dict_items(fixture_items))
@@ -31,51 +37,118 @@ def get_adapter_for_store(domain: str, config: dict[str, Any]) -> SearchAdapter 
             search_url_template=search_url_template,
         )
     if source_type == "managed_provider" and isinstance(search_url_template, str):
-        provider = str(source_config.get("provider", "")).strip().lower()
-        parser = str(source_config.get("parser", "")).strip()
-        if provider == "decodo" and parser:
-            settings = get_settings()
-            return DecodoWebSearchAdapter(
-                domain=normalized_domain,
-                search_url_template=search_url_template,
-                api_url=settings.decodo_scraper_api_url,
-                auth_token=settings.decodo_basic_auth_token,
-                parser=parser,
-                headless=str(source_config.get("headless", settings.decodo_default_headless)),
-                proxy_pool=str(source_config.get("proxy_pool", settings.decodo_default_proxy_pool)),
-                device_type=str(
-                    source_config.get("device_type", settings.decodo_default_device_type)
-                ),
-                geo=str(source_config.get("geo", "")),
-                locale=str(source_config.get("locale", "")),
-                timeout_seconds=settings.decodo_request_timeout_seconds,
-            )
-        if provider == "nodemaven" and parser:
-            settings = get_settings()
-            return NodeMavenProxySearchAdapter(
-                domain=normalized_domain,
-                search_url_template=search_url_template,
-                proxy_url=build_proxy_url(
-                    proxy_url=settings.nodemaven_proxy_url,
-                    host=settings.nodemaven_proxy_host,
-                    port=settings.nodemaven_proxy_port,
-                    username=settings.nodemaven_proxy_username,
-                    password=settings.nodemaven_proxy_password,
-                ),
-                parser=parser,
-                timeout_seconds=settings.nodemaven_request_timeout_seconds,
-                verify_ssl=settings.nodemaven_verify_ssl,
-            )
-        if provider == "nodemaven_browser" and parser:
-            settings = get_settings()
-            return NodeMavenBrowserSearchAdapter(
-                domain=normalized_domain,
-                search_url_template=search_url_template,
-                browser_ws_url=settings.nodemaven_browser_ws_url,
-                parser=parser,
-                timeout_seconds=settings.nodemaven_browser_timeout_seconds,
-            )
+        return _managed_provider_adapter(normalized_domain, source_config)
     return None
+
+
+def _build_provider_chain(
+    domain: str, source_type: str, source_config: dict[str, Any]
+) -> SearchAdapter | None:
+    provider_configs = source_config.get("providers")
+    if not isinstance(provider_configs, list):
+        return None
+
+    adapters: list[SearchAdapter] = []
+    for provider_config in provider_configs:
+        if not isinstance(provider_config, dict):
+            continue
+        adapter = _adapter_from_chain_entry(
+            domain,
+            source_type,
+            _merge_chain_config(source_config, provider_config),
+        )
+        if adapter is not None:
+            adapters.append(adapter)
+    if not adapters:
+        return None
+    return ProviderChainSearchAdapter(domain=domain, providers=adapters)
+
+
+def _adapter_from_chain_entry(
+    domain: str, source_type: str, source_config: dict[str, Any]
+) -> SearchAdapter | None:
+    provider = str(source_config.get("provider", "")).strip().lower()
+    if provider in {"decodo", "nodemaven", "local_browser", "nodemaven_browser"}:
+        return _managed_provider_adapter(domain, source_config)
+    return get_adapter_for_store(
+        domain, {"source_type": source_type, "source_config": source_config}
+    )
+
+
+def _managed_provider_adapter(domain: str, source_config: dict[str, Any]) -> SearchAdapter | None:
+    search_url_template = source_config.get("live_search_url_template")
+    parser = str(source_config.get("parser", "")).strip()
+    if not isinstance(search_url_template, str) or not parser:
+        return None
+
+    provider = str(source_config.get("provider", "")).strip().lower()
+    settings = get_settings()
+    if provider == "decodo":
+        return DecodoWebSearchAdapter(
+            domain=domain,
+            search_url_template=search_url_template,
+            api_url=settings.decodo_scraper_api_url,
+            auth_token=settings.decodo_basic_auth_token,
+            parser=parser,
+            headless=str(source_config.get("headless", settings.decodo_default_headless)),
+            proxy_pool=str(source_config.get("proxy_pool", settings.decodo_default_proxy_pool)),
+            device_type=str(source_config.get("device_type", settings.decodo_default_device_type)),
+            geo=str(source_config.get("geo", "")),
+            locale=str(source_config.get("locale", "")),
+            timeout_seconds=settings.decodo_request_timeout_seconds,
+        )
+    if provider == "nodemaven":
+        return NodeMavenProxySearchAdapter(
+            domain=domain,
+            search_url_template=search_url_template,
+            proxy_url=_nodemaven_proxy_url(),
+            parser=parser,
+            timeout_seconds=settings.nodemaven_request_timeout_seconds,
+            verify_ssl=settings.nodemaven_verify_ssl,
+        )
+    if provider == "local_browser":
+        return LocalBrowserSearchAdapter(
+            domain=domain,
+            search_url_template=search_url_template,
+            proxy_url=_local_browser_proxy_url(source_config),
+            parser=parser,
+            timeout_seconds=settings.local_browser_timeout_seconds,
+        )
+    if provider == "nodemaven_browser":
+        return NodeMavenBrowserSearchAdapter(
+            domain=domain,
+            search_url_template=search_url_template,
+            browser_ws_url=settings.nodemaven_browser_ws_url,
+            parser=parser,
+            timeout_seconds=settings.nodemaven_browser_timeout_seconds,
+        )
+    return None
+
+
+def _merge_chain_config(parent: dict[str, Any], provider_config: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(parent)
+    merged.pop("providers", None)
+    merged.update(provider_config)
+    return merged
+
+
+def _local_browser_proxy_url(source_config: dict[str, Any]) -> str:
+    proxy = str(source_config.get("proxy", "")).strip().lower()
+    if proxy == "nodemaven":
+        return _nodemaven_proxy_url()
+    proxy_url = source_config.get("proxy_url")
+    return proxy_url.strip() if isinstance(proxy_url, str) else ""
+
+
+def _nodemaven_proxy_url() -> str:
+    settings = get_settings()
+    return build_proxy_url(
+        proxy_url=settings.nodemaven_proxy_url,
+        host=settings.nodemaven_proxy_host,
+        port=settings.nodemaven_proxy_port,
+        username=settings.nodemaven_proxy_username,
+        password=settings.nodemaven_proxy_password,
+    )
 
 
 def _source_config(config: dict[str, Any]) -> dict[str, Any]:
