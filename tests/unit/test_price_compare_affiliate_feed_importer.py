@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
+
 from sqlalchemy import create_engine, select
 from sqlalchemy.orm import Session
 from sqlalchemy.pool import StaticPool
@@ -85,6 +87,33 @@ def test_affiliate_feed_importer_is_idempotent_for_existing_offer() -> None:
     assert offers[0].availability == "unknown"
 
 
+def test_affiliate_feed_importer_records_feed_freshness_from_descriptor() -> None:
+    engine = _sqlite_engine()
+    Base.metadata.create_all(engine)
+    descriptor = {
+        "network": "admitad",
+        "store_domain": "merchant.test",
+        "feed_id": "feed-csv",
+        "format": "csv",
+        "feed_url_secret": True,
+        "advertiser_last_update": "2026-07-04T12:30:00Z",
+    }
+    bridge = FakeBridge(
+        [descriptor],
+        b"id;title;url;price;currency\nsku-1;Redmi Note 13;https://merchant.test/p/1;12990;RUB\n",
+    )
+
+    with Session(engine) as session:
+        AffiliateFeedImportService(session, bridge=bridge).import_configured_feeds()
+
+        feed_source = session.scalars(select(AffiliateFeedSource)).one()
+        run = session.scalars(select(FeedImportRun)).one()
+
+    expected = datetime(2026, 7, 4, 12, 30, tzinfo=UTC)
+    assert _as_utc(feed_source.last_feed_updated_at) == expected
+    assert _as_utc(run.feed_updated_at) == expected
+
+
 def test_affiliate_feed_importer_skips_secret_url_descriptor_without_bridge_download() -> None:
     engine = _sqlite_engine()
     Base.metadata.create_all(engine)
@@ -111,6 +140,14 @@ def test_affiliate_feed_importer_skips_secret_url_descriptor_without_bridge_down
     assert offers == []
     assert runs[0].status == "failed"
     assert "secret" not in (runs[0].error_message or "").lower()
+
+
+def _as_utc(value: datetime | None) -> datetime | None:
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 class FakeBridge:
