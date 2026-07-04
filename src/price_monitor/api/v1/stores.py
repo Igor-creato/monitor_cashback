@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import UTC, datetime
 from typing import Annotated, Any
 
 from fastapi import APIRouter, Depends, status
@@ -11,10 +12,17 @@ from sqlalchemy.orm import Session
 
 from price_monitor.db.session import get_session
 from price_monitor.price_compare.auth import require_signed_request
-from price_monitor.price_compare.models import ImportStatus, Offer, StoreSource
+from price_monitor.price_compare.models import (
+    AffiliateFeedSource,
+    FeedImportRun,
+    ImportStatus,
+    Offer,
+    StoreSource,
+)
 from price_monitor.price_compare.schemas import (
     ImportStatusResponse,
     StoreCreateRequest,
+    StoreFeedHealthResponse,
     StoreResponse,
     StoreUpdateRequest,
 )
@@ -203,6 +211,71 @@ def _serialize_store(session: Session, store: StoreSource) -> dict[str, object]:
         fallback_behavior=store.fallback_behavior,
         offer_count=offer_count,
         import_status=status_response,
+        feed_health=_serialize_feed_health(session, store.domain),
         created_at=store.created_at,
         updated_at=store.updated_at,
     ).model_dump(mode="json")
+
+
+def _serialize_feed_health(session: Session, store_domain: str) -> StoreFeedHealthResponse | None:
+    active_feed_count = (
+        session.scalar(
+            select(func.count())
+            .select_from(AffiliateFeedSource)
+            .where(
+                AffiliateFeedSource.store_domain == store_domain,
+                AffiliateFeedSource.active.is_(True),
+            )
+        )
+        or 0
+    )
+    if active_feed_count == 0:
+        return None
+
+    last_feed_updated_at = session.scalar(
+        select(func.max(AffiliateFeedSource.last_feed_updated_at)).where(
+            AffiliateFeedSource.store_domain == store_domain,
+            AffiliateFeedSource.active.is_(True),
+        )
+    )
+    latest_run = session.scalars(
+        select(FeedImportRun)
+        .join(AffiliateFeedSource, AffiliateFeedSource.id == FeedImportRun.feed_source_id)
+        .where(AffiliateFeedSource.store_domain == store_domain)
+        .order_by(FeedImportRun.finished_at.desc(), FeedImportRun.id.desc())
+    ).first()
+
+    if latest_run is None:
+        return StoreFeedHealthResponse(
+            active_feed_count=active_feed_count,
+            last_import_status=None,
+            last_import_finished_at=None,
+            last_feed_updated_at=_as_utc_datetime(last_feed_updated_at),
+            created_count=0,
+            updated_count=0,
+            skipped_count=0,
+            quarantined_count=0,
+            last_error_code=None,
+        )
+
+    return StoreFeedHealthResponse(
+        active_feed_count=active_feed_count,
+        last_import_status=latest_run.status,
+        last_import_finished_at=_as_utc_datetime(latest_run.finished_at),
+        last_feed_updated_at=_as_utc_datetime(latest_run.feed_updated_at or last_feed_updated_at),
+        created_count=latest_run.created_count,
+        updated_count=latest_run.updated_count,
+        skipped_count=latest_run.skipped_count,
+        quarantined_count=latest_run.quarantined_count,
+        last_error_code=latest_run.error_code,
+    )
+
+
+def _as_utc_datetime(value: datetime | str | None) -> datetime | None:
+    if value is None:
+        return None
+    if isinstance(value, str):
+        value = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
