@@ -39,6 +39,11 @@ class Settings(BaseSettings):
     nodemaven_proxy_password: str = ""
     nodemaven_request_timeout_seconds: int = 60
     nodemaven_verify_ssl: bool = True
+    nodemaven_browser_ws_url: str = Field(
+        default="",
+        description="NodeMaven Scraping Browser WebSocket/CDP connection URL.",
+    )
+    nodemaven_browser_timeout_seconds: int = 120
 
     @property
     def hmac_secret_list(self) -> list[str]:

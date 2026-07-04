@@ -11,6 +11,9 @@ from price_monitor.price_compare.live.adapters.nodemaven import (
     NodeMavenProxySearchAdapter,
     build_proxy_url,
 )
+from price_monitor.price_compare.live.adapters.nodemaven_browser import (
+    NodeMavenBrowserSearchAdapter,
+)
 from price_monitor.price_compare.schemas import normalize_domain
 
 
@@ -62,6 +65,15 @@ def get_adapter_for_store(domain: str, config: dict[str, Any]) -> SearchAdapter 
                 parser=parser,
                 timeout_seconds=settings.nodemaven_request_timeout_seconds,
                 verify_ssl=settings.nodemaven_verify_ssl,
+            )
+        if provider == "nodemaven_browser" and parser:
+            settings = get_settings()
+            return NodeMavenBrowserSearchAdapter(
+                domain=normalized_domain,
+                search_url_template=search_url_template,
+                browser_ws_url=settings.nodemaven_browser_ws_url,
+                parser=parser,
+                timeout_seconds=settings.nodemaven_browser_timeout_seconds,
             )
     return None
 
