@@ -26,7 +26,16 @@ class ProviderChainSearchAdapter:
         warnings: list[str] = []
         last_result: LiveStoreResult | None = None
         for provider in self._providers:
-            result = provider.search(query)
+            try:
+                result = provider.search(query)
+            except Exception:
+                result = LiveStoreResult(
+                    store_domain=self._domain,
+                    status=STORE_STATUS_FAILED,
+                    items=[],
+                    warnings=["provider_chain_provider_failed"],
+                    message="Провайдер поиска не смог получить страницу магазина",
+                )
             if result.status == STORE_STATUS_BLOCKED_BY_ANTIBOT:
                 return result
             if result.status == STORE_STATUS_OK and result.items:
