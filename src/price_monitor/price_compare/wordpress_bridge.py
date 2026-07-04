@@ -87,11 +87,31 @@ class WordPressInternalBridgeClient:
             )
         return b64decode(data["content_base64"], validate=True)
 
-    def create_deeplink(self, network: str, source_url: str) -> dict[str, Any]:
+    def create_deeplink(
+        self,
+        network: str,
+        source_url: str,
+        *,
+        offer_id: str,
+        template_url: str = "",
+        click_id: str = "",
+        tracking: Mapping[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        payload: dict[str, Any] = {
+            "network": network,
+            "source_url": source_url,
+            "offer_id": offer_id,
+        }
+        if template_url:
+            payload["template_url"] = template_url
+        if click_id:
+            payload["click_id"] = click_id
+        if tracking:
+            payload["tracking"] = dict(tracking)
         return self._request_json(
             "POST",
             f"{_INTERNAL_BASE}/deeplink",
-            {"network": network, "source_url": source_url},
+            payload,
         )
 
     def _request_json(
