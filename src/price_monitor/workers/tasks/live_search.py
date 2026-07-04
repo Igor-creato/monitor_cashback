@@ -151,8 +151,11 @@ def _json_price(value: Any) -> float | None:
 
 def _warnings(results: list[LiveStoreResult], items: Sequence[LiveSearchItem]) -> list[str]:
     warnings: list[str] = []
+    if any(
+        result.status in {STORE_STATUS_BLOCKED_BY_ANTIBOT, STORE_STATUS_FAILED}
+        for result in results
+    ):
+        warnings.append("Часть магазинов недоступна")
     if not items:
         warnings.append("Товаров не нашлось")
-    if any(result.status == STORE_STATUS_BLOCKED_BY_ANTIBOT for result in results):
-        warnings.append("Часть магазинов недоступна")
     return warnings

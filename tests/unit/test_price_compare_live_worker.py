@@ -5,6 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import Session, sessionmaker
 from sqlalchemy.pool import StaticPool
 
+from price_monitor.core.config import get_settings
 from price_monitor.db.base import Base
 from price_monitor.price_compare.live.repository import LiveSearchRunRepository
 from price_monitor.price_compare.models import StoreSource
@@ -65,3 +66,40 @@ def test_live_search_worker_persists_completed_fixture_results(db_session) -> No
     assert loaded is not None
     assert loaded.status == "ok"
     assert loaded.result_payload["items"]
+
+
+def test_live_search_worker_prioritizes_unavailable_store_warning(db_session, monkeypatch) -> None:
+    monkeypatch.delenv("PRICE_MONITOR_DECODO_BASIC_AUTH_TOKEN", raising=False)
+    get_settings.cache_clear()
+    db_session.add(
+        StoreSource(
+            domain="citilink.ru",
+            display_name="Citilink",
+            active=True,
+            source_type="managed_provider",
+            source_config={
+                "provider": "decodo",
+                "live_search_url_template": "https://www.citilink.ru/search/?text={query}",
+                "parser": "citilink_search_v1",
+            },
+            supports_region=True,
+        )
+    )
+    db_session.commit()
+    repo = LiveSearchRunRepository(db_session)
+    run = repo.create_run(
+        query="телевизор",
+        city="Пенза",
+        stores=["citilink.ru"],
+        limit=10,
+        timeout_seconds=120,
+    )
+
+    result = run_live_search.run(run.run_id)
+    loaded = repo.get_run(run.run_id)
+
+    assert result["status"] == "failed"
+    assert loaded is not None
+    assert loaded.status == "failed"
+    assert loaded.result_payload["store_statuses"][0]["warnings"] == ["decodo_not_configured"]
+    assert loaded.result_payload["meta"]["warnings"][0] == "Часть магазинов недоступна"

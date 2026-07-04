@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     hmac_secrets: str = Field(default="", description="Comma-separated HMAC shared secrets.")
     hmac_replay_window_seconds: int = 300
     db_pool_recycle_seconds: int = 3600
+    decodo_scraper_api_url: str = "https://scraper-api.decodo.com/v2/scrape"
+    decodo_basic_auth_token: str = Field(
+        default="",
+        description="Decodo Web Scraping API Basic auth token without the 'Basic ' prefix.",
+    )
+    decodo_default_headless: str = "html"
+    decodo_default_proxy_pool: str = "premium"
+    decodo_default_device_type: str = "desktop"
+    decodo_request_timeout_seconds: int = 150
 
     @property
     def hmac_secret_list(self) -> list[str]:
