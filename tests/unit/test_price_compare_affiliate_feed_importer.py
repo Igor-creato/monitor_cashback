@@ -142,6 +142,48 @@ def test_affiliate_feed_importer_skips_secret_url_descriptor_without_bridge_down
     assert "secret" not in (runs[0].error_message or "").lower()
 
 
+def test_affiliate_feed_importer_ignores_unavailable_status_descriptors() -> None:
+    engine = _sqlite_engine()
+    Base.metadata.create_all(engine)
+    bridge = FakeBridge(
+        [
+            {
+                "network": "admitad",
+                "configured": False,
+                "available": False,
+                "feed_health_code": "network_not_found",
+                "feed_url_secret": True,
+            },
+            {
+                "network": "advcake",
+                "store_domain": "merchant.test",
+                "feed_id": "feed-yml",
+                "format": "xml",
+                "feed_url_secret": True,
+            },
+        ],
+        b"""<yml_catalog><shop><offers>
+      <offer id="offer-1" available="true">
+        <url>https://merchant.test/p/1</url><name>Redmi Note 13</name>
+        <price>15990</price><currencyId>RUB</currencyId>
+      </offer>
+    </offers></shop></yml_catalog>""",
+    )
+
+    with Session(engine) as session:
+        result = AffiliateFeedImportService(session, bridge=bridge).import_configured_feeds()
+        feed_sources = list(session.scalars(select(AffiliateFeedSource)))
+        runs = list(session.scalars(select(FeedImportRun)))
+
+    assert result.status == "success"
+    assert result.created_count == 1
+    assert result.skipped_count == 0
+    assert bridge.downloaded_feed_ids == ["feed-yml"]
+    assert [source.network for source in feed_sources] == ["advcake"]
+    assert len(runs) == 1
+    assert runs[0].status == "success"
+
+
 def _as_utc(value: datetime | None) -> datetime | None:
     if value is None:
         return None
