@@ -7,6 +7,10 @@ from price_monitor.price_compare.live.adapters.base import SearchAdapter
 from price_monitor.price_compare.live.adapters.decodo import DecodoWebSearchAdapter
 from price_monitor.price_compare.live.adapters.direct_http import DirectHttpSearchAdapter
 from price_monitor.price_compare.live.adapters.fixture import FixtureSearchAdapter
+from price_monitor.price_compare.live.adapters.nodemaven import (
+    NodeMavenProxySearchAdapter,
+    build_proxy_url,
+)
 from price_monitor.price_compare.schemas import normalize_domain
 
 
@@ -42,6 +46,22 @@ def get_adapter_for_store(domain: str, config: dict[str, Any]) -> SearchAdapter 
                 geo=str(source_config.get("geo", "")),
                 locale=str(source_config.get("locale", "")),
                 timeout_seconds=settings.decodo_request_timeout_seconds,
+            )
+        if provider == "nodemaven" and parser:
+            settings = get_settings()
+            return NodeMavenProxySearchAdapter(
+                domain=normalized_domain,
+                search_url_template=search_url_template,
+                proxy_url=build_proxy_url(
+                    proxy_url=settings.nodemaven_proxy_url,
+                    host=settings.nodemaven_proxy_host,
+                    port=settings.nodemaven_proxy_port,
+                    username=settings.nodemaven_proxy_username,
+                    password=settings.nodemaven_proxy_password,
+                ),
+                parser=parser,
+                timeout_seconds=settings.nodemaven_request_timeout_seconds,
+                verify_ssl=settings.nodemaven_verify_ssl,
             )
     return None
 
