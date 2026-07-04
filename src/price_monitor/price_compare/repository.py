@@ -22,6 +22,14 @@ class SearchIndexState:
     active_offer_count: int
 
 
+@dataclass(frozen=True, slots=True)
+class StoreSearchStatus:
+    store_domain: str
+    status: str
+    offer_count: int
+    region_supported: bool
+
+
 class OfferRepository:
     def __init__(self, session: Session) -> None:
         self._session = session
@@ -70,6 +78,32 @@ class OfferRepository:
             active_store_count=len(active_domains),
             active_offer_count=offer_count,
         )
+
+    def store_statuses(self, *, stores: list[str]) -> list[StoreSearchStatus]:
+        normalized_stores = [_normalize_domain(store) for store in stores if store.strip()]
+        stmt = select(StoreSource).where(StoreSource.active.is_(True))
+        if normalized_stores:
+            stmt = stmt.where(StoreSource.domain.in_(normalized_stores))
+        sources = list(self._session.scalars(stmt).all())
+        statuses: list[StoreSearchStatus] = []
+        for source in sources:
+            offer_count = (
+                self._session.scalar(
+                    select(func.count())
+                    .select_from(Offer)
+                    .where(Offer.store_domain == source.domain)
+                )
+                or 0
+            )
+            statuses.append(
+                StoreSearchStatus(
+                    store_domain=source.domain,
+                    status="indexed" if offer_count else "empty",
+                    offer_count=offer_count,
+                    region_supported=source.supports_region,
+                )
+            )
+        return statuses
 
     def _count(self, stmt: Select[tuple[Offer]]) -> int:
         count_stmt = select(func.count()).select_from(stmt.subquery())

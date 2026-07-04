@@ -34,4 +34,5 @@ def create_celery_app(broker_url: str, result_backend: str) -> Celery:
 settings = get_settings()
 celery_app = create_celery_app(settings.rabbitmq_url, settings.redis_url)
 
+from price_monitor.workers.tasks import feed_import as _feed_import_tasks  # noqa: E402,F401
 from price_monitor.workers.tasks import live_search as _live_search_tasks  # noqa: E402,F401
