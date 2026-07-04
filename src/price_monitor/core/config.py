@@ -44,6 +44,7 @@ class Settings(BaseSettings):
         description="NodeMaven Scraping Browser WebSocket/CDP connection URL.",
     )
     nodemaven_browser_timeout_seconds: int = 120
+    local_browser_timeout_seconds: int = 120
 
     @property
     def hmac_secret_list(self) -> list[str]:
