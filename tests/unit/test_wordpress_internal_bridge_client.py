@@ -36,11 +36,19 @@ def test_wordpress_bridge_client_signs_internal_hmac_like_wordpress() -> None:
         clock=lambda: 1_700_000_000,
     )
 
-    response = client.create_deeplink("admitad", "https://shop.test/product/1")
+    response = client.create_deeplink(
+        "admitad",
+        "https://shop.test/product/1",
+        offer_id="campaign-10",
+    )
 
     expected_signature = hmac.new(
         b"wp-secret",
-        b'1700000000.{"network":"admitad","source_url":"https://shop.test/product/1"}',
+        (
+            b'1700000000.{"network":"admitad",'
+            b'"source_url":"https://shop.test/product/1",'
+            b'"offer_id":"campaign-10"}'
+        ),
         sha256,
     ).hexdigest()
     assert response["affiliate_url"] == "https://go.test/1"
@@ -48,7 +56,9 @@ def test_wordpress_bridge_client_signs_internal_hmac_like_wordpress() -> None:
     assert captured["headers"]["X-Savello-Site"] == "price-monitor-test"
     assert captured["headers"]["X-Savello-Timestamp"] == "1700000000"
     assert captured["headers"]["X-Savello-Signature"] == expected_signature
-    assert captured["body"] == (b'{"network":"admitad","source_url":"https://shop.test/product/1"}')
+    assert captured["body"] == (
+        b'{"network":"admitad","source_url":"https://shop.test/product/1","offer_id":"campaign-10"}'
+    )
 
 
 def test_wordpress_bridge_client_requires_internal_settings() -> None:
