@@ -114,6 +114,18 @@ class ImportStatusResponse(BaseModel):
     skipped_count: int
 
 
+class StoreFeedHealthResponse(BaseModel):
+    active_feed_count: int
+    last_import_status: str | None
+    last_import_finished_at: datetime | None
+    last_feed_updated_at: datetime | None
+    created_count: int
+    updated_count: int
+    skipped_count: int
+    quarantined_count: int
+    last_error_code: str | None
+
+
 class StoreResponse(BaseModel):
     id: int
     domain: str
@@ -128,6 +140,7 @@ class StoreResponse(BaseModel):
     fallback_behavior: str
     offer_count: int
     import_status: ImportStatusResponse | None
+    feed_health: StoreFeedHealthResponse | None
     created_at: datetime | None
     updated_at: datetime | None
 
