@@ -79,6 +79,17 @@ def test_search_api_returns_sorted_active_store_offers() -> None:
     assert [item["external_id"] for item in payload["items"]] == ["cheap", "expensive"]
     assert payload["items"][0]["price"] == 80000.0
     assert payload["items"][0]["region_supported"] is False
+    assert payload["items"][0]["price_updated_at"] is not None
+    assert payload["items"][0]["feed_updated_at"] is not None
+    assert payload["meta"]["store_statuses"] == [
+        {
+            "store_domain": "ozon.ru",
+            "status": "indexed",
+            "offer_count": 2,
+            "region_supported": False,
+        }
+    ]
+    assert "secret" not in response.text.lower()
 
 
 def test_search_api_returns_safe_error_when_index_is_unavailable() -> None:

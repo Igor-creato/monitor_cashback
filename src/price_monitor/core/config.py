@@ -45,6 +45,16 @@ class Settings(BaseSettings):
     )
     nodemaven_browser_timeout_seconds: int = 120
     local_browser_timeout_seconds: int = 120
+    wordpress_internal_base_url: str = Field(
+        default="",
+        description="Base URL of the WordPress site exposing savello-internal routes.",
+    )
+    wordpress_internal_site: str = "price-monitor"
+    wordpress_internal_secret: str = Field(
+        default="",
+        description="Shared secret for WordPress savello-internal HMAC requests.",
+    )
+    wordpress_internal_timeout_seconds: int = 30
 
     @property
     def hmac_secret_list(self) -> list[str]:

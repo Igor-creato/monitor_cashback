@@ -66,6 +66,7 @@ def search(
             limit=request.limit,
             offset=request.offset,
         )
+        store_statuses = repository.store_statuses(stores=request.stores)
     except SQLAlchemyError:
         return JSONResponse(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -89,6 +90,15 @@ def search(
                 "limit": request.limit,
                 "offset": request.offset,
                 "warnings": warnings,
+                "store_statuses": [
+                    {
+                        "store_domain": store_status.store_domain,
+                        "status": store_status.status,
+                        "offer_count": store_status.offer_count,
+                        "region_supported": store_status.region_supported,
+                    }
+                    for store_status in store_statuses
+                ],
             },
         }
     )
@@ -124,4 +134,6 @@ def _serialize_offer(offer: Offer) -> dict[str, object]:
         "brand": offer.brand,
         "external_id": offer.external_id,
         "updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
+        "price_updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
+        "feed_updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
     }

@@ -4,7 +4,18 @@ from datetime import datetime
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import JSON, Boolean, DateTime, ForeignKey, Integer, Numeric, String, Text, func
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    DateTime,
+    ForeignKey,
+    Integer,
+    Numeric,
+    String,
+    Text,
+    UniqueConstraint,
+    func,
+)
 from sqlalchemy.orm import Mapped, mapped_column
 
 from price_monitor.db.base import Base
@@ -72,3 +83,79 @@ class ImportStatus(Base):
     last_error: Mapped[str | None] = mapped_column(Text)
     imported_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
     skipped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+
+
+class AffiliateFeedSource(Base):
+    __tablename__ = "price_compare_affiliate_feed_sources"
+    __table_args__ = (
+        UniqueConstraint(
+            "network",
+            "store_domain",
+            "offer_id",
+            "feed_id",
+            name="uq_price_compare_affiliate_feed_identity",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    network: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    store_domain: Mapped[str] = mapped_column(
+        String(255),
+        ForeignKey("price_compare_store_sources.domain", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    offer_id: Mapped[str] = mapped_column(String(255), default="", nullable=False)
+    feed_id: Mapped[str] = mapped_column(String(255), nullable=False)
+    display_name: Mapped[str | None] = mapped_column(String(255))
+    format: Mapped[str] = mapped_column(String(32), default="xml", nullable=False)
+    feed_url_hash: Mapped[str | None] = mapped_column(String(64))
+    feed_url_secret: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    descriptor_payload: Mapped[dict[str, Any]] = mapped_column(JSON, default=dict, nullable=False)
+    active: Mapped[bool] = mapped_column(Boolean, default=True, nullable=False)
+    last_feed_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
+class FeedImportRun(Base):
+    __tablename__ = "price_compare_feed_import_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    feed_source_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("price_compare_affiliate_feed_sources.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    status: Mapped[str] = mapped_column(String(64), default="queued", nullable=False)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    feed_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    updated_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    skipped_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    quarantined_count: Mapped[int] = mapped_column(Integer, default=0, nullable=False)
+    error_code: Mapped[str | None] = mapped_column(String(64))
+    error_message: Mapped[str | None] = mapped_column(Text)
+
+
+class PriceSnapshot(Base):
+    __tablename__ = "price_compare_price_snapshots"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    offer_id: Mapped[int] = mapped_column(
+        Integer,
+        ForeignKey("price_compare_offers.id", ondelete="CASCADE"),
+        index=True,
+        nullable=False,
+    )
+    price: Mapped[Decimal | None] = mapped_column(Numeric(12, 2))
+    currency: Mapped[str] = mapped_column(String(8), default="RUB", nullable=False)
+    availability: Mapped[str] = mapped_column(String(32), default="unknown", nullable=False)
+    observed_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    source_updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
