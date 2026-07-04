@@ -266,7 +266,15 @@ def _descriptor_items(payload: Mapping[str, Any]) -> list[dict[str, object]]:
     items = payload.get("items", [])
     if not isinstance(items, list):
         return []
-    return [dict(item) for item in items if isinstance(item, Mapping)]
+    return [
+        dict(item)
+        for item in items
+        if isinstance(item, Mapping) and not _is_status_only_descriptor(item)
+    ]
+
+
+def _is_status_only_descriptor(descriptor: Mapping[str, object]) -> bool:
+    return descriptor.get("configured") is False or descriptor.get("available") is False
 
 
 def _parse_descriptor(descriptor: Mapping[str, object], content: bytes) -> list[NormalizedOffer]:
