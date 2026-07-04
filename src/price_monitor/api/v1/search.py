@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from typing import Annotated
+from urllib.parse import parse_qs, urlsplit
 
 from fastapi import APIRouter, Depends, status
 from fastapi.responses import JSONResponse
@@ -117,6 +118,7 @@ def _safe_error(status_code: int, error_code: str, message: str) -> JSONResponse
 
 
 def _serialize_offer(offer: Offer) -> dict[str, object]:
+    public_url = _public_offer_url(offer.url)
     return {
         "id": str(offer.id),
         "source": offer.source,
@@ -125,7 +127,8 @@ def _serialize_offer(offer: Offer) -> dict[str, object]:
         "title": offer.title,
         "price": float(offer.price) if offer.price is not None else None,
         "currency": offer.currency,
-        "url": offer.url,
+        "url": public_url,
+        "action_url": public_url,
         "image_url": offer.image_url,
         "availability": offer.availability,
         "region_supported": offer.region_supported,
@@ -137,3 +140,16 @@ def _serialize_offer(offer: Offer) -> dict[str, object]:
         "price_updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
         "feed_updated_at": offer.updated_at.isoformat() if offer.updated_at else None,
     }
+
+
+def _public_offer_url(raw_url: str) -> str:
+    if "{link}" not in raw_url:
+        return raw_url
+
+    query = raw_url.split("?", 1)[1] if "?" in raw_url else ""
+    target_url = parse_qs(query, keep_blank_values=True).get("dl", [""])[0]
+    scheme = urlsplit(target_url).scheme.lower()
+    if scheme in {"http", "https"}:
+        return target_url
+
+    return raw_url.replace("{link}", "").lstrip("?&")

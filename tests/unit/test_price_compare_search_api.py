@@ -50,7 +50,7 @@ def test_search_api_returns_sorted_active_store_offers() -> None:
                     external_id="cheap",
                     title="iPhone 15 128 Blue",
                     normalized_title="iphone 15 128 blue",
-                    url="https://ozon.ru/product/cheap",
+                    url="{link}?dl=https%3A%2F%2Fozon.ru%2Fproduct%2Fcheap&m=5",
                     price=Decimal("80000.00"),
                     currency="RUB",
                     availability="in_stock",
@@ -78,6 +78,8 @@ def test_search_api_returns_sorted_active_store_offers() -> None:
     assert payload["meta"]["total"] == 2
     assert [item["external_id"] for item in payload["items"]] == ["cheap", "expensive"]
     assert payload["items"][0]["price"] == 80000.0
+    assert payload["items"][0]["url"] == "https://ozon.ru/product/cheap"
+    assert payload["items"][0]["action_url"] == "https://ozon.ru/product/cheap"
     assert payload["items"][0]["region_supported"] is False
     assert payload["items"][0]["price_updated_at"] is not None
     assert payload["items"][0]["feed_updated_at"] is not None
@@ -89,6 +91,7 @@ def test_search_api_returns_sorted_active_store_offers() -> None:
             "region_supported": False,
         }
     ]
+    assert "{link}" not in response.text
     assert "secret" not in response.text.lower()
 
 
