@@ -7,6 +7,7 @@ from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
+from price_monitor.api.v1.feed_import import router as feed_import_router
 from price_monitor.api.v1.live_search import router as live_search_router
 from price_monitor.api.v1.search import router as search_router
 from price_monitor.api.v1.stores import router as stores_router
@@ -25,6 +26,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         docs_url="/docs",
     )
     app.state.settings = settings or Settings()
+    app.include_router(feed_import_router)
     app.include_router(live_search_router)
     app.include_router(search_router)
     app.include_router(stores_router)
