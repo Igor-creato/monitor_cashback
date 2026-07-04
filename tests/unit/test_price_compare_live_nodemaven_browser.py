@@ -106,7 +106,7 @@ def test_nodemaven_browser_adapter_marks_antibot_response() -> None:
 
     assert result.status == "BLOCKED_BY_ANTIBOT"
     assert result.items == []
-    assert result.warnings == ["blocked_by_antibot"]
+    assert result.warnings == ["blocked_by_antibot", "antibot_http_status_429"]
     assert result.message == "Магазин ограничил автоматический доступ"
 
 

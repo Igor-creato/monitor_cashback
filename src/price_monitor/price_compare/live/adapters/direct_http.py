@@ -10,6 +10,7 @@ from price_monitor.price_compare.live.adapters.base import (
     STORE_STATUS_OK,
     LiveSearchQuery,
     LiveStoreResult,
+    antibot_warnings,
 )
 from price_monitor.price_compare.schemas import normalize_domain
 
@@ -60,7 +61,7 @@ class DirectHttpSearchAdapter:
                 store_domain=self._domain,
                 status=STORE_STATUS_BLOCKED_BY_ANTIBOT,
                 items=[],
-                warnings=["blocked_by_antibot"],
+                warnings=antibot_warnings(response.status_code),
                 message="Магазин ограничил автоматический доступ",
             )
 

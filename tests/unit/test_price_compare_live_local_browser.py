@@ -78,6 +78,27 @@ def test_local_browser_adapter_fetches_rendered_page_and_parses_citilink_json_ld
     ]
 
 
+def test_local_browser_adapter_marks_antibot_status_with_safe_evidence() -> None:
+    adapter = LocalBrowserSearchAdapter(
+        domain="citilink.ru",
+        search_url_template="https://www.citilink.ru/search/?text={query}",
+        parser="citilink_search_v1",
+        proxy_url="http://proxy-user:proxy-pass@gate.nodemaven.com:8080",
+        fetcher=lambda target_url, timeout_ms, proxy_url: LocalBrowserPageSnapshot(
+            status_code=403,
+            final_url=target_url,
+            content="<html><body>servicepipe captcha</body></html>",
+        ),
+    )
+
+    result = adapter.search(LiveSearchQuery(query="redmi note 13", city="Москва", limit=5))
+
+    assert result.status == "BLOCKED_BY_ANTIBOT"
+    assert result.items == []
+    assert result.warnings == ["blocked_by_antibot", "antibot_http_status_403"]
+    assert result.message == "Магазин ограничил автоматический доступ"
+
+
 def test_registry_builds_chain_with_local_browser_using_nodemaven_proxy(monkeypatch) -> None:
     monkeypatch.setenv("PRICE_MONITOR_NODEMAVEN_PROXY_USERNAME", "proxy-user")
     monkeypatch.setenv("PRICE_MONITOR_NODEMAVEN_PROXY_PASSWORD", "proxy-pass")
