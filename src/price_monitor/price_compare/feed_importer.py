@@ -28,6 +28,16 @@ from price_monitor.price_compare.wordpress_bridge import (
     redact_wordpress_bridge_payload,
 )
 
+_FEED_UPDATED_AT_KEYS = (
+    "last_feed_updated_at",
+    "feed_updated_at",
+    "advertiser_last_update",
+    "admitad_last_update",
+    "last_update",
+    "last_download",
+    "updated_at",
+)
+
 
 class FeedBridge(Protocol):
     def feed_descriptors(self) -> dict[str, Any]: ...
@@ -128,6 +138,9 @@ class AffiliateFeedImportService:
         feed_source.feed_url_hash = _sha256_text(feed_url) if feed_url else None
         feed_source.feed_url_secret = bool(descriptor.get("feed_url_secret", True))
         feed_source.descriptor_payload = _safe_descriptor_payload(descriptor)
+        feed_updated_at = _descriptor_updated_at(descriptor)
+        if feed_updated_at is not None:
+            feed_source.last_feed_updated_at = feed_updated_at
         feed_source.active = bool(descriptor.get("active", True))
         self._session.flush()
         return feed_source
@@ -228,6 +241,7 @@ class AffiliateFeedImportService:
                 updated_count=counts.updated,
                 skipped_count=counts.skipped,
                 quarantined_count=counts.quarantined,
+                feed_updated_at=feed_source.last_feed_updated_at,
                 error_code=error_code,
                 error_message=error_message,
             )
@@ -271,6 +285,36 @@ def _parse_descriptor(descriptor: Mapping[str, object], content: bytes) -> list[
 def _safe_descriptor_payload(descriptor: Mapping[str, object]) -> dict[str, object]:
     redacted = redact_wordpress_bridge_payload(dict(descriptor))
     return dict(redacted) if isinstance(redacted, dict) else {}
+
+
+def _descriptor_updated_at(descriptor: Mapping[str, object]) -> datetime | None:
+    for key in _FEED_UPDATED_AT_KEYS:
+        parsed = _parse_datetime(descriptor.get(key))
+        if parsed is not None:
+            return parsed
+    return None
+
+
+def _parse_datetime(value: object) -> datetime | None:
+    if isinstance(value, datetime):
+        return _as_utc(value)
+    if not isinstance(value, str):
+        return None
+    raw = value.strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        return _as_utc(datetime.fromisoformat(raw))
+    except ValueError:
+        return None
+
+
+def _as_utc(value: datetime) -> datetime:
+    if value.tzinfo is None:
+        return value.replace(tzinfo=UTC)
+    return value.astimezone(UTC)
 
 
 def _summary_status(descriptors: list[dict[str, object]], failures: int) -> str:
