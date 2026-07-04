@@ -29,6 +29,16 @@ class Settings(BaseSettings):
     decodo_default_proxy_pool: str = "premium"
     decodo_default_device_type: str = "desktop"
     decodo_request_timeout_seconds: int = 150
+    nodemaven_proxy_url: str = Field(
+        default="",
+        description="Full NodeMaven proxy URL; preferred when copied from Proxy Setup.",
+    )
+    nodemaven_proxy_host: str = "gate.nodemaven.com"
+    nodemaven_proxy_port: int = 8080
+    nodemaven_proxy_username: str = ""
+    nodemaven_proxy_password: str = ""
+    nodemaven_request_timeout_seconds: int = 60
+    nodemaven_verify_ssl: bool = True
 
     @property
     def hmac_secret_list(self) -> list[str]:
