@@ -1,13 +1,24 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import Select, func, select
 from sqlalchemy.orm import Session
 
-from price_monitor.price_compare.models import Offer, StoreSource
+from price_monitor.price_compare.models import (
+    AffiliateFeedSource,
+    FeedImportRun,
+    Offer,
+    StoreSource,
+)
 from price_monitor.price_compare.search import AVAILABILITY_SORT_RANK
+
+AFFILIATE_OFFER_SOURCE_NETWORKS = {
+    "admitad_product_feed": "admitad",
+    "advcake_product_feed": "advcake",
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -28,6 +39,16 @@ class StoreSearchStatus:
     status: str
     offer_count: int
     region_supported: bool
+
+
+@dataclass(frozen=True, slots=True)
+class OfferFeedFreshness:
+    store_domain: str
+    offer_source: str
+    network: str
+    feed_updated_at: datetime | None
+    import_finished_at: datetime | None
+    import_status: str | None
 
 
 class OfferRepository:
@@ -104,6 +125,59 @@ class OfferRepository:
                 )
             )
         return statuses
+
+    def feed_freshness_for_offers(
+        self, offers: list[Offer]
+    ) -> dict[tuple[str, str], OfferFeedFreshness]:
+        freshness: dict[tuple[str, str], OfferFeedFreshness] = {}
+        for offer in offers:
+            network = AFFILIATE_OFFER_SOURCE_NETWORKS.get(offer.source)
+            if network is None:
+                continue
+            key = (offer.store_domain, offer.source)
+            if key in freshness:
+                continue
+
+            feed_sources = list(
+                self._session.scalars(
+                    select(AffiliateFeedSource).where(
+                        AffiliateFeedSource.store_domain == offer.store_domain,
+                        AffiliateFeedSource.network == network,
+                        AffiliateFeedSource.active.is_(True),
+                    )
+                ).all()
+            )
+            if not feed_sources:
+                continue
+
+            feed_updated_at = max(
+                (
+                    feed_source.last_feed_updated_at
+                    for feed_source in feed_sources
+                    if feed_source.last_feed_updated_at is not None
+                ),
+                default=None,
+            )
+            feed_source_ids = [feed_source.id for feed_source in feed_sources]
+            latest_run = self._session.scalars(
+                select(FeedImportRun)
+                .where(FeedImportRun.feed_source_id.in_(feed_source_ids))
+                .order_by(FeedImportRun.finished_at.desc(), FeedImportRun.id.desc())
+            ).first()
+
+            freshness[key] = OfferFeedFreshness(
+                store_domain=offer.store_domain,
+                offer_source=offer.source,
+                network=network,
+                feed_updated_at=(
+                    latest_run.feed_updated_at
+                    if latest_run is not None and latest_run.feed_updated_at is not None
+                    else feed_updated_at
+                ),
+                import_finished_at=latest_run.finished_at if latest_run is not None else None,
+                import_status=latest_run.status if latest_run is not None else None,
+            )
+        return freshness
 
     def _count(self, stmt: Select[tuple[Offer]]) -> int:
         count_stmt = select(func.count()).select_from(stmt.subquery())
