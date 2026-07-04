@@ -20,6 +20,10 @@ class Settings(BaseSettings):
     hmac_secrets: str = Field(default="", description="Comma-separated HMAC shared secrets.")
     hmac_replay_window_seconds: int = 300
     db_pool_recycle_seconds: int = 3600
+    affiliate_feed_refresh_interval_seconds: int = Field(
+        default=21_600,
+        description="How often Celery beat refreshes configured Admitad/AdvCake feeds.",
+    )
     decodo_scraper_api_url: str = "https://scraper-api.decodo.com/v2/scrape"
     decodo_basic_auth_token: str = Field(
         default="",

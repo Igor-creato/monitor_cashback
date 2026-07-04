@@ -20,3 +20,12 @@ def test_compose_no_longer_runs_browser_renderer():
 
     assert "browserless" not in compose
     assert "decodo" not in compose.lower()
+
+
+def test_compose_runs_celery_beat_for_feed_freshness():
+    compose = (ROOT / "docker-compose.yml").read_text(encoding="utf-8")
+
+    assert "\n  beat:" in compose
+    assert '"beat"' in compose
+    assert "price_monitor.workers.celery_app.celery_app" in compose
+    assert "--schedule=/tmp/celerybeat-schedule" in compose

@@ -114,6 +114,30 @@ services:
     healthcheck:
       disable: true
 
+  beat:
+    build: .
+    logging: *json-logging
+    mem_limit: 256m
+    memswap_limit: 256m
+    env_file:
+      - ${PRICE_MONITOR_ENV_FILE:-.env.example}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    command:
+      [
+        "celery",
+        "-A",
+        "price_monitor.workers.celery_app.celery_app",
+        "beat",
+        "--loglevel=INFO",
+        "--schedule=/tmp/celerybeat-schedule",
+      ]
+    healthcheck:
+      disable: true
+
 volumes:
   postgres-data:
   postgres-data-pg18:

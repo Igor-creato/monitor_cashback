@@ -7,10 +7,12 @@ TASK_EXCHANGE = Exchange("monitor-cashback", type="direct", durable=True, delive
 TASK_QUEUES = (
     Queue("monitor-cashback.default", TASK_EXCHANGE, routing_key="default", durable=True),
 )
+FEED_IMPORT_REFRESH_TASK = "price-monitor-feed-import-refresh"
 
 
 def create_celery_app(broker_url: str, result_backend: str) -> Celery:
     celery_app = Celery("monitor_cashback", broker=broker_url, backend=result_backend)
+    settings = get_settings()
     celery_app.conf.update(
         task_acks_late=True,
         task_reject_on_worker_lost=True,
@@ -27,6 +29,16 @@ def create_celery_app(broker_url: str, result_backend: str) -> Celery:
         result_serializer="json",
         accept_content=["json"],
         timezone="UTC",
+        beat_schedule={
+            FEED_IMPORT_REFRESH_TASK: {
+                "task": "price_monitor.feed_import.run",
+                "schedule": settings.affiliate_feed_refresh_interval_seconds,
+                "options": {
+                    "queue": "monitor-cashback.default",
+                    "routing_key": "default",
+                },
+            },
+        },
     )
     return celery_app
 
