@@ -13,12 +13,30 @@ _JSON_LD_PATTERN = re.compile(
     r"<script[^>]+type=[\"']application/ld\+json[\"'][^>]*>(.*?)</script>",
     re.IGNORECASE | re.DOTALL,
 )
+_CITILINK_GRAPHQL_PATTERN = re.compile(
+    r"<script[^>]+data-monitor-cashback-live-json=[\"']citilink_graphql[\"'][^>]*>"
+    r"(.*?)</script>",
+    re.IGNORECASE | re.DOTALL,
+)
 
 
 def parse_items(parser: str, content: str, domain: str, limit: int) -> list[LiveSearchItem]:
     if parser == "citilink_search_v1":
-        return _parse_json_ld_products(content, domain, limit)
+        return _parse_citilink_products(content, domain, limit)
     return []
+
+
+def _parse_citilink_products(content: str, domain: str, limit: int) -> list[LiveSearchItem]:
+    items = _parse_json_ld_products(content, domain, limit)
+    seen_urls = {item.url for item in items}
+    for item in _parse_citilink_graphql_products(content, domain, limit):
+        if item.url in seen_urls:
+            continue
+        items.append(item)
+        seen_urls.add(item.url)
+        if len(items) >= limit:
+            break
+    return items
 
 
 def _parse_json_ld_products(content: str, domain: str, limit: int) -> list[LiveSearchItem]:
@@ -39,6 +57,112 @@ def _parse_json_ld_products(content: str, domain: str, limit: int) -> list[LiveS
                 if len(items) >= limit:
                     return items
     return items
+
+
+def _parse_citilink_graphql_products(content: str, domain: str, limit: int) -> list[LiveSearchItem]:
+    items: list[LiveSearchItem] = []
+    for script in _CITILINK_GRAPHQL_PATTERN.findall(content):
+        decoded = unescape(script).strip().replace("<\\/", "</")
+        if not decoded:
+            continue
+        try:
+            data = json.loads(decoded)
+        except json.JSONDecodeError:
+            continue
+        for product in _iter_citilink_graphql_products(data):
+            item = _citilink_graphql_product_to_item(product, domain=domain)
+            if item is not None:
+                items.append(item)
+                if len(items) >= limit:
+                    return items
+    return items
+
+
+def _iter_citilink_graphql_products(value: object) -> list[dict[str, Any]]:
+    if not isinstance(value, dict):
+        return []
+    data = value.get("data")
+    if not isinstance(data, dict):
+        return []
+    search_filter = data.get("fullSearchFilter")
+    if not isinstance(search_filter, dict):
+        return []
+    record = search_filter.get("record")
+    if not isinstance(record, dict):
+        return []
+    products = record.get("products")
+    if not isinstance(products, list):
+        return []
+    return [product for product in products if isinstance(product, dict)]
+
+
+def _citilink_graphql_product_to_item(
+    product: dict[str, Any], *, domain: str
+) -> LiveSearchItem | None:
+    external_id = _string(product.get("id"))
+    title = _string(product.get("name") or product.get("shortName"))
+    slug = _string(product.get("slug"))
+    if not external_id or not title or not slug:
+        return None
+
+    return LiveSearchItem(
+        title=title,
+        price=_citilink_price(product.get("price")),
+        url=f"https://www.{domain}/product/{slug}-{external_id}/",
+        availability="in_stock" if product.get("isAvailable") is True else "out_of_stock",
+        store_domain=domain,
+        store_name=domain,
+        currency="RUB",
+        image_url=_citilink_image_url(product.get("images")),
+        category=_mapping_name(product.get("category")),
+        brand=_mapping_name(product.get("brand")),
+        external_id=external_id,
+    )
+
+
+def _citilink_price(value: object) -> Decimal | None:
+    if not isinstance(value, dict):
+        return None
+    return _decimal_or_none(
+        value.get("current") or value.get("value") or value.get("price") or value.get("amount")
+    )
+
+
+def _citilink_image_url(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    image_groups = value.get("citilink")
+    if not isinstance(image_groups, list):
+        return None
+    candidates: dict[str, str] = {}
+    fallback = ""
+    for image_group in image_groups:
+        if not isinstance(image_group, dict):
+            continue
+        sources = image_group.get("sources")
+        if not isinstance(sources, list):
+            continue
+        for source in sources:
+            if not isinstance(source, dict):
+                continue
+            url = _string(source.get("url"))
+            if not url:
+                continue
+            fallback = fallback or url
+            size = _string(source.get("size")).upper()
+            if size:
+                candidates[size] = url
+    for size in ("MD", "ML", "XL", "SM"):
+        if size in candidates:
+            return candidates[size]
+    return fallback or None
+
+
+def _mapping_name(value: object) -> str | None:
+    if not isinstance(value, dict):
+        return None
+    name = _string(value.get("name"))
+    return name or None
 
 
 def _iter_products(value: object) -> list[dict[str, Any]]:

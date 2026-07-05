@@ -37,6 +37,11 @@ class ProviderChainSearchAdapter:
                     message="Провайдер поиска не смог получить страницу магазина",
                 )
             if result.status == STORE_STATUS_BLOCKED_BY_ANTIBOT:
+                if _can_try_next_after_soft_block(result):
+                    last_result = result
+                    warnings.extend(result.warnings)
+                    warnings.append("provider_chain_soft_antibot_fallback")
+                    continue
                 return result
             if result.status == STORE_STATUS_OK and result.items:
                 return result
@@ -71,3 +76,11 @@ def _dedupe(values: list[str]) -> list[str]:
             seen.add(value)
             deduped.append(value)
     return deduped
+
+
+def _can_try_next_after_soft_block(result: LiveStoreResult) -> bool:
+    warnings = set(result.warnings)
+    return {
+        "nodemaven_blocked_by_antibot",
+        "antibot_http_status_429",
+    }.issubset(warnings)

@@ -36,7 +36,11 @@ def run_live_search(run_id: str) -> dict[str, object]:
         store_statuses: list[dict[str, object]] = []
         stores = _active_stores(session, selected=run.stores)
         total = len(stores)
-        query = LiveSearchQuery(query=run.query, city=run.city, limit=run.limit)
+        query = LiveSearchQuery(
+            query=run.query,
+            city=run.city,
+            limit=_adapter_fetch_limit(run.limit),
+        )
 
         for index, store in enumerate(stores, start=1):
             result = _search_store(store, query)
@@ -159,3 +163,7 @@ def _warnings(results: list[LiveStoreResult], items: Sequence[LiveSearchItem]) -
     if not items:
         warnings.append("Товаров не нашлось")
     return warnings
+
+
+def _adapter_fetch_limit(limit: int) -> int:
+    return min(50, max(limit, limit * 5))

@@ -103,3 +103,52 @@ def test_live_search_worker_prioritizes_unavailable_store_warning(db_session, mo
     assert loaded.status == "failed"
     assert loaded.result_payload["store_statuses"][0]["warnings"] == ["decodo_not_configured"]
     assert loaded.result_payload["meta"]["warnings"][0] == "Часть магазинов недоступна"
+
+
+def test_live_search_worker_overfetches_before_relevance_filtering(db_session) -> None:
+    accessories = [
+        {
+            "title": f"Чехол для Xiaomi Redmi Note 13 #{index}",
+            "price": 499 + index,
+            "url": f"https://fixture.test/case-{index}",
+            "availability": "in_stock",
+        }
+        for index in range(1, 6)
+    ]
+    db_session.add(
+        StoreSource(
+            domain="fixture.test",
+            display_name="Fixture Store",
+            active=True,
+            source_type="custom",
+            source_config={
+                "live_fixture_items": [
+                    *accessories,
+                    {
+                        "title": "Смартфон Xiaomi Redmi Note 13 8/256GB",
+                        "price": 17990,
+                        "url": "https://fixture.test/redmi-note-13",
+                        "availability": "in_stock",
+                        "category": "Смартфоны",
+                    },
+                ]
+            },
+            supports_region=True,
+        )
+    )
+    db_session.commit()
+    repo = LiveSearchRunRepository(db_session)
+    run = repo.create_run(
+        query="redmi note 13",
+        city="Москва",
+        stores=["fixture.test"],
+        limit=5,
+        timeout_seconds=120,
+    )
+
+    result = run_live_search.run(run.run_id)
+    loaded = repo.get_run(run.run_id)
+
+    assert result["status"] == "ok"
+    assert loaded is not None
+    assert loaded.result_payload["items"][0]["title"] == "Смартфон Xiaomi Redmi Note 13 8/256GB"

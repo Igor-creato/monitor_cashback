@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from collections.abc import Callable
 from dataclasses import dataclass
 from importlib import import_module
@@ -25,6 +26,11 @@ _ANTIBOT_MARKERS = (
     "qrator",
     "подтвердите",
     "доступ ограничен",
+)
+_DESKTOP_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) "
+    "Chrome/125.0.0.0 Safari/537.36"
 )
 
 
@@ -113,17 +119,71 @@ def _fetch_page_with_local_browser(
             launch_options["proxy"] = _playwright_proxy_config(proxy_url)
         browser = playwright.chromium.launch(**launch_options)
         try:
-            context = browser.new_context()
+            context = browser.new_context(**_browser_context_options())
             page = context.new_page()
+            captured_json_payloads: list[object] = []
+            page.on("response", _capture_graphql_json(captured_json_payloads))
             response = page.goto(target_url, wait_until="domcontentloaded", timeout=timeout_ms)
             _wait_for_network_idle(page, timeout_ms)
             return LocalBrowserPageSnapshot(
                 status_code=response.status if response is not None else None,
                 final_url=str(page.url),
-                content=str(page.content()),
+                content=_append_captured_json_payloads(
+                    str(page.content()),
+                    captured_json_payloads,
+                ),
             )
         finally:
             browser.close()
+
+
+def _browser_context_options() -> dict[str, object]:
+    return {
+        "locale": "ru-RU",
+        "timezone_id": "Europe/Moscow",
+        "viewport": {"width": 1365, "height": 768},
+        "user_agent": _DESKTOP_USER_AGENT,
+        "extra_http_headers": {"Accept-Language": "ru-RU,ru;q=0.9,en;q=0.6"},
+    }
+
+
+def _capture_graphql_json(captured_payloads: list[object]) -> Callable[[Any], None]:
+    def capture(response: Any) -> None:
+        if len(captured_payloads) >= 10:
+            return
+        if "/graphql/" not in str(getattr(response, "url", "")):
+            return
+        if int(getattr(response, "status", 0)) != 200:
+            return
+        try:
+            payload = response.json()
+        except Exception:
+            return
+        if isinstance(payload, dict):
+            captured_payloads.append(payload)
+
+    return capture
+
+
+def _append_captured_json_payloads(content: str, payloads: list[object]) -> str:
+    if not payloads:
+        return content
+    scripts = "".join(
+        (
+            '<script type="application/json" '
+            'data-monitor-cashback-live-json="citilink_graphql">'
+            f"{_safe_json_script_payload(payload)}</script>"
+        )
+        for payload in payloads
+    )
+    marker = "</body>"
+    if marker in content:
+        return content.replace(marker, f"{scripts}{marker}", 1)
+    return f"{content}{scripts}"
+
+
+def _safe_json_script_payload(payload: object) -> str:
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":")).replace("</", "<\\/")
 
 
 def _playwright_proxy_config(proxy_url: str) -> dict[str, str]:

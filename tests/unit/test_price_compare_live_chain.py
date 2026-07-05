@@ -105,3 +105,49 @@ def test_provider_chain_stops_on_antibot_without_trying_next_provider() -> None:
     assert result.status == STORE_STATUS_BLOCKED_BY_ANTIBOT
     assert result.warnings == ["blocked_by_antibot"]
     assert calls == ["nodemaven"]
+
+
+def test_provider_chain_tries_browser_after_nodemaven_http_429_soft_block() -> None:
+    calls: list[str] = []
+    query = LiveSearchQuery(query="redmi note 13", city="Москва", limit=5)
+    chain = ProviderChainSearchAdapter(
+        domain="citilink.ru",
+        providers=[
+            _Provider(
+                "nodemaven",
+                calls,
+                result=LiveStoreResult(
+                    store_domain="citilink.ru",
+                    status=STORE_STATUS_BLOCKED_BY_ANTIBOT,
+                    items=[],
+                    warnings=[
+                        "blocked_by_antibot",
+                        "nodemaven_blocked_by_antibot",
+                        "antibot_http_status_429",
+                    ],
+                    message="Магазин ограничил автоматический доступ",
+                ),
+            ),
+            _Provider(
+                "local_browser",
+                calls,
+                result=LiveStoreResult(
+                    store_domain="citilink.ru",
+                    status=STORE_STATUS_OK,
+                    items=[
+                        LiveSearchItem(
+                            title="Смартфон Xiaomi Redmi Note 13",
+                            price=None,
+                            url="https://www.citilink.ru/product/redmi-note-13-123/",
+                        )
+                    ],
+                ),
+            ),
+        ],
+    )
+
+    result = chain.search(query)
+
+    assert result.status == STORE_STATUS_OK
+    assert result.items[0].title == "Смартфон Xiaomi Redmi Note 13"
+    assert calls == ["nodemaven", "local_browser"]

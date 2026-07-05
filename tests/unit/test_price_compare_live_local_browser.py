@@ -6,6 +6,8 @@ from price_monitor.price_compare.live.adapters.chain import ProviderChainSearchA
 from price_monitor.price_compare.live.adapters.local_browser import (
     LocalBrowserPageSnapshot,
     LocalBrowserSearchAdapter,
+    _append_captured_json_payloads,
+    _browser_context_options,
 )
 from price_monitor.price_compare.live.adapters.nodemaven import NodeMavenProxySearchAdapter
 from price_monitor.price_compare.live.adapters.nodemaven_browser import (
@@ -101,6 +103,28 @@ def test_local_browser_adapter_marks_antibot_status_with_safe_evidence() -> None
         "antibot_http_status_403",
     ]
     assert result.message == "Магазин ограничил автоматический доступ"
+
+
+def test_local_browser_uses_plain_desktop_ru_context() -> None:
+    options = _browser_context_options()
+
+    assert options["locale"] == "ru-RU"
+    assert options["timezone_id"] == "Europe/Moscow"
+    assert options["viewport"] == {"width": 1365, "height": 768}
+    assert "HeadlessChrome" not in str(options["user_agent"])
+    assert options["extra_http_headers"] == {"Accept-Language": "ru-RU,ru;q=0.9,en;q=0.6"}
+
+
+def test_local_browser_appends_captured_graphql_json_payloads() -> None:
+    content = "<html><body>ok</body></html>"
+
+    augmented = _append_captured_json_payloads(
+        content,
+        [{"data": {"fullSearchFilter": {"record": {"products": []}}}}],
+    )
+
+    assert 'data-monitor-cashback-live-json="citilink_graphql"' in augmented
+    assert '"fullSearchFilter"' in augmented
 
 
 def test_registry_builds_chain_with_local_browser_using_nodemaven_proxy(monkeypatch) -> None:
